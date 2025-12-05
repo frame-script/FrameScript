@@ -15,6 +15,7 @@ type TimelineContextValue = {
   clips: TimelineClip[]
   registerClip: (clip: TimelineClip) => void
   unregisterClip: (id: string) => void
+  setClipVisibility: (id: string, visible: boolean) => void
 }
 
 const TimelineContext = React.createContext<TimelineContextValue | null>(null)
@@ -22,6 +23,7 @@ const TimelineContext = React.createContext<TimelineContextValue | null>(null)
 type Listener = () => void
 
 let globalClips: TimelineClip[] = []
+let globalHidden: Record<string, boolean> = {}
 const globalListeners = new Set<Listener>()
 
 const subscribeGlobal = (listener: Listener) => {
@@ -42,8 +44,21 @@ export const registerClipGlobal = (clip: TimelineClip) => {
 
 export const unregisterClipGlobal = (id: string) => {
   globalClips = globalClips.filter((clip) => clip.id !== id)
+  delete globalHidden[id]
   notifyGlobal()
 }
+
+export const setClipVisibilityGlobal = (id: string, visible: boolean) => {
+  if (visible) {
+    const { [id]: _, ...rest } = globalHidden
+    globalHidden = rest
+  } else {
+    globalHidden = { ...globalHidden, [id]: true }
+  }
+  notifyGlobal()
+}
+
+const getGlobalHidden = () => globalHidden
 
 export const TimeLine = ({ children }: TimeLineProps) => {
   const existingContext = useContext(TimelineContext)
@@ -62,13 +77,18 @@ export const TimeLine = ({ children }: TimeLineProps) => {
     unregisterClipGlobal(id)
   }, [])
 
+  const setClipVisibility = useCallback((id: string, visible: boolean) => {
+    setClipVisibilityGlobal(id, visible)
+  }, [])
+
   const value = useMemo(
     () => ({
       clips,
       registerClip,
       unregisterClip,
+      setClipVisibility,
     }),
-    [clips, registerClip, unregisterClip],
+    [clips, registerClip, unregisterClip, setClipVisibility],
   )
 
   if (existingContext) {
@@ -89,4 +109,26 @@ export const useTimelineClips = () => {
 
 export const useTimelineRegistration = () => {
   return useContext(TimelineContext)
+}
+
+export const useClipVisibilityState = () => {
+  const context = useContext(TimelineContext)
+  const hidden = useSyncExternalStore(subscribeGlobal, getGlobalHidden)
+
+  if (context) {
+    return {
+      hiddenMap: hidden,
+      setClipVisibility: context.setClipVisibility,
+    }
+  }
+
+  return {
+    hiddenMap: hidden,
+    setClipVisibility: setClipVisibilityGlobal,
+  }
+}
+
+export const useClipVisibility = (id: string) => {
+  const { hiddenMap } = useClipVisibilityState()
+  return !hiddenMap[id]
 }

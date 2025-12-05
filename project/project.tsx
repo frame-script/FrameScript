@@ -13,22 +13,15 @@ export const PROJECT_SETTINGS: ProjectSettings = {
 export const PROJECT = () => {
     return (
         <Project>
-            <TIMELINE />
+            <TimeLine>
+                <Clip start={seconds(1)} end={seconds(3)}>
+                    <Text />
+                </Clip>
+                <Clip start={seconds(2)} end={seconds(5)}>
+                    <Text />
+                </Clip>
+            </TimeLine>
         </Project>
-    )
-}
-
-// DO NOT INLINE IT!
-const TIMELINE = () => {
-    return (
-        <TimeLine>
-            <Clip start={seconds(1)} end={seconds(3)}>
-                <Text />
-            </Clip>
-            <Clip start={seconds(2)} end={seconds(5)}>
-                <Text />
-            </Clip>
-        </TimeLine>
     )
 }
 

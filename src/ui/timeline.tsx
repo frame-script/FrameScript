@@ -28,7 +28,7 @@ export const TimelineUI = () => {
   const setCurrentFrame = useSetCurrentFrame()
   const projectSettings = PROJECT_SETTINGS
   const { fps } = projectSettings
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(0.5)
 
   const placedClips = useMemo(() => stackClipsIntoTracks(clips), [clips])
   const trackCount = Math.max(1, placedClips.reduce((max, clip) => Math.max(max, clip.trackIndex + 1), 0))

@@ -1,6 +1,6 @@
 import { useEffect, useId } from "react"
 import { useCurrentFrame } from "./frame"
-import { useTimelineRegistration } from "./timeline"
+import { useClipVisibility, useTimelineRegistration } from "./timeline"
 import { registerClipGlobal, unregisterClipGlobal } from "./timeline"
 
 type ClipProps = {
@@ -16,6 +16,7 @@ export const Clip = ({ start, end, label, children }: ClipProps) => {
   const registerClip = timeline?.registerClip
   const unregisterClip = timeline?.unregisterClip
   const id = useId()
+  const isVisible = useClipVisibility(id)
 
   useEffect(() => {
     if (registerClip && unregisterClip) {
@@ -31,6 +32,10 @@ export const Clip = ({ start, end, label, children }: ClipProps) => {
 
   if (currentFrame < start || currentFrame >= end) {
     return null;
+  }
+
+  if (!isVisible) {
+    return null
   }
 
   return <>{children}</>;
