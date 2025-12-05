@@ -29,14 +29,12 @@ export const StudioApp = () => {
     if (!container) return;
     const rect = container.getBoundingClientRect();
 
-    const previewWidth = previewRef.current?.getBoundingClientRect().width ?? 0;
-    const dynamicPreviewMin = Math.max(previewMinHeight, previewWidth * previewAspectValue + 20);
-    const minTop = dynamicPreviewMin;
+    const minTop = previewMinHeight;
     const minBottom = timelineMinHeight;
     const rawRatio = (clientY - rect.top) / rect.height;
     const ratio = clamp(rawRatio, minTop / rect.height, 1 - minBottom / rect.height);
     setVerticalRatio(ratio);
-  }, [previewAspectValue, previewMinHeight, timelineMinHeight]);
+  }, [previewMinHeight, timelineMinHeight]);
 
   const onHorizontalDrag = useCallback((clientX: number) => {
     const top = topRef.current;
@@ -45,13 +43,9 @@ export const StudioApp = () => {
 
     const minLeftPx = 220;
     const minRightPx = previewMinWidth;
-    const raw = (clientX - rect.left) / rect.width;
-    const minRatio = Math.max(0, minLeftPx / rect.width);
-    const maxRatio = Math.min(1, 1 - minRightPx / rect.width);
-    const safeMin = Math.min(minRatio, maxRatio - 0.05);
-    const safeMax = Math.max(maxRatio, safeMin + 0.05);
-
-    const ratio = clamp(raw, safeMin, safeMax);
+    const maxLeft = rect.width - minRightPx;
+    const nextWidth = clamp(clientX - rect.left, minLeftPx, maxLeft);
+    const ratio = clamp(nextWidth / rect.width, 0, 1);
     setHorizontalRatio(ratio);
   }, [previewMinWidth]);
 
