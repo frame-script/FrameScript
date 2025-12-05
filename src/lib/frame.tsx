@@ -1,0 +1,36 @@
+import React, { useContext, useState } from "react"
+import { useProjectSettings } from "./project"
+
+type CurrentFrame = {
+  currentFrame: number
+  setCurrentFrame: (frame: number) => void
+}
+
+const CurrentFrameContext = React.createContext<CurrentFrame | null>(null)
+
+export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentFrame, setCurrentFrame] = useState(0)
+
+  return (
+    <CurrentFrameContext value={{ currentFrame, setCurrentFrame }}>
+      {children}
+    </CurrentFrameContext>
+  )
+}
+
+export const useCurrentFrame = () => {
+  const ctx = useContext(CurrentFrameContext);
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  return ctx.currentFrame;
+}
+
+export const useSetCurrentFrame = () => {
+  const ctx = useContext(CurrentFrameContext)
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  return ctx.setCurrentFrame;
+}
+
+export function seconds(seconds: number): number {
+  const settings = useProjectSettings()
+  return settings.fps * seconds
+}
