@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { TimelineClip } from "../lib/timeline"
-import { useTimelineClips } from "../lib/timeline"
-import { useCurrentFrame, useSetCurrentFrame } from "../lib/frame"
+import { useTimelineClips, useClipVisibilityState } from "../lib/timeline"
+import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { TransportControls } from "./transport"
 
@@ -25,8 +25,9 @@ const stackClipsIntoTracks = (clips: TimelineClip[]): PositionedClip[] => {
 
 export const TimelineUI = () => {
   const clips = useTimelineClips()
-  const currentFrame = useCurrentFrame()
-  const setCurrentFrame = useSetCurrentFrame()
+  const { hiddenMap } = useClipVisibilityState()
+  const currentFrame = useGlobalCurrentFrame()
+  const setCurrentFrame = useSetGlobalCurrentFrame()
   const projectSettings = PROJECT_SETTINGS
   const { fps } = projectSettings
   const [zoom, setZoom] = useState(1)
@@ -341,6 +342,7 @@ export const TimelineUI = () => {
                 const left = clip.start * pxPerFrame
                 const width = Math.max(0, (clip.end - clip.start + 1) * pxPerFrame)
                 const label = clip.label ?? `Clip ${idx + 1}`
+                const visible = !hiddenMap[clip.id]
 
                 return (
                   <div
@@ -351,16 +353,17 @@ export const TimelineUI = () => {
                       left,
                       width,
                       height: laneHeight - 8,
-                      background: "linear-gradient(90deg, #2563eb, #22d3ee)",
-                      color: "#0b1221",
+                      background: visible ? "linear-gradient(90deg, #2563eb, #22d3ee)" : "linear-gradient(90deg, #1f2937, #0f172a)",
+                      color: visible ? "#0b1221" : "#94a3b8",
                       borderRadius: 4,
                       padding: "4px 8px",
                       boxSizing: "border-box",
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
-                      boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
+                      boxShadow: visible ? "0 6px 18px rgba(0,0,0,0.25)" : "0 4px 12px rgba(0,0,0,0.2)",
                       overflow: "hidden",
+                      opacity: visible ? 1 : 0.35,
                     }}
                   >
                     <span style={{ fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{label}</span>

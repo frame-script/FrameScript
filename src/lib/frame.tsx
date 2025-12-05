@@ -1,5 +1,6 @@
 import React, { useContext, useState } from "react"
 import { PROJECT_SETTINGS } from "../../project/project"
+import { useClipContext as useClipStart } from "./clip"
 
 type CurrentFrame = {
   currentFrame: number
@@ -21,10 +22,22 @@ export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ chil
 export const useCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext);
   if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+
+  const clipStart = useClipStart()
+  if (clipStart) {
+    return ctx.currentFrame - clipStart
+  }
+
   return ctx.currentFrame;
 }
 
-export const useSetCurrentFrame = () => {
+export const useGlobalCurrentFrame = () => {
+  const ctx = useContext(CurrentFrameContext);
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  return ctx.currentFrame;
+}
+
+export const useSetGlobalCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext)
   if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
   return ctx.setCurrentFrame;

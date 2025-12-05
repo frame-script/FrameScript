@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useCurrentFrame, useSetCurrentFrame } from "../lib/frame"
+import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 
 const iconStyle: React.CSSProperties = {
@@ -70,8 +70,8 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
 )
 
 export const TransportControls = () => {
-  const currentFrame = useCurrentFrame()
-  const setCurrentFrame = useSetCurrentFrame()
+  const currentFrame = useGlobalCurrentFrame()
+  const setCurrentFrame = useSetGlobalCurrentFrame()
   const fps = PROJECT_SETTINGS.fps
   const [isPlaying, setIsPlaying] = useState(false)
   const [loop, setLoop] = useState(true)

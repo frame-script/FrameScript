@@ -1,5 +1,5 @@
-import { useEffect, useId } from "react"
-import { useCurrentFrame } from "./frame"
+import { createContext, useContext, useEffect, useId } from "react"
+import { useGlobalCurrentFrame } from "./frame"
 import { useClipVisibility, useTimelineRegistration } from "./timeline"
 import { registerClipGlobal, unregisterClipGlobal } from "./timeline"
 
@@ -10,8 +10,10 @@ type ClipProps = {
   children: React.ReactNode
 }
 
+const ClipContext = createContext<{ clipStart: number } | null>(null)
+
 export const Clip = ({ start, end, label, children }: ClipProps) => {
-  const currentFrame = useCurrentFrame()
+  const currentFrame = useGlobalCurrentFrame()
   const timeline = useTimelineRegistration()
   const registerClip = timeline?.registerClip
   const unregisterClip = timeline?.unregisterClip
@@ -31,12 +33,22 @@ export const Clip = ({ start, end, label, children }: ClipProps) => {
   }, [registerClip, unregisterClip, id, start, end, label])
 
   if (currentFrame < start || currentFrame > end) {
-    return null;
+    return null
   }
 
   if (!isVisible) {
     return null
   }
 
-  return <>{children}</>;
+  return (
+    <ClipContext value={{ clipStart: start }}>
+      {children}
+    </ClipContext>
+  )
+}
+
+export const useClipContext = () => {
+  const ctx = useContext(ClipContext)
+  if (!ctx) throw new Error("useClipContext must be used inside <ClipContext>")
+  return ctx.clipStart
 }
