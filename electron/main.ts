@@ -13,6 +13,7 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
+    backgroundColor: "#0b1221",
     webPreferences: {
       // preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -48,4 +49,3 @@ app.on("window-all-closed", () => {
   app.quit();
   //}
 });
-

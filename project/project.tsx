@@ -20,6 +20,9 @@ export const PROJECT = () => {
                 <Clip start={seconds(2)} end={seconds(5)}>
                     <Text />
                 </Clip>
+                <Clip start={seconds(2)} end={seconds(4)}>
+                    <Text />
+                </Clip>
             </TimeLine>
         </Project>
     )
