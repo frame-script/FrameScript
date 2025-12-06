@@ -23,6 +23,7 @@
         "@types/react": "^19.2.5",
         "@types/react-dom": "^19.2.3",
         "@vitejs/plugin-react": "^5.1.1",
+        "@webgpu/types": "^0.1.67",
         "concurrently": "^9.2.1",
         "cross-env": "^10.1.0",
         "electron": "^39.2.5",

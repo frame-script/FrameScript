@@ -1,3 +1,4 @@
+import { VideoCanvas } from "../src/gpu/video"
 import { Clip } from "../src/lib/clip"
 import { seconds, useCurrentFrame } from "../src/lib/frame"
 import { Project, type ProjectSettings } from "../src/lib/project"
@@ -23,6 +24,7 @@ export const PROJECT = () => {
                 <Clip start={seconds(1)} end={seconds(5)} label="Clip3">
                     <Clip start={seconds(2)} end={seconds(10)} label="Clip3->Clip1">
                         <Text />
+                        <VideoCanvas video="example.mp4"/>
                     </Clip>
                 </Clip>
             </TimeLine>

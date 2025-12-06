@@ -25,7 +25,7 @@ export const useCurrentFrame = () => {
 
   const clipStart = useClipStart()
   if (clipStart !== null) {
-    return ctx.currentFrame - clipStart
+    return Math.max(ctx.currentFrame - clipStart, 0)
   }
 
   return ctx.currentFrame;
