@@ -58,7 +58,7 @@ static HW_DECODERS: &[HWDecoder] = &[
 ];
 
 thread_local! {
-    pub static DECODE_HW_PIX_FORMAT: Cell<AVPixelFormat> = Cell::new(AVPixelFormat::AV_PIX_FMT_NONE);
+    static DECODE_HW_PIX_FORMAT: Cell<AVPixelFormat> = Cell::new(AVPixelFormat::AV_PIX_FMT_NONE);
 }
 
 #[derive(Debug)]
