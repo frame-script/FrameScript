@@ -179,6 +179,21 @@ pub fn extract_frame_hw_rgba(
     dst_width: u32,
     dst_height: u32,
 ) -> Result<Vec<u8>, String> {
+    // 互換用に 1 フレーム版を残しつつ、内部はバッチ版を使う。
+    let frames = extract_frame_window_hw_rgba(path, target_frame, target_frame, dst_width, dst_height)?;
+    if let Some((_, frame)) = frames.into_iter().next() {
+        return Ok(frame);
+    }
+    Ok(generate_empty_frame(dst_width, dst_height))
+}
+
+pub fn extract_frame_window_hw_rgba(
+    path: &str,
+    start_frame: usize,
+    end_frame: usize,
+    dst_width: u32,
+    dst_height: u32,
+) -> Result<Vec<(usize, Vec<u8>)>, String> {
     ffmpeg::init().map_err(|error| format!("ffmpeg::init failed: {}", error))?;
 
     let mut ictx =
@@ -242,11 +257,42 @@ pub fn extract_frame_hw_rgba(
         .video()
         .map_err(|error| format!("not a video stream: {}", error))?;
 
+    // ランダムアクセスを試みる: フレーム番号→タイムスタンプを概算し、キーフレーム手前へシーク。
+    let time_base = input_stream.time_base();
+    let fps = input_stream.rate();
+    let fps_num = fps.numerator() as i64;
+    let fps_den = fps.denominator() as i64;
+    let tb_num = time_base.numerator() as i64;
+    let tb_den = time_base.denominator() as i64;
+    // pts ≈ (frame / fps) / time_base = frame * (tb_den / (tb_num * fps))
+    let seek_pts = {
+        let fps_f = (fps_num as f64).max(1.0) / (fps_den as f64).max(1.0);
+        let tb_f = (tb_num as f64).max(1.0) / (tb_den as f64).max(1.0);
+        let seconds = start_frame as f64 / fps_f.max(1e-6);
+        (seconds / tb_f).round() as i64
+    };
+
+    unsafe {
+        let ret = ffi::av_seek_frame(
+            ictx.as_mut_ptr(),
+            stream_index as i32,
+            seek_pts,
+            ffi::AVSEEK_FLAG_BACKWARD,
+        );
+        if ret < 0 {
+            info!("av_seek_frame failed (fallback to start decode): {}", ffmpeg_error_string(ret));
+        } else {
+            decoder.flush();
+        }
+    }
+
     let mut scaler: Option<ScalingContext> = None;
 
     let mut decoded = Video::empty();
-    let mut current_index = 0usize;
+    let mut results: Vec<(usize, Vec<u8>)> = Vec::new();
 
+    // フレーム番号推定に ts を使う（無ければ連番で代替）。
+    let mut fallback_index = start_frame;
     for (stream, packet) in ictx.packets() {
         if stream.index() != stream_index {
             continue;
@@ -257,7 +303,22 @@ pub fn extract_frame_hw_rgba(
             .map_err(|error| format!("send_packet failed: {error}"))?;
 
         while decoder.receive_frame(&mut decoded).is_ok() {
-            if current_index == target_frame {
+            // ts からフレーム番号を推定
+            let frame_index = decoded.timestamp().map(|ts| {
+                let ts_f = ts as f64 * tb_num as f64 / tb_den as f64;
+                let fps_f = fps_num as f64 / fps_den as f64;
+                (ts_f * fps_f).round().max(0.0) as usize
+            }).unwrap_or_else(|| {
+                let idx = fallback_index;
+                fallback_index = fallback_index.saturating_add(1);
+                idx
+            });
+
+            if frame_index > end_frame {
+                break;
+            }
+
+            if frame_index >= start_frame && frame_index <= end_frame {
                 let rgba = hw_frame_to_rgba(
                     &mut decoded,
                     is_found_hw_decoder,
@@ -265,10 +326,14 @@ pub fn extract_frame_hw_rgba(
                     dst_width,
                     dst_height,
                 )?;
-                return Ok(rgba);
+                results.push((frame_index, rgba));
             }
+        }
 
-            current_index += 1;
+        if let Some((last_idx, _)) = results.last() {
+            if *last_idx >= end_frame {
+                break;
+            }
         }
     }
 
@@ -277,7 +342,21 @@ pub fn extract_frame_hw_rgba(
         .map_err(|error| format!("failed to send EOF : {}", error))?;
 
     while decoder.receive_frame(&mut decoded).is_ok() {
-        if current_index == target_frame {
+        let frame_index = decoded.timestamp().map(|ts| {
+            let ts_f = ts as f64 * tb_num as f64 / tb_den as f64;
+            let fps_f = fps_num as f64 / fps_den as f64;
+            (ts_f * fps_f).round().max(0.0) as usize
+        }).unwrap_or_else(|| {
+            let idx = fallback_index;
+            fallback_index = fallback_index.saturating_add(1);
+            idx
+        });
+
+        if frame_index > end_frame {
+            break;
+        }
+
+        if frame_index >= start_frame && frame_index <= end_frame {
             let rgba = hw_frame_to_rgba(
                 &mut decoded,
                 is_found_hw_decoder,
@@ -285,12 +364,21 @@ pub fn extract_frame_hw_rgba(
                 dst_width,
                 dst_height,
             )?;
-            return Ok(rgba);
+            results.push((frame_index, rgba));
         }
-        current_index += 1;
+
+        if let Some((last_idx, _)) = results.last() {
+            if *last_idx >= end_frame {
+                break;
+            }
+        }
     }
 
-    Ok(generate_empty_frame(dst_width, dst_height))
+    if results.is_empty() {
+        results.push((start_frame, generate_empty_frame(dst_width, dst_height)));
+    }
+
+    Ok(results)
 }
 
 fn hw_frame_to_rgba(

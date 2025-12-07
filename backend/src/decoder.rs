@@ -9,7 +9,7 @@ use std::{
 
 use tracing::warn;
 
-use crate::{ffmpeg::hw_decoder::extract_frame_hw_rgba, future::SharedManualFuture};
+use crate::{ffmpeg::hw_decoder::extract_frame_window_hw_rgba, future::SharedManualFuture};
 
 pub static DECODER: LazyLock<Decoder> = LazyLock::new(|| Decoder::new());
 
@@ -137,30 +137,95 @@ impl RealTimeDecoder {
                 let byte_size = width as usize * height as usize * 4;
                 let future = SharedManualFuture::new();
 
-                let self_clone = self.clone();
-                let future_clone = future.clone();
-                tokio::spawn(async move {
-                    let result =
-                        extract_frame_hw_rgba(&self_clone.inner.path, frame_index, width, height);
+                // 先にプレースホルダを入れて二重デコードを防止
+                state
+                    .entries
+                    .insert(key.clone(), Cache::pending(future.clone(), byte_size));
+                state.total_bytes = state.total_bytes.saturating_add(byte_size);
 
-                    match result {
-                        Ok(result) => {
-                            future_clone.complete(Arc::new(result)).await;
+                let self_clone = self.clone();
+                let window_start = frame_index.saturating_sub(CACHE_FRAME_RANGE);
+                let window_end = frame_index + CACHE_FRAME_RANGE;
+                tokio::spawn(async move {
+                    let decoded = extract_frame_window_hw_rgba(
+                        &self_clone.inner.path,
+                        window_start,
+                        window_end,
+                        width,
+                        height,
+                    );
+
+                    match decoded {
+                        Ok(frames) => {
+                            let mut completes: Vec<(SharedManualFuture<Vec<u8>>, Arc<Vec<u8>>)> =
+                                Vec::new();
+                            {
+                                let mut state = self_clone.inner.cache.write().unwrap();
+
+                                for (idx, data) in frames {
+                                    let key = CacheKey {
+                                        frame_index: idx,
+                                        width,
+                                        height,
+                                    };
+                                    let arc_data = Arc::new(data);
+
+                                    if let Some(entry) = state.entries.get_mut(&key) {
+                                        entry.touch();
+                                        if !entry.ready {
+                                            entry.ready = true;
+                                            completes.push((entry.frame.clone(), arc_data.clone()));
+                                        }
+                                    } else {
+                                        let f =
+                                            SharedManualFuture::new_completed((*arc_data).clone());
+                                        state.entries.insert(
+                                            key.clone(),
+                                            Cache::completed(f.clone(), byte_size),
+                                        );
+                                        state.total_bytes =
+                                            state.total_bytes.saturating_add(byte_size);
+                                    }
+                                }
+
+                                evict_over_capacity(&mut state);
+                            }
+
+                            for (fut, data) in completes {
+                                fut.complete(data.clone()).await;
+                            }
                         }
                         Err(error) => {
                             warn!("failed to decode! : {}", error);
 
-                            future_clone
-                                .complete(Arc::new(generate_dummy_frame(width, height)))
-                                .await;
+                            let mut completes: Vec<(SharedManualFuture<Vec<u8>>, Arc<Vec<u8>>)> =
+                                Vec::new();
+                            {
+                                let mut state = self_clone.inner.cache.write().unwrap();
+                                if let Some(entry) = state.entries.get_mut(&key) {
+                                    if !entry.ready {
+                                        entry.ready = true;
+                                        let data = Arc::new(generate_dummy_frame(width, height));
+                                        completes.push((entry.frame.clone(), data));
+                                    }
+                                } else {
+                                    let data = Arc::new(generate_dummy_frame(width, height));
+                                    let fut = SharedManualFuture::new_completed((*data).clone());
+                                    state.entries.insert(
+                                        key.clone(),
+                                        Cache::completed(fut.clone(), byte_size),
+                                    );
+                                    state.total_bytes = state.total_bytes.saturating_add(byte_size);
+                                }
+                            }
+
+                            for (fut, data) in completes {
+                                fut.complete(data.clone()).await;
+                            }
                         }
                     }
                 });
 
-                state
-                    .entries
-                    .insert(key.clone(), Cache::new(future.clone(), byte_size));
-                state.total_bytes = state.total_bytes.saturating_add(byte_size);
                 evict_over_capacity(&mut state);
 
                 future
@@ -185,14 +250,25 @@ pub struct Cache {
     pub frame: SharedManualFuture<Vec<u8>>,
     pub last_access_time: Instant,
     pub byte_size: usize,
+    pub ready: bool,
 }
 
 impl Cache {
-    pub fn new(frame: SharedManualFuture<Vec<u8>>, byte_size: usize) -> Self {
+    pub fn pending(frame: SharedManualFuture<Vec<u8>>, byte_size: usize) -> Self {
         Self {
             frame,
             last_access_time: Instant::now(),
             byte_size,
+            ready: false,
+        }
+    }
+
+    pub fn completed(frame: SharedManualFuture<Vec<u8>>, byte_size: usize) -> Self {
+        Self {
+            frame,
+            last_access_time: Instant::now(),
+            byte_size,
+            ready: true,
         }
     }
 
