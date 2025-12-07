@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { initWebGPU, uploadAndDrawFrame } from "./webgpu";
 import { useCurrentFrame } from "../lib/frame";
+import { PROJECT_SETTINGS } from "../../project/project";
 
 type VideoCanvasProps = {
   video: string
@@ -74,6 +75,8 @@ export const VideoCanvas = ({ video }: VideoCanvasProps) => {
 
     const req = {
       video,
+      width: PROJECT_SETTINGS.width,
+      height: PROJECT_SETTINGS.height,
       frame: currentFrame,
     };
 

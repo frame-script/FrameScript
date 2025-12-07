@@ -1,3 +1,8 @@
+pub mod decoder;
+pub mod ffmpeg;
+pub mod future;
+pub mod util;
+
 use std::net::SocketAddr;
 
 use axum::{
@@ -15,12 +20,16 @@ use serde::Deserialize;
 use tokio::net::TcpListener;
 use tracing::{error, info};
 
+use crate::{decoder::DECODER, util::resolve_path_to_string};
+
 #[derive(Clone)]
 struct AppState;
 
 #[derive(Deserialize, Debug)]
 struct FrameRequest {
     video: String,
+    width: u32,
+    height: u32,
     frame: u32,
 }
 
@@ -59,7 +68,6 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
 
         match msg {
             Message::Text(text) => {
-                // クライアントからの「動画名 + フレーム番号」リクエスト
                 let req: FrameRequest = match serde_json::from_str(&text) {
                     Ok(r) => r,
                     Err(e) => {
@@ -68,14 +76,17 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
                     }
                 };
 
-                // 本来はここで video + frame から実フレームを取り出す
-                let width: u32 = 640;
-                let height: u32 = 360;
+                let width = req.width;
+                let height = req.height;
                 let frame_index = req.frame;
 
-                let frame_rgba = generate_dummy_frame(width, height, frame_index, &req.video);
+                let decoder = DECODER
+                    .decoder(resolve_path_to_string(&req.video).unwrap_or(req.video))
+                    .await;
 
-                // [width][height][frame_index][rgba...] のパケットにする
+                let frame_rgba = decoder.request_frame(width, height, frame_index as _).await;
+
+                // into [width][height][frame_index][rgba...] packet
                 let mut packet = Vec::with_capacity(12 + frame_rgba.len());
                 packet.extend_from_slice(&width.to_le_bytes());
                 packet.extend_from_slice(&height.to_le_bytes());
@@ -87,9 +98,7 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
                     break;
                 }
             }
-            Message::Binary(_) => {
-                // 今回はクライアントからバイナリは受け取らない
-            }
+            Message::Binary(_) => {}
             Message::Ping(p) => {
                 let _ = socket.send(Message::Pong(p)).await;
             }
@@ -104,11 +113,9 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
     info!("client disconnected");
 }
 
-// ダミーフレーム生成（動画名とフレーム番号で色を変えるだけ）
 fn generate_dummy_frame(width: u32, height: u32, frame: u32, video: &str) -> Vec<u8> {
     let mut buf = vec![0u8; (width * height * 4) as usize];
 
-    // 動画名から簡単なハッシュ値を作って色を変える
     let hash = video.bytes().fold(0u8, |acc, b| acc.wrapping_add(b)) % (frame as u8 + 1);
 
     for y in 0..height {

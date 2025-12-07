@@ -13,3 +13,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [ "fmt" ] }
 futures = "0.3.31"
 futures-util = "0.3.31"
+ffmpeg-next = "8.0.0"
+manual_future = "0.1.3"
+ffmpeg-sys-next = "8.0.1"
+shellexpand = "3"
+dunce = "1"
