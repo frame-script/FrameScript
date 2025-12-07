@@ -77,8 +77,8 @@ impl CacheState {
     }
 }
 
-// Cache frames in (frame_index - 10)..(frame_index + 10)
-const CACHE_FRAME_RANGE: usize = 10;
+// Cache frames in frame_index..(frame_index + 10)
+const CACHE_FRAME_RANGE: usize = 60;
 // Entire cache size(16GB)
 const MAX_CACHE_BYTES: usize = 1024 * 16 * 1024 * 1024;
 
@@ -137,14 +137,13 @@ impl RealTimeDecoder {
                 let byte_size = width as usize * height as usize * 4;
                 let future = SharedManualFuture::new();
 
-                // 先にプレースホルダを入れて二重デコードを防止
                 state
                     .entries
                     .insert(key.clone(), Cache::pending(future.clone(), byte_size));
                 state.total_bytes = state.total_bytes.saturating_add(byte_size);
 
                 let self_clone = self.clone();
-                let window_start = frame_index.saturating_sub(CACHE_FRAME_RANGE);
+                let window_start = frame_index;
                 let window_end = frame_index + CACHE_FRAME_RANGE;
                 tokio::spawn(async move {
                     let decoded = extract_frame_window_hw_rgba(
@@ -234,11 +233,15 @@ impl RealTimeDecoder {
     }
 
     pub async fn request_frame(&self, width: u32, height: u32, frame_index: usize) -> Arc<Vec<u8>> {
-        let frame_range = (frame_index.checked_sub(CACHE_FRAME_RANGE).unwrap_or(0))
-            ..(frame_index + CACHE_FRAME_RANGE);
+        // prefetch
+        for i in 0..3 {
+            let self_clone = self.clone();
 
-        for frame_index in frame_range {
-            self.get_frame(width, height, frame_index).await;
+            tokio::spawn(async move {
+                self_clone
+                    .get_frame(width, height, frame_index + i * CACHE_FRAME_RANGE)
+                    .await;
+            });
         }
 
         self.get_frame(width, height, frame_index).await.get().await

@@ -12,8 +12,13 @@ type VideoCanvasProps = {
 export const VideoCanvas = ({ video, style }: VideoCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const currentFrameRef = useRef<number>(0)
 
   const currentFrame = useCurrentFrame();
+
+  useEffect(() => {
+    currentFrameRef.current = currentFrame
+  }, [currentFrame])
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -60,12 +65,16 @@ export const VideoCanvas = ({ video, style }: VideoCanvasProps) => {
 
           const width = view.getUint32(0, true);
           const height = view.getUint32(4, true);
-          //const frameIndex = view.getUint32(8, true);
+          const frameIndex = view.getUint32(8, true);
 
           const bytes = new Uint8Array(buffer);
           const rgba = bytes.subarray(12);
 
-          uploadAndDrawFrame(rgba, width, height);
+          const currentFrame = currentFrameRef.current
+
+          if (Math.abs(frameIndex - currentFrame) < 3) {
+            uploadAndDrawFrame(rgba, width, height);
+          }
         };
 
         ws.onerror = (e) => {

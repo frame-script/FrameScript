@@ -173,20 +173,6 @@ fn ffmpeg_error_string(err: i32) -> String {
     }
 }
 
-pub fn extract_frame_hw_rgba(
-    path: &str,
-    target_frame: usize,
-    dst_width: u32,
-    dst_height: u32,
-) -> Result<Vec<u8>, String> {
-    // 互換用に 1 フレーム版を残しつつ、内部はバッチ版を使う。
-    let frames = extract_frame_window_hw_rgba(path, target_frame, target_frame, dst_width, dst_height)?;
-    if let Some((_, frame)) = frames.into_iter().next() {
-        return Ok(frame);
-    }
-    Ok(generate_empty_frame(dst_width, dst_height))
-}
-
 pub fn extract_frame_window_hw_rgba(
     path: &str,
     start_frame: usize,
@@ -257,7 +243,7 @@ pub fn extract_frame_window_hw_rgba(
         .video()
         .map_err(|error| format!("not a video stream: {}", error))?;
 
-    // ランダムアクセスを試みる: フレーム番号→タイムスタンプを概算し、キーフレーム手前へシーク。
+    // try random access
     let time_base = input_stream.time_base();
     let fps = input_stream.rate();
     let fps_num = fps.numerator() as i64;
@@ -291,7 +277,6 @@ pub fn extract_frame_window_hw_rgba(
     let mut decoded = Video::empty();
     let mut results: Vec<(usize, Vec<u8>)> = Vec::new();
 
-    // フレーム番号推定に ts を使う（無ければ連番で代替）。
     let mut fallback_index = start_frame;
     for (stream, packet) in ictx.packets() {
         if stream.index() != stream_index {
@@ -303,7 +288,6 @@ pub fn extract_frame_window_hw_rgba(
             .map_err(|error| format!("send_packet failed: {error}"))?;
 
         while decoder.receive_frame(&mut decoded).is_ok() {
-            // ts からフレーム番号を推定
             let frame_index = decoded.timestamp().map(|ts| {
                 let ts_f = ts as f64 * tb_num as f64 / tb_den as f64;
                 let fps_f = fps_num as f64 / fps_den as f64;
