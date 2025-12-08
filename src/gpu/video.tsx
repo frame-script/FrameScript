@@ -1,8 +1,8 @@
 import type { CSSProperties } from "react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useCurrentFrame } from "../lib/frame";
 import { PROJECT_SETTINGS } from "../../project/project";
-import { useIsPlaying } from "../StudioApp";
+import { useIsPlaying, useIsPlayingStore } from "../StudioApp";
 import { useClipActive } from "../lib/clip";
 
 type VideoCanvasProps = {
@@ -15,6 +15,7 @@ export const VideoCanvas = ({ video, style }: VideoCanvasProps) => {
   const currentFrame = useCurrentFrame()
   const isPlaying = useIsPlaying()
   const isVisible = useClipActive()
+  const playingFlag = useRef(false)
 
   if (elementRef.current && !isPlaying) {
     const time = currentFrame / PROJECT_SETTINGS.fps
@@ -27,10 +28,6 @@ export const VideoCanvas = ({ video, style }: VideoCanvasProps) => {
     return url.toString();
   }, [video]);
 
-  if (elementRef.current) {
-    elementRef.current.loop = false
-  }
-
   const baseStyle: CSSProperties = {
     width: 640,
     height: 360,
@@ -38,16 +35,32 @@ export const VideoCanvas = ({ video, style }: VideoCanvasProps) => {
     backgroundColor: "#000",
   };
 
+  const isPlayingStore = useIsPlayingStore();
+
+  useEffect(() => {
+    const unsubscribe = isPlayingStore.subscribe((isPlaying) => {
+      if (!isPlaying) {
+        elementRef.current?.pause()
+      }
+    });
+    return unsubscribe;
+  }, [isPlayingStore]);
+
   if (elementRef.current && isPlaying && isVisible) {
-    elementRef.current.play()
+    if (!playingFlag.current) {
+      elementRef.current.play()
+      playingFlag.current = true
+    }
   } else {
     elementRef.current?.pause()
+    playingFlag.current = false
   }
 
   return (
     <video
       ref={elementRef}
       src={src}
+      onEnded={() => elementRef.current?.pause()}
       style={style ? { ...baseStyle, ...style } : baseStyle}
     />
   );

@@ -3,10 +3,12 @@ import { PROJECT, PROJECT_SETTINGS } from "../project/project";
 import { WithCurrentFrame } from "./lib/frame"
 import { TimelineUI } from "./ui/timeline";
 import { ClipVisibilityPanel } from "./ui/clip-visibility";
+import { Store } from "./util/state";
 
 type StudioState = {
   isPlaying: boolean
   setIsPlaying: (flag: boolean) => void
+  isPlayingStore: Store<boolean>
 }
 
 const StudioStateContext = createContext<StudioState | null>(null)
@@ -106,10 +108,33 @@ export const StudioApp = () => {
     return () => observer.disconnect();
   }, [previewAspectValue]);
 
-  const [isPlaying, setIsPlaying] = useState(false)
+
+  const isPlayingStoreRef = useRef<Store<boolean> | null>(null);
+  if (isPlayingStoreRef.current == null) {
+    isPlayingStoreRef.current = new Store<boolean>(false);
+  }
+  const isPlayingStore = isPlayingStoreRef.current;
+
+  const [isPlaying, setIsPlayingState] = useState<boolean>(
+    () => isPlayingStore.get()
+  );
+
+  useEffect(() => {
+    const unsubscribe = isPlayingStore.subscribe((value) => {
+      setIsPlayingState(value);
+    });
+    return unsubscribe;
+  }, [isPlayingStore]);
+
+  const setIsPlaying = useCallback(
+    (flag: boolean) => {
+      isPlayingStore.set(flag);
+    },
+    [isPlayingStore]
+  );
 
   return (
-    <StudioStateContext value={{ isPlaying, setIsPlaying }}>
+    <StudioStateContext value={{ isPlaying, setIsPlaying, isPlayingStore }}>
       <WithCurrentFrame>
         <div style={{ padding: 16, height: "100vh", boxSizing: "border-box", minHeight: 0 }}>
           <div
@@ -214,3 +239,9 @@ export const useSetIsPlaying = () => {
   if (!ctx) throw new Error("useSetIsPlaying must be used inside <StudioStateContext>");
   return ctx.setIsPlaying;
 }
+
+export const useIsPlayingStore = () => {
+  const ctx = useContext(StudioStateContext);
+  if (!ctx) throw new Error("useIsPlayingStore must be used inside <StudioStateContext.Provider>");
+  return ctx.isPlayingStore;
+};
