@@ -16,7 +16,7 @@ export const PROJECT = () => {
         <Project>
             <TimeLine>
                 <Clip start={seconds(0)} end={seconds(20)} label="Clip3->Clip1">
-                    <VideoCanvas video="~/Videos/1080p.mp4" style={{ width: "100%", height: "100%" }} />
+                    <VideoCanvas video="~/Videos/720p.mp4" style={{ width: "100%", height: "100%" }} />
                 </Clip>
             </TimeLine>
         </Project>

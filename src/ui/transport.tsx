@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { useTimelineClips } from "../lib/timeline"
+import { useIsPlaying, useSetIsPlaying } from "../StudioApp"
 
 const iconStyle: React.CSSProperties = {
   fontSize: 14,
@@ -75,13 +76,15 @@ export const TransportControls = () => {
   const setCurrentFrame = useSetGlobalCurrentFrame()
   const clips = useTimelineClips()
   const fps = PROJECT_SETTINGS.fps
-  const [isPlaying, setIsPlaying] = useState(false)
   const [loop, setLoop] = useState(true)
   const rafRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number | null>(null)
   const playingRef = useRef(false)
   const frameRef = useRef(currentFrame)
   const frameFloatRef = useRef<number>(currentFrame)
+
+  const isPlaying = useIsPlaying()
+  const setIsPlaying = useSetIsPlaying()
 
   frameRef.current = currentFrame
   frameFloatRef.current = currentFrame

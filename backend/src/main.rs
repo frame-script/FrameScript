@@ -3,24 +3,37 @@ pub mod ffmpeg;
 pub mod future;
 pub mod util;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, ops::Bound};
 
 use axum::{
     Router,
+    body::Bytes,
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
+    http::{StatusCode, header},
     response::IntoResponse,
     routing::get,
     serve,
 };
+use axum_extra::{
+    TypedHeader,
+    headers::{Range, UserAgent},
+};
 use futures_util::StreamExt;
 use serde::Deserialize;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::net::TcpListener;
+use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 use crate::{decoder::DECODER, util::resolve_path_to_string};
+
+#[derive(Deserialize)]
+struct VideoQuery {
+    path: String,
+}
 
 #[derive(Clone)]
 struct AppState;
@@ -40,6 +53,7 @@ async fn main() {
     let app_state = AppState;
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/video", get(video_handler))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -52,6 +66,91 @@ async fn main() {
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn video_handler(
+    State(_state): State<AppState>,
+    Query(VideoQuery { path }): Query<VideoQuery>,
+    range: Option<TypedHeader<Range>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let resolved_path = resolve_path_to_string(&path).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut file = tokio::fs::File::open(&resolved_path)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let metadata = file
+        .metadata()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let len = metadata.len();
+
+    let (status, body, content_range, content_length) = if let Some(TypedHeader(range)) = range {
+        let mut iter = range.satisfiable_ranges(len);
+
+        if let Some((start_bound, end_bound)) = iter.next() {
+            let start = match start_bound {
+                Bound::Included(n) => n,
+                Bound::Excluded(n) => n + 1,
+                Bound::Unbounded => 0,
+            };
+
+            let end = match end_bound {
+                Bound::Included(n) => n,
+                Bound::Excluded(n) => n.saturating_sub(1),
+                Bound::Unbounded => len.saturating_sub(1),
+            };
+
+            if start >= len || end >= len || start > end {
+                return Err(StatusCode::RANGE_NOT_SATISFIABLE);
+            }
+
+            let chunk_size = end - start + 1;
+
+            file.seek(SeekFrom::Start(start))
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            let stream = ReaderStream::with_capacity(file.take(chunk_size), 16 * 1024);
+            let range_header = format!("bytes {}-{}/{}", start, end, len);
+
+            (
+                StatusCode::PARTIAL_CONTENT,
+                stream,
+                Some(range_header),
+                chunk_size,
+            )
+        } else {
+            return Err(StatusCode::RANGE_NOT_SATISFIABLE);
+        }
+    } else {
+        // Range ヘッダなし => 全体を返す
+        let stream = ReaderStream::with_capacity(file.take(len), 16 * 1024);
+        (StatusCode::OK, stream, None, len)
+    };
+
+    let mut resp = axum::response::Response::new(axum::body::Body::from_stream(body));
+    *resp.status_mut() = status;
+
+    let headers = resp.headers_mut();
+    headers.insert(
+        header::ACCEPT_RANGES,
+        header::HeaderValue::from_static("bytes"),
+    );
+    if let Ok(v) = header::HeaderValue::from_str(&content_length.to_string()) {
+        headers.insert(header::CONTENT_LENGTH, v);
+    }
+    headers.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("video/mp4"),
+    );
+    if let Some(range_str) = content_range {
+        headers.insert(
+            header::CONTENT_RANGE,
+            header::HeaderValue::from_str(&range_str)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("bytes */*")),
+        );
+    }
+
+    Ok(resp)
 }
 
 async fn handle_socket(mut socket: WebSocket, _state: AppState) {
@@ -93,7 +192,9 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
                 packet.extend_from_slice(&frame_index.to_le_bytes());
                 packet.extend_from_slice(&frame_rgba);
 
-                if let Err(e) = socket.send(Message::Binary(packet)).await {
+                let bytes = Bytes::from(packet);
+
+                if let Err(e) = socket.send(Message::Binary(bytes)).await {
                     error!("failed to send frame: {e}");
                     break;
                 }
