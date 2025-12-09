@@ -89,7 +89,6 @@ export const TransportControls = () => {
   frameRef.current = currentFrame
   frameFloatRef.current = currentFrame
 
-  // 再生範囲の上限: プロジェクト上の最大クリップ終端と現在位置、最低 5 秒分のうち最大を採用。
   const durationFrames = useMemo(() => {
     const maxClipEnd = clips.reduce((max, clip) => Math.max(max, clip.end + 1), 0)
     return Math.max(Math.round(fps * 5), maxClipEnd, currentFrame + 1)
@@ -101,7 +100,7 @@ export const TransportControls = () => {
     lastTimeRef.current = null
     playingRef.current = false
     setIsPlaying(false)
-  }, [])
+  }, [setIsPlaying])
 
   const tick = useCallback((timestamp: number) => {
     if (!playingRef.current) return
@@ -147,6 +146,12 @@ export const TransportControls = () => {
     lastTimeRef.current = null
     rafRef.current = requestAnimationFrame(tick)
   }, [stopPlayback, tick])
+
+  useEffect(() => {
+    if (!isPlaying && playingRef.current) {
+      stopPlayback()
+    }
+  }, [isPlaying, stopPlayback])
 
   useEffect(() => {
     return () => {

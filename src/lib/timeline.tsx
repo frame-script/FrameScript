@@ -11,6 +11,7 @@ export type TimelineClip = {
   label?: string
   depth?: number
   parentId?: string | null
+  laneId?: string
 }
 
 type TimelineContextValue = {

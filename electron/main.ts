@@ -10,10 +10,11 @@ const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
+let backendHealthyPromise: Promise<void> | null = null;
 
-function startBackend() {
+function startBackend(): Promise<void> {
   if (backendProcess) {
-    return;
+    return Promise.resolve();
   }
 
   if (isDev) {
@@ -55,6 +56,8 @@ function startBackend() {
     console.log(`[backend exited] code=${code} signal=${signal}`);
     backendProcess = null;
   });
+
+  return Promise.resolve();
 }
 
 function stopBackend() {
@@ -62,6 +65,37 @@ function stopBackend() {
     console.log("[backend] kill");
     backendProcess.kill();
   }
+}
+
+async function waitForHealthz(): Promise<void> {
+  if (backendHealthyPromise) return backendHealthyPromise;
+
+  const healthUrl = "http://127.0.0.1:3000/healthz";
+  backendHealthyPromise = new Promise((resolve, reject) => {
+    const started = Date.now();
+    const timeoutMs = 15_000;
+    const intervalMs = 300;
+
+    const timer = setInterval(() => {
+      fetch(healthUrl)
+        .then((res) => {
+          if (res.ok) {
+            clearInterval(timer);
+            resolve();
+          }
+        })
+        .catch(() => {
+          // ignore and retry
+        });
+
+      if (Date.now() - started > timeoutMs) {
+        clearInterval(timer);
+        reject(new Error("healthz timeout"));
+      }
+    }, intervalMs);
+  });
+
+  return backendHealthyPromise;
 }
 
 async function createWindow() {
@@ -97,8 +131,8 @@ if (process.platform === "linux") {
 */
 
 app.whenReady().then(async () => {
-  startBackend();
-
+  await startBackend();
+  await waitForHealthz();
   await createWindow();
 
   app.on("activate", () => {
@@ -117,4 +151,3 @@ app.on("window-all-closed", () => {
   app.quit();
   // }
 });
-

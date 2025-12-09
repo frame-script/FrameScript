@@ -20,15 +20,30 @@ const clipGradients = [
 const stackClipsIntoTracks = (clips: TimelineClip[]): PositionedClip[] => {
   const sorted = [...clips].sort((a, b) => a.start - b.start || a.end - b.end)
   const trackEndFrames: number[] = []
+  const laneTrack = new Map<string, number>()
 
   return sorted.map((clip) => {
     const clipEndExclusive = clip.end + 1
-    const trackIndex = trackEndFrames.findIndex((end) => end <= clip.start)
-    if (trackIndex === -1) {
-      trackEndFrames.push(clipEndExclusive)
-      return { ...clip, trackIndex: trackEndFrames.length - 1 }
+
+    let trackIndex: number | null = null
+    if (clip.laneId && laneTrack.has(clip.laneId)) {
+      const laneIdx = laneTrack.get(clip.laneId)!
+      if (trackEndFrames[laneIdx] <= clip.start) {
+        trackIndex = laneIdx
+      }
     }
+
+    if (trackIndex === null) {
+      const available = trackEndFrames.findIndex((end) => end <= clip.start)
+      trackIndex = available === -1 ? trackEndFrames.length : available
+    }
+
     trackEndFrames[trackIndex] = clipEndExclusive
+
+    if (clip.laneId && !laneTrack.has(clip.laneId)) {
+      laneTrack.set(clip.laneId, trackIndex)
+    }
+
     return { ...clip, trackIndex }
   })
 }

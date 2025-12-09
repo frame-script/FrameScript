@@ -12,9 +12,9 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{StatusCode, header},
-    response::IntoResponse,
-    routing::get,
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Json},
+    routing::{get, options},
     serve,
 };
 use axum_extra::{
@@ -22,7 +22,7 @@ use axum_extra::{
     headers::{Range, UserAgent},
 };
 use futures_util::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
@@ -53,13 +53,15 @@ async fn main() {
     let app_state = AppState;
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/video", get(video_handler))
+        .route("/video", get(video_handler).options(options_handler))
+        .route("/video/meta", get(video_meta_handler).options(options_handler))
+        .route("/healthz", get(healthz_handler).options(options_handler))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    info!("listening on {addr}");
-
     let listener = TcpListener::bind(addr).await.unwrap();
+    info!("listening on {addr}");
+    println!("[backend ready] listening on {addr}");
 
     serve(listener, app).await.unwrap();
 }
@@ -149,7 +151,35 @@ async fn video_handler(
                 .unwrap_or_else(|_| header::HeaderValue::from_static("bytes */*")),
         );
     }
+    apply_cors(headers);
 
+    Ok(resp)
+}
+
+async fn healthz_handler() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+    (headers, StatusCode::OK)
+}
+
+#[derive(Serialize)]
+struct VideoMetadataResponse {
+    duration_ms: u64,
+}
+
+async fn video_meta_handler(
+    State(_state): State<AppState>,
+    Query(VideoQuery { path }): Query<VideoQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let resolved_path = resolve_path_to_string(&path).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let duration_ms =
+        tokio::task::spawn_blocking(move || crate::ffmpeg::probe_video_duration_ms(&resolved_path))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut resp = Json(VideoMetadataResponse { duration_ms }).into_response();
+    apply_cors(resp.headers_mut());
     Ok(resp)
 }
 
@@ -212,6 +242,18 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
     }
 
     info!("client disconnected");
+}
+
+async fn options_handler() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+    (headers, StatusCode::NO_CONTENT)
+}
+
+fn apply_cors(headers: &mut HeaderMap) {
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, OPTIONS"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("*"));
 }
 
 fn generate_dummy_frame(width: u32, height: u32, frame: u32, video: &str) -> Vec<u8> {
