@@ -179,12 +179,10 @@ export const ClipSequence = ({
   children,
   start = 0,
   onDurationChange,
-  label,
 }: {
   children: React.ReactNode
   start?: number
   onDurationChange?: (frames: number) => void
-  label?: string
 }) => {
   const laneId = useId()
   const items = Children.toArray(children).filter(
