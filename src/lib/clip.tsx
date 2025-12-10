@@ -197,6 +197,8 @@ export const ClipSequence = ({
       setDurations((prev) => {
         const next = new Map(prev)
         next.set(key, Math.max(0, value))
+        // Avoid useless updates that can cause render loops when value is unchanged.
+        if (prev.get(key) === next.get(key)) return prev
         return next
       })
     },

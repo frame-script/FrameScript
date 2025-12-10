@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useCallback, useRef } from "react"
 import ReactDOM from "react-dom/client"
 import { PROJECT } from "../../project/project"
 import { Store } from "../util/state"
@@ -6,12 +6,17 @@ import { StudioStateContext } from "../StudioApp"
 import { WithCurrentFrame } from "../lib/frame"
 
 const RanderRoot = () => {
+  const storeRef = useRef(new Store(false))
+  const setIsPlaying = useCallback((flag: boolean) => {
+    storeRef.current.set(flag)
+  }, [])
+
   return (
-    <StudioStateContext value={{ isPlaying: false, setIsPlaying: () => { }, isPlayingStore: new Store(false) }}>
+    <StudioStateContext.Provider value={{ isPlaying: false, setIsPlaying, isPlayingStore: storeRef.current }}>
       <WithCurrentFrame>
         <PROJECT />
       </WithCurrentFrame>
-    </StudioStateContext>
+    </StudioStateContext.Provider>
   )
 }
 

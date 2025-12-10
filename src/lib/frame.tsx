@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { useClipStart as useClipStart } from "./clip"
 
@@ -11,6 +11,25 @@ const CurrentFrameContext = React.createContext<CurrentFrame | null>(null)
 
 export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentFrame, setCurrentFrame] = useState(0)
+
+  useEffect(() => {
+    // Expose setters for headless rendering / automation (e.g., Chromium driving frames)
+    const api = {
+      setFrame: (frame: number) => setCurrentFrame(Math.max(0, Math.floor(frame))),
+      getFrame: () => currentFrame,
+    };
+    (window as any).__frameScript = {
+      ...(window as any).__frameScript,
+      setFrame: api.setFrame,
+      getFrame: api.getFrame,
+    }
+    return () => {
+      if ((window as any).__frameScript) {
+        delete (window as any).__frameScript.setFrame
+        delete (window as any).__frameScript.getFrame
+      }
+    }
+  }, [currentFrame])
 
   return (
     <CurrentFrameContext value={{ currentFrame, setCurrentFrame }}>
