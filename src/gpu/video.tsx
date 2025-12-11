@@ -4,7 +4,7 @@ import { useCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame";
 import { PROJECT_SETTINGS } from "../../project/project";
 import { useIsPlaying, useIsRender } from "../StudioApp";
 import { useClipActive, useClipStart, useProvideClipDuration } from "../lib/clip";
-import { VideoCanvasWGPU } from "./video-wgpu";
+import { VideoCanvasRender } from "./video-render";
 
 export type Video = {
   path: string
@@ -95,7 +95,7 @@ export const Video = ({ video, style }: VideoProps) => {
   const isRender = useIsRender()
 
   if (isRender) {
-    return <VideoCanvasWGPU video={video} style={style} />
+    return <VideoCanvasRender video={video} style={style} />
   } else {
     return <VideoCanvas video={video} style={style} />
   }

@@ -313,7 +313,7 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
 
                 let frame_rgba =
                     hw_decoder::extract_frame_hw_rgba(&path, frame_index as _, width, height)
-                        .unwrap_or(generate_dummy_frame(width, height, frame_index, &path));
+                        .unwrap();
 
                 // into [width][height][frame_index][rgba...] packet
                 let mut packet = Vec::with_capacity(12 + frame_rgba.len());
