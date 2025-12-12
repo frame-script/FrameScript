@@ -20,3 +20,4 @@ ffmpeg-sys-next = "8.0.1"
 shellexpand = "3"
 dunce = "1"
 axum-extra = { version = "0.12.2", features = [ "typed-header" ] }
+num_threads = "0.1.7"

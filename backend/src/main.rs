@@ -14,13 +14,10 @@ use axum::{
     },
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Json},
-    routing::{get, options},
+    routing::get,
     serve,
 };
-use axum_extra::{
-    TypedHeader,
-    headers::{Range, UserAgent},
-};
+use axum_extra::{TypedHeader, headers::Range};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
@@ -29,8 +26,8 @@ use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 use crate::{
-    decoder::{DECODER, generate_empty_frame},
-    ffmpeg::{hw_decoder, probe_video_duration_ms, probe_video_fps},
+    decoder::DECODER,
+    ffmpeg::{probe_video_duration_ms, probe_video_fps},
     util::resolve_path_to_string,
 };
 
@@ -368,28 +365,4 @@ fn apply_cors(headers: &mut HeaderMap) {
         header::ACCESS_CONTROL_ALLOW_HEADERS,
         HeaderValue::from_static("*"),
     );
-}
-
-fn generate_dummy_frame(width: u32, height: u32, frame: u32, video: &str) -> Vec<u8> {
-    let mut buf = vec![0u8; (width * height * 4) as usize];
-
-    let hash = video.bytes().fold(0u8, |acc, b| acc.wrapping_add(b)) % (frame as u8 + 1);
-
-    for y in 0..height {
-        for x in 0..width {
-            let idx = ((y * width + x) * 4) as usize;
-
-            let r = (x * 255 / width) as u8 ^ hash;
-            let g = (y * 255 / height) as u8 ^ (frame as u8);
-            let b = 128u8;
-            let a = 255u8;
-
-            buf[idx] = r;
-            buf[idx + 1] = g;
-            buf[idx + 2] = b;
-            buf[idx + 3] = a;
-        }
-    }
-
-    buf
 }

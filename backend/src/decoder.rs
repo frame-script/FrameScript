@@ -1,19 +1,18 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
+    num::NonZero,
     sync::{
         Arc, LazyLock, Mutex, RwLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use tokio::sync::Notify;
-use tokio::sync::mpsc;
-use tracing::warn;
+use num_threads::num_threads;
 
 use crate::{
     ffmpeg::{
-        hw_decoder::{self, extract_frame_window_hw_rgba},
+        hw_decoder::{self},
         probe_video_frames,
     },
     future::SharedManualFuture,
@@ -64,8 +63,19 @@ struct Inner {
     width: u32,
     height: u32,
     frames: RwLock<HashMap<u32, SharedManualFuture<Vec<u8>>>>,
-    started: AtomicBool,
+    frame_states: RwLock<HashMap<u32, FrameState>>,
 }
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameState {
+    Wait,
+    Drop,
+    None,
+}
+
+static ENTIRE_CACHE_SIZE: AtomicUsize = AtomicUsize::new(0);
+const MAX_CACHE_SIZE: usize = 1024 * 1024 * 1024 * 4; // 4GiB
 
 impl CachedDecoder {
     pub fn new(path: String, width: u32, height: u32) -> Self {
@@ -74,7 +84,7 @@ impl CachedDecoder {
             width,
             height,
             frames: RwLock::new(HashMap::new()),
-            started: AtomicBool::new(false),
+            frame_states: RwLock::new(HashMap::new()),
         };
 
         Self {
@@ -83,41 +93,141 @@ impl CachedDecoder {
     }
 
     pub async fn start(&self) {
+        let total_frames = probe_video_frames(&self.inner.path).unwrap_or(0) as usize;
+
+        if total_frames == 0 {
+            return;
+        }
+
+        self.schedule_gc().await;
+
+        let workers = num_threads().unwrap_or(NonZero::new(1).unwrap()).get();
+        let chunk = total_frames / (workers - 1).max(1);
+
+        for worker_id in 0..workers {
+            let worker_start = worker_id * chunk;
+            let worker_end = ((worker_id + 1) * chunk).min(total_frames) - 1;
+
+            let self_clone = self.clone();
+
+            tokio::spawn(async move {
+                let mut start = worker_start;
+                const CHUNK: usize = 120;
+
+                loop {
+                    if ENTIRE_CACHE_SIZE.load(Ordering::Relaxed) >= MAX_CACHE_SIZE {
+                        // レスポンスが送信されてキャッシュが減るのを待つ
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+
+                    let end = (start + CHUNK).min(worker_end);
+                    let result = hw_decoder::extract_frame_window_hw_rgba(
+                        &self_clone.inner.path,
+                        start,
+                        end,
+                        self_clone.inner.width,
+                        self_clone.inner.height,
+                    );
+
+                    match result {
+                        Ok(result) => {
+                            let mut futures = Vec::new();
+
+                            {
+                                let mut frames = self_clone.inner.frames.write().unwrap();
+
+                                for (index, frame) in result {
+                                    let future = frames
+                                        .entry(index as _)
+                                        .or_insert_with(|| SharedManualFuture::new())
+                                        .clone();
+                                    futures.push((future, frame));
+                                }
+                            }
+
+                            for (future, frame) in futures {
+                                ENTIRE_CACHE_SIZE.fetch_add(frame.len(), Ordering::Relaxed);
+                                future.complete(Arc::new(frame)).await;
+                            }
+                        }
+                        Err(_) => todo!(),
+                    }
+
+                    if end == worker_end {
+                        break;
+                    }
+                    start = end;
+                }
+            });
+        }
+    }
+
+    async fn schedule_gc(&self) {
         let self_clone = self.clone();
+
         tokio::spawn(async move {
-            let total_frames = probe_video_frames(&self_clone.inner.path).unwrap_or_default();
-
-            let result = hw_decoder::extract_frame_window_hw_rgba(
-                &self_clone.inner.path,
-                0,
-                total_frames as _,
-                self_clone.inner.width,
-                self_clone.inner.height,
-            );
-
-            if let Ok(result) = result {
-                let mut futures = Vec::new();
-
-                {
+            loop {
+                if ENTIRE_CACHE_SIZE.load(Ordering::Relaxed) >= MAX_CACHE_SIZE {
                     let mut frames = self_clone.inner.frames.write().unwrap();
 
-                    for (index, frame) in result {
-                        let future = frames
-                            .entry(index as _)
-                            .or_insert_with(|| SharedManualFuture::new())
-                            .clone();
-                        futures.push((future, frame));
+                    let all_frame_index = frames.keys().cloned().collect::<Vec<_>>();
+
+                    for frame_index in all_frame_index {
+                        let future = frames.get(&frame_index).unwrap();
+                        let mut frame_states = self_clone.inner.frame_states.write().unwrap();
+                        let frame_state = frame_states
+                            .get(&frame_index)
+                            .cloned()
+                            .unwrap_or(FrameState::None);
+
+                        if future.is_completed() && frame_state == FrameState::None {
+                            let future = frames.remove(&frame_index).unwrap();
+                            frame_states.insert(frame_index, FrameState::Drop);
+                            println!(
+                                "REMOVED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                            );
+
+                            ENTIRE_CACHE_SIZE
+                                .fetch_sub(future.get_now().unwrap().len(), Ordering::Relaxed);
+
+                            if ENTIRE_CACHE_SIZE.load(Ordering::Relaxed) < MAX_CACHE_SIZE {
+                                break;
+                            }
+                        }
                     }
                 }
 
-                for (future, frame) in futures {
-                    future.complete(Arc::new(frame)).await;
-                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
             }
         });
     }
 
     pub async fn get_frame(&self, frame_index: u32) -> Arc<Vec<u8>> {
+        {
+            let mut frame_states = self.inner.frame_states.write().unwrap();
+            let frame_state = frame_states
+                .get(&frame_index)
+                .cloned()
+                .unwrap_or(FrameState::None);
+
+            if frame_state == FrameState::Wait || frame_state == FrameState::Drop {
+                let result = hw_decoder::extract_frame_hw_rgba(
+                    &self.inner.path,
+                    frame_index as _,
+                    self.inner.width,
+                    self.inner.height,
+                );
+
+                match result {
+                    Ok(result) => {
+                        return Arc::new(result);
+                    }
+                    Err(_) => todo!(),
+                }
+            }
+            frame_states.insert(frame_index, FrameState::Wait);
+        }
+
         let future = {
             let mut frames = self.inner.frames.write().unwrap();
 
@@ -130,7 +240,16 @@ impl CachedDecoder {
         let frame = future.get().await;
 
         {
-            //self.inner.frames.write().unwrap().remove(&frame_index);
+            // 送信が終わったフレームは解放する。
+            // ただし、フロントエンドのcurrentFrameの初期値が0なので、
+            // frame_index = 0のリクエストが複数飛んでくる。
+            // 0の場合に解放してしまうと、後方のレスポンスが帰らずに無限に待たせてしまう。
+            // おそらく、もっと良いロジックがあるが、一旦は0のみ解放しないことで実装する。
+            if frame_index != 0 {
+                ENTIRE_CACHE_SIZE.fetch_sub(frame.len(), Ordering::Relaxed);
+
+                self.inner.frames.write().unwrap().remove(&frame_index);
+            }
         }
 
         frame

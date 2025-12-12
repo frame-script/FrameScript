@@ -23,6 +23,14 @@ impl<T: Send> SharedManualFuture<T> {
         }
     }
 
+    pub fn is_completed(&self) -> bool {
+        self.value.lock().unwrap().0.is_some()
+    }
+
+    pub fn get_now(&self) -> Option<Arc<T>> {
+        self.value.lock().unwrap().0.clone()
+    }
+
     pub fn get(&self) -> ManualFuture<Arc<T>> {
         let mut value = self.value.lock().unwrap();
 
