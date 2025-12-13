@@ -109,6 +109,16 @@ export const RenderSettingsPage = () => {
     setBusy(true);
     setStatus(null);
     try {
+      try {
+        await fetch("http://127.0.0.1:3000/set_workers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workers: Number(workers) }),
+        });
+      } catch (_error) {
+        // ignore; render will still try to start
+      }
+
       const result = await window.renderAPI.startRender({
         width: Number(width),
         height: Number(height),

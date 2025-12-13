@@ -14,7 +14,7 @@ use axum::{
     },
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
     serve,
 };
 use axum_extra::{TypedHeader, headers::Range};
@@ -26,7 +26,7 @@ use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 use crate::{
-    decoder::{generate_empty_frame, DECODER},
+    decoder::{generate_empty_frame, set_decode_workers, DECODER},
     ffmpeg::{probe_video_duration_ms, probe_video_fps},
     util::resolve_path_to_string,
 };
@@ -52,6 +52,11 @@ struct FrameRequest {
     frame: u32,
 }
 
+#[derive(Deserialize)]
+struct WorkersRequest {
+    workers: usize,
+}
+
 #[tokio::main]
 async fn main() {
     unsafe {
@@ -69,6 +74,7 @@ async fn main() {
             get(video_meta_handler).options(options_handler),
         )
         .route("/audio", get(audio_handler).options(options_handler))
+        .route("/set_workers", post(set_workers_handler).options(options_handler))
         .route("/healthz", get(healthz_handler).options(options_handler))
         .with_state(app_state);
 
@@ -364,6 +370,19 @@ async fn options_handler() -> impl IntoResponse {
     (headers, StatusCode::NO_CONTENT)
 }
 
+async fn set_workers_handler(
+    State(_state): State<AppState>,
+    Json(payload): Json<WorkersRequest>,
+) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+
+    let workers = payload.workers.max(1).min(128);
+    set_decode_workers(workers);
+
+    (headers, StatusCode::OK)
+}
+
 fn apply_cors(headers: &mut HeaderMap) {
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -371,7 +390,7 @@ fn apply_cors(headers: &mut HeaderMap) {
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET, OPTIONS"),
+        HeaderValue::from_static("GET, OPTIONS, POST"),
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,

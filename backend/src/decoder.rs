@@ -20,6 +20,18 @@ use crate::{
 };
 
 pub static DECODER: LazyLock<Decoder> = LazyLock::new(|| Decoder::new());
+static DECODE_WORKERS: LazyLock<AtomicUsize> = LazyLock::new(|| {
+    let env_workers = std::env::var("DECODE_WORKERS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok());
+    let cpu_workers = num_threads().map(|n| n.get()).unwrap_or(4);
+    let default = env_workers.unwrap_or(cpu_workers);
+    AtomicUsize::new(default.max(1))
+});
+
+pub fn set_decode_workers(workers: usize) {
+    DECODE_WORKERS.store(workers.max(1), Ordering::Relaxed);
+}
 
 pub struct Decoder {
     decoders: Mutex<HashMap<String, CachedDecoder>>,
@@ -118,7 +130,7 @@ impl CachedDecoder {
 
         self.schedule_gc().await;
 
-        let workers = 20;
+        let workers = DECODE_WORKERS.load(Ordering::Relaxed).max(1);
 
         let chunk = total_frames / (workers - 1).max(1);
 
