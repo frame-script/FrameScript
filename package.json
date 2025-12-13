@@ -10,16 +10,17 @@
         "build:render": "vite build --config vite.render.config.ts",
         "preview": "vite preview --config vite.studio.config.ts",
         "build:electron": "tsc -p tsconfig.electron.json",
-        "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
+        "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:render\" \"npm:dev:electron\"",
         "predev:electron": "tsc -p tsconfig.electron.json",
         "dev:electron": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron ./dist-electron/main.js",
         "build": "npm run build:vite && npm run build:electron",
         "build:all": "npm run build && npm run build:render"
     },
     "dependencies": {
-        "react": "^19.2.0",
-        "react-dom": "^19.2.0"
-    },
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.28.0"
+  },
     "devDependencies": {
         "@eslint/js": "^9.39.1",
         "@types/node": "^24.10.1",

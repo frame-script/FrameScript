@@ -64,6 +64,7 @@ struct Inner {
     height: u32,
     frames: RwLock<HashMap<u32, SharedManualFuture<Vec<u8>>>>,
     frame_states: RwLock<HashMap<u32, FrameState>>,
+    total_frames: AtomicUsize,
 }
 
 #[repr(u8)]
@@ -94,6 +95,7 @@ impl CachedDecoder {
             height,
             frames: RwLock::new(HashMap::new()),
             frame_states: RwLock::new(HashMap::new()),
+            total_frames: AtomicUsize::new(0),
         };
 
         Self {
@@ -103,6 +105,9 @@ impl CachedDecoder {
 
     pub async fn start(&self) {
         let total_frames = probe_video_frames(&self.inner.path).unwrap_or(0) as usize;
+        self.inner
+            .total_frames
+            .store(total_frames, Ordering::Relaxed);
 
         if total_frames == 0 {
             return;
@@ -259,6 +264,15 @@ impl CachedDecoder {
         }
 
         frame
+    }
+
+    pub fn total_frames(&self) -> Option<usize> {
+        let v = self.inner.total_frames.load(Ordering::Relaxed);
+        if v > 0 {
+            Some(v)
+        } else {
+            None
+        }
     }
 }
 

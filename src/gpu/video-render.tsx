@@ -79,14 +79,32 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
 
   const sendFrameRequest = useCallback(
     (frame: number) => {
-      requestedFrameRef.current = frame;
+      const hasDuration = durationFrames > 0;
+      const maxFrame = hasDuration ? Math.max(0, durationFrames - 1) : undefined;
+      const clampedFrame =
+        maxFrame !== undefined ? Math.min(Math.max(frame, 0), maxFrame) : Math.max(frame, 0);
+
+      const durationSeconds =
+        durationFrames > 0 ? durationFrames / Math.max(1, PROJECT_SETTINGS.fps) : null;
+      const playbackMax =
+        durationSeconds != null && fps > 0
+          ? Math.max(0, Math.floor(durationSeconds * fps))
+          : null;
+
+      requestedFrameRef.current = clampedFrame;
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         return;
       }
 
+      const playbackFrameRaw =
+        fps > 0
+          ? Math.round((clampedFrame * fps) / PROJECT_SETTINGS.fps)
+          : Math.round(clampedFrame);
       const playbackFrame =
-        fps > 0 ? Math.round((frame * fps) / PROJECT_SETTINGS.fps) : Math.round(frame);
+        playbackMax !== null
+          ? Math.min(Math.max(playbackFrameRaw, 0), playbackMax)
+          : Math.max(playbackFrameRaw, 0);
 
       const manual = createManualPromise();
       trackPending(manual);
@@ -95,7 +113,7 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
       if (existing) {
         existing.manual.reject(new Error("superseded by newer request"));
       }
-      pendingMapRef.current.set(playbackFrame, { manual, projectFrame: frame });
+      pendingMapRef.current.set(playbackFrame, { manual, projectFrame: clampedFrame });
 
       const req = {
         video: resolved.path,
@@ -106,7 +124,7 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
 
       ws.send(JSON.stringify(req));
     },
-    [fps, resolved.path],
+    [durationFrames, fps, resolved.path],
   );
 
   useEffect(() => {
@@ -211,7 +229,12 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
 
   const waitCanvasFrame = useCallback(
     async (frame?: number) => {
-      const target = frame ?? currentFrameRef.current ?? 0;
+      const hasDuration = durationFrames > 0;
+      const maxFrame = hasDuration ? Math.max(0, durationFrames - 1) : undefined;
+      const rawTarget = frame ?? currentFrameRef.current ?? 0;
+      const target =
+        maxFrame !== undefined ? Math.min(Math.max(rawTarget, 0), maxFrame) : Math.max(rawTarget, 0);
+
       const alreadyDrawn = lastDrawnFrameRef.current != null && lastDrawnFrameRef.current >= target;
       const hasPending = pendingMapRef.current.size > 0;
 
@@ -224,7 +247,7 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
       waitersRef.current.set(target, manual);
       await manual.promise;
     },
-    [],
+    [durationFrames],
   );
 
   (window as any).__frameScript = {

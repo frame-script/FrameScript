@@ -1,9 +1,6 @@
 pub mod ffmpeg;
 
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use chromiumoxide::{
     Browser, Handler, Page, cdp::browser_protocol::page::CaptureScreenshotFormat,
@@ -82,13 +79,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chunk = total_frames / (workers - 1).max(1);
 
     //let file = format!("file://{}", canonicalize("index.html")?.to_string_lossy());
-    let url = "http://localhost:5173/render";
+    let url = std::env::var("RENDER_DEV_SERVER_URL")
+        .unwrap_or_else(|_| "http://localhost:5174/render".to_string());
 
     let mut tasks = FuturesUnordered::new();
 
     static DIRECTORY: &'static str = "frames";
 
-    tokio::fs::remove_dir_all(DIRECTORY).await?;
+    tokio::fs::remove_dir_all(DIRECTORY).await.ok();
     tokio::fs::create_dir(DIRECTORY).await?;
 
     let start = Instant::now();
@@ -100,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let encode_clone = encode.clone();
         let preset_clone = preset.clone();
 
+        let page_url = url.clone();
         tasks.push(tokio::spawn(async move {
             let (mut browser, mut handler) = spawn_browser_instance(worker_id, width, height)
                 .await
@@ -122,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .unwrap();
 
-            let page = browser.new_page(url).await.unwrap();
+            let page = browser.new_page(page_url).await.unwrap();
             page.wait_for_navigation().await.unwrap();
 
             for frame in start..end {

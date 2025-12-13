@@ -3,7 +3,7 @@ pub mod ffmpeg;
 pub mod future;
 pub mod util;
 
-use std::{net::SocketAddr, ops::Bound};
+use std::{net::SocketAddr, ops::Bound, sync::Arc};
 
 use axum::{
     Router,
@@ -26,7 +26,7 @@ use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 use crate::{
-    decoder::DECODER,
+    decoder::{generate_empty_frame, DECODER},
     ffmpeg::{probe_video_duration_ms, probe_video_fps},
     util::resolve_path_to_string,
 };
@@ -308,18 +308,30 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
 
                 let width = req.width;
                 let height = req.height;
-                let frame_index = req.frame;
+                let requested_frame = req.frame;
 
                 let path = resolve_path_to_string(&req.video).unwrap_or_default();
 
                 let decoder = DECODER.decoder(path, width, height).await;
-                let frame_rgba = decoder.get_frame(frame_index).await;
+                let total_frames = decoder.total_frames();
+                let out_of_range = total_frames
+                    .map(|t| t == 0 || requested_frame as usize >= t)
+                    .unwrap_or(false);
+                let target_frame = total_frames
+                    .map(|t| requested_frame.min(t.saturating_sub(1) as u32))
+                    .unwrap_or(requested_frame);
+
+                let frame_rgba: Arc<Vec<u8>> = if out_of_range {
+                    Arc::new(generate_empty_frame(width, height))
+                } else {
+                    decoder.get_frame(target_frame).await
+                };
 
                 // into [width][height][frame_index][rgba...] packet
                 let mut packet = Vec::with_capacity(12 + frame_rgba.len());
                 packet.extend_from_slice(&width.to_le_bytes());
                 packet.extend_from_slice(&height.to_le_bytes());
-                packet.extend_from_slice(&frame_index.to_le_bytes());
+                packet.extend_from_slice(&target_frame.to_le_bytes());
                 packet.extend_from_slice(&frame_rgba);
 
                 let bytes = Bytes::from(packet);

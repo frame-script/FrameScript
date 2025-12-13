@@ -16,6 +16,7 @@ dist-render
 
 target
 frames
+bin
 
 # Editor directories and files
 .vscode/*

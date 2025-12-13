@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    port: 5174,
+    strictPort: true,
+  },
   build: {
     outDir: "dist-render",
     rollupOptions: {
