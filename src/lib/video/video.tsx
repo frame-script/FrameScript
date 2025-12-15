@@ -132,7 +132,6 @@ const VideoCanvas = ({ video, style }: VideoProps) => {
   const baseStyle: CSSProperties = {
     width: 640,
     height: 360,
-    border: "1px solid #444",
     backgroundColor: "#000",
   }
 

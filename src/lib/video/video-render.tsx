@@ -265,7 +265,7 @@ export const VideoCanvasRender = ({ video, style }: VideoProps) => {
   const baseStyle: CSSProperties = {
     width: "100%",
     height: "100%",
-    border: "1px solid #444",
+    border: "0px",
     backgroundColor: "#000",
     display: "block",
   };
