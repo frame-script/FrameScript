@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { PROJECT_SETTINGS } from "../../project/project";
-import { useCurrentFrame } from "../lib/frame";
-import { useProvideClipDuration } from "../lib/clip";
-import { createManualPromise, type ManualPromise } from "../util/promise";
+import { PROJECT_SETTINGS } from "../../../project/project";
+import { useCurrentFrame } from "../frame";
+import { useProvideClipDuration } from "../clip";
+import { createManualPromise, type ManualPromise } from "../../util/promise";
 import { normalizeVideo, video_fps, video_length, type VideoProps } from "./video";
 
 // Track pending frame draws so headless callers can await completion.

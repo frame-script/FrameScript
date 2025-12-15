@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef } from "react";
-import { useCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame";
-import { PROJECT_SETTINGS } from "../../project/project";
-import { useIsPlaying, useIsRender } from "../StudioApp";
-import { useClipActive, useClipStart, useProvideClipDuration } from "../lib/clip";
+import { useCurrentFrame, useSetGlobalCurrentFrame } from "../frame";
+import { PROJECT_SETTINGS } from "../../../project/project";
+import { useIsPlaying, useIsRender } from "../../StudioApp";
+import { useClipActive, useClipStart, useProvideClipDuration } from "../clip";
 import { VideoCanvasRender } from "./video-render";
 
 export type Video = {

@@ -1,8 +1,8 @@
-import { Video } from "../src/gpu/video"
 import { Clip, ClipSequence } from "../src/lib/clip"
 import { seconds, useCurrentFrame } from "../src/lib/frame"
 import { Project, type ProjectSettings } from "../src/lib/project"
 import { TimeLine } from "../src/lib/timeline"
+import { Video } from "../src/lib/video/video"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
     name: "test-project",
