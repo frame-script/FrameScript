@@ -7,6 +7,7 @@ type Progress = {
 
 export const RenderProgressPage = () => {
   const [progress, setProgress] = useState<Progress>({ completed: 0, total: 0 });
+  const isCompleted = progress.total > 0 && progress.completed >= progress.total;
 
   useEffect(() => {
     let cancelled = false;
@@ -86,8 +87,29 @@ export const RenderProgressPage = () => {
           />
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#cbd5e1" }}>
-          {progress.completed} / {progress.total} frames
+          {isCompleted ? "Completed!" : `${progress.completed} / ${progress.total} frames`}
         </div>
+      </div>
+      <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          disabled={!isCompleted}
+          onClick={() => window.close()}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: "1px solid #1f2937",
+            background: isCompleted ? "#2563eb" : "#1f2937",
+            color: isCompleted ? "#f8fafc" : "#9ca3af",
+            cursor: isCompleted ? "pointer" : "not-allowed",
+            minWidth: 100,
+            fontWeight: 600,
+            boxShadow: isCompleted ? "0 6px 14px rgba(0,0,0,0.25)" : "none",
+            transition: "background 120ms ease, color 120ms ease, box-shadow 120ms ease",
+          }}
+        >
+          Close
+        </button>
       </div>
     </div>
   );

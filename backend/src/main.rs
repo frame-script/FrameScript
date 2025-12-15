@@ -72,6 +72,7 @@ struct ProgressResponse {
 
 static RENDER_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOTAL: AtomicUsize = AtomicUsize::new(0);
+static RENDER_CANCEL: AtomicUsize = AtomicUsize::new(0);
 
 #[tokio::main]
 async fn main() {

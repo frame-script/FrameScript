@@ -296,7 +296,7 @@ function createRenderProgressWindow() {
 
   renderProgressWindow = new BrowserWindow({
     width: 420,
-    height: 220,
+    height: 280,
     resizable: false,
     minimizable: false,
     maximizable: false,
