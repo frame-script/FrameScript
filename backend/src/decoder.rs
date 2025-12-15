@@ -52,6 +52,13 @@ pub fn set_max_cache_size(bytes: usize) {
     MAX_CACHE_SIZE.store(bytes.max(1024 * 1024), Ordering::Relaxed);
 }
 
+pub fn get_cache_usage() -> (usize, usize) {
+    (
+        ENTIRE_CACHE_SIZE.load(Ordering::Relaxed),
+        MAX_CACHE_SIZE.load(Ordering::Relaxed),
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DecoderKey {
     pub path: String,

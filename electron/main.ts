@@ -19,6 +19,7 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendHealthyPromise: Promise<void> | null = null;
 let renderSettingsWindow: BrowserWindow | null = null;
+let renderProgressWindow: BrowserWindow | null = null;
 let renderChild: ChildProcess | null = null;
 
 type RenderStartPayload = {
@@ -124,6 +125,15 @@ function resolveRenderSettingsUrl() {
 
   const indexPath = path.join(__dirname, "../dist/index.html");
   return { file: indexPath, hash: "render-settings" } as const;
+}
+
+function resolveRenderProgressUrl() {
+  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+    return `${process.env.VITE_DEV_SERVER_URL}/#/render-progress`;
+  }
+
+  const indexPath = path.join(__dirname, "../dist/index.html");
+  return { file: indexPath, hash: "render-progress" } as const;
 }
 
 function resolveRenderPreloadPath() {
@@ -278,6 +288,43 @@ function createRenderSettingsWindow() {
   });
 }
 
+function createRenderProgressWindow() {
+  if (renderProgressWindow && !renderProgressWindow.isDestroyed()) {
+    renderProgressWindow.focus();
+    return;
+  }
+
+  renderProgressWindow = new BrowserWindow({
+    width: 420,
+    height: 220,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    backgroundColor: "#0b1221",
+    title: "Render Progress",
+    parent: mainWindow ?? undefined,
+    modal: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  renderProgressWindow.setMenu(null);
+  renderProgressWindow.setMenuBarVisibility(false);
+
+  const target = resolveRenderProgressUrl();
+  if (typeof target === "string") {
+    void renderProgressWindow.loadURL(target);
+  } else {
+    void renderProgressWindow.loadFile(target.file, { hash: target.hash });
+  }
+
+  renderProgressWindow.on("closed", () => {
+    renderProgressWindow = null;
+  });
+}
+
 function setupRenderIpc() {
   ipcMain.handle("render:getPlatform", () => {
     if (isDev) {
@@ -291,6 +338,10 @@ function setupRenderIpc() {
     }
     const info = getRenderBinaryInfo();
     return { platform: info.platformKey, binPath: info.binPath, binName: info.binName, isDev: false };
+  });
+
+  ipcMain.handle("render:openProgress", () => {
+    createRenderProgressWindow();
   });
 
   ipcMain.handle("render:start", (_event, payload: RenderStartPayload) => {

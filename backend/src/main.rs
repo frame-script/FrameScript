@@ -24,6 +24,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
 use tracing::{error, info};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{
     decoder::{DECODER, DecoderKey, set_max_cache_size},
@@ -57,6 +58,21 @@ struct CacheSizeRequest {
     gib: usize,
 }
 
+#[derive(Deserialize)]
+struct ProgressRequest {
+    completed: Option<usize>,
+    total: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct ProgressResponse {
+    completed: usize,
+    total: usize,
+}
+
+static RENDER_COMPLETED: AtomicUsize = AtomicUsize::new(0);
+static RENDER_TOTAL: AtomicUsize = AtomicUsize::new(0);
+
 #[tokio::main]
 async fn main() {
     unsafe {
@@ -77,6 +93,12 @@ async fn main() {
         .route(
             "/set_cache_size",
             post(set_cache_size_handler).options(options_handler),
+        )
+        .route(
+            "/render_progress",
+            post(set_progress_handler)
+                .get(get_progress_handler)
+                .options(options_handler),
         )
         .route("/healthz", get(healthz_handler).options(options_handler))
         .with_state(app_state);
@@ -379,6 +401,35 @@ async fn set_cache_size_handler(
     set_max_cache_size(bytes);
 
     (headers, StatusCode::OK)
+}
+
+async fn set_progress_handler(
+    State(_state): State<AppState>,
+    Json(payload): Json<ProgressRequest>,
+) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+
+    if let Some(total) = payload.total {
+        RENDER_TOTAL.store(total, Ordering::Relaxed);
+    }
+    if let Some(completed) = payload.completed {
+        RENDER_COMPLETED.store(completed.min(RENDER_TOTAL.load(Ordering::Relaxed)), Ordering::Relaxed);
+    }
+
+    (headers, StatusCode::OK)
+}
+
+async fn get_progress_handler(State(_state): State<AppState>) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+
+    let response = ProgressResponse {
+        completed: RENDER_COMPLETED.load(Ordering::Relaxed),
+        total: RENDER_TOTAL.load(Ordering::Relaxed),
+    };
+
+    (headers, Json(response))
 }
 
 fn apply_cors(headers: &mut HeaderMap) {

@@ -11,3 +11,5 @@ futures = "0.3.31"
 tempfile = "3.23.0"
 num_threads = "0.1.7"
 ffmpeg-next = "8.0.0"
+reqwest = { version = "0.11", features = [ "json", "rustls-tls" ] }
+serde = { version = "1", features = [ "derive" ] }

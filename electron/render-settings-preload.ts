@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld("renderAPI", {
   getPlatform: () => ipcRenderer.invoke("render:getPlatform"),
   startRender: (payload: RenderStartPayload) =>
     ipcRenderer.invoke("render:start", payload),
+  openProgress: () => ipcRenderer.invoke("render:openProgress"),
 });

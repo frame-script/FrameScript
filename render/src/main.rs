@@ -11,8 +11,18 @@ use futures::{StreamExt, stream::FuturesUnordered};
 use chromiumoxide::browser::BrowserConfig;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use reqwest::Client;
+use serde::Serialize;
 
 use crate::ffmpeg::SegmentWriter;
+
+#[derive(Serialize)]
+struct ProgressPayload {
+    completed: usize,
+    total: usize,
+}
 
 async fn spawn_browser_instance(
     profile_id: usize,
@@ -77,6 +87,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let preset = splited[6].to_string();
 
     let chunk = total_frames / (workers - 1).max(1);
+    let progress_url = std::env::var("RENDER_PROGRESS_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:3000/render_progress".to_string());
+    let progress_client = Client::new();
+    let completed = Arc::new(AtomicUsize::new(0));
+    let total_frames_usize = total_frames;
+
+    // initialize progress
+    let _ = progress_client
+        .post(&progress_url)
+        .json(&ProgressPayload {
+            completed: 0,
+            total: total_frames_usize,
+        })
+        .send()
+        .await;
 
     //let file = format!("file://{}", canonicalize("index.html")?.to_string_lossy());
     let url = std::env::var("RENDER_DEV_SERVER_URL")
@@ -99,6 +124,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let preset_clone = preset.clone();
 
         let page_url = url.clone();
+        let progress_client = progress_client.clone();
+        let progress_url = progress_url.clone();
+        let completed_counter = completed.clone();
         tasks.push(tokio::spawn(async move {
             let (mut browser, mut handler) = spawn_browser_instance(worker_id, width, height)
                 .await
@@ -158,6 +186,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap();
 
                 writer.write_png_frame(&bytes).await.unwrap();
+
+                let current = completed_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if current % 10 == 0 || current == total_frames {
+                    let _ = progress_client
+                        .post(&progress_url)
+                        .json(&ProgressPayload {
+                            completed: current,
+                            total: total_frames,
+                        })
+                        .send()
+                        .await;
+                }
             }
 
             writer.finish().await.unwrap();
@@ -178,6 +218,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     crate::ffmpeg::concat_segments_mp4(segs, &PathBuf::from("frames/output.mp4")).await?;
+
+    let final_completed = completed.load(Ordering::Relaxed);
+    let _ = progress_client
+        .post(&progress_url)
+        .json(&ProgressPayload {
+            completed: final_completed,
+            total: total_frames_usize,
+        })
+        .send()
+        .await;
 
     println!("TOTAL : {}[ms]", start.elapsed().as_millis());
 

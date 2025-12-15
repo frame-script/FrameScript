@@ -119,6 +119,15 @@ export const RenderSettingsPage = () => {
       } catch (_error) {
         // ignore; still try to start render
       }
+      try {
+        await fetch("http://127.0.0.1:3000/render_progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ completed: 0, total: Number(frames) }),
+        });
+      } catch (_error) {
+        // ignore
+      }
       const result = await window.renderAPI.startRender({
         width: Number(width),
         height: Number(height),
@@ -128,6 +137,8 @@ export const RenderSettingsPage = () => {
         encode,
         preset,
       });
+      void window.renderAPI?.openProgress();
+      window.close();
       setStatus(`Spawned: ${result.cmd}${result.pid ? ` (pid=${result.pid})` : ""}`);
     } catch (error: unknown) {
       console.error(error);
