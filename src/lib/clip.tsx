@@ -1,7 +1,8 @@
-import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useState } from "react"
+import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useRef, useState } from "react"
 import { useGlobalCurrentFrame } from "./frame"
 import { useClipVisibility, useTimelineRegistration } from "./timeline"
 import { registerClipGlobal, unregisterClipGlobal } from "./timeline"
+import { PROJECT_SETTINGS } from "../../project/project"
 
 type ClipStaticProps = {
   start: number
@@ -109,6 +110,7 @@ export const Clip = ({
   onDurationChange,
 }: ClipProps) => {
   const [frames, setFrames] = useState<number>(Math.max(0, duration ?? 0))
+  const animRootRef = useRef<HTMLDivElement | null>(null)
 
   const handleReport = useCallback(
     (value: number) => {
@@ -134,10 +136,29 @@ export const Clip = ({
 
   const end = start + Math.max(0, frames) - 1
 
+  useEffect(() => {
+    const root = animRootRef.current
+    if (!root || frames <= 0) return
+    const durationMs = (frames / PROJECT_SETTINGS.fps) * 1000
+    const targets: Element[] = [root, ...Array.from(root.querySelectorAll("*"))]
+    for (const el of targets) {
+      const animations = el.getAnimations()
+      for (const anim of animations) {
+        try {
+          anim.effect?.updateTiming({ duration: durationMs })
+        } catch {
+          // ignore errors from read-only animations
+        }
+      }
+    }
+  }, [frames])
+
   return (
     <DurationReportContext.Provider value={handleReport}>
       <ClipStatic start={start} end={end < start ? start : end} label={label} laneId={laneId}>
-        {children}
+        <div ref={animRootRef} style={{ display: "contents" }}>
+          {children}
+        </div>
       </ClipStatic>
     </DurationReportContext.Provider>
   )
