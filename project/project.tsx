@@ -1,56 +1,52 @@
 import { Clip, ClipSequence } from "../src/lib/clip"
-import { seconds, useCurrentFrame } from "../src/lib/frame"
+import { seconds } from "../src/lib/frame"
 import { FillFrame } from "../src/lib/layout/fill-frame"
 import { Project, type ProjectSettings } from "../src/lib/project"
-import { Sound } from "../src/lib/sound/sound"
 import { TimeLine } from "../src/lib/timeline"
-import { Video } from "../src/lib/video/video"
+import { THEME } from "./theme"
+import { GlobalStyles } from "./styles"
+import { IntroScene } from "./scenes/intro"
+import { FeaturesScene } from "./scenes/features"
+import { TimelineScene } from "./scenes/timeline"
+import { OutroScene } from "./scenes/outro"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
-    name: "test-project",
-    width: 1920,
-    height: 1080,
-    fps: 60,
+  name: "framescript-mog",
+  width: 1920,
+  height: 1080,
+  fps: 60,
 }
+
+const intro = seconds(2.5)
+const features = seconds(3.5)
+const timeline = seconds(3.5)
+const outro = seconds(2.5)
 
 export const PROJECT = () => {
-    return (
-        <Project>
-            <TimeLine>
-                <ClipSequence>
-                    <Clip duration={seconds(1)}>
-                        <Text />
-                    </Clip>
-                    <Clip>
-                        <FillFrame>
-                            <Video
-                                video={"~/Videos/music.mp4"}
-                                trim={{ from: seconds(1), duration: seconds(5) }}
-                                style={{ width: "100%", height: "100%" }}
-                            />
-                        </FillFrame>
-                        <FillFrame>
-                            <Text />
-                        </FillFrame>
-                    </Clip>
-                </ClipSequence>
-                <ClipSequence>
-                    <Clip>
-                        <Sound
-                            sound={"~/Videos/music.mp3"}
-                            trim={{ trimStart: seconds(1), trimEnd: seconds(1) }}
-                        />
-                    </Clip>
-                </ClipSequence>
-            </TimeLine>
-        </Project>
-    )
+  return (
+    <Project>
+      <GlobalStyles />
+      <TimeLine>
+        <FillFrame>
+          <div style={{ position: "absolute", inset: 0, background: THEME.bg0 }} />
+        </FillFrame>
+
+        <ClipSequence>
+          <Clip duration={intro} label="Intro">
+            <IntroScene durationFrames={Math.round(intro)} />
+          </Clip>
+          <Clip duration={features} label="Features">
+            <FeaturesScene durationFrames={Math.round(features)} />
+          </Clip>
+          <Clip duration={timeline} label="Timeline">
+            <TimelineScene durationFrames={Math.round(timeline)} />
+          </Clip>
+          <Clip duration={outro} label="Outro">
+            <OutroScene durationFrames={Math.round(outro)} />
+          </Clip>
+        </ClipSequence>
+      </TimeLine>
+    </Project>
+  )
 }
 
-const Text = ({ text }: { text?: string }) => {
-    const currentFrame = useCurrentFrame()
-
-    return (
-        <p style={{ color: "white" }}>Frame: {currentFrame} {text}</p>
-    )
-}

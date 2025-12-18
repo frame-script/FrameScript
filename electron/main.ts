@@ -385,6 +385,46 @@ function setupMenu() {
         { role: "quit" },
       ],
     },
+    {
+      label: "Debug",
+      submenu: [
+        {
+          label: "DevTools",
+          accelerator: "CmdOrCtrl+Alt+I",
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            if (!win) return;
+            win.webContents.openDevTools({ mode: "detach" });
+          },
+        },
+        {
+          label: "Toggle DevTools",
+          accelerator: "CmdOrCtrl+Shift+I",
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            if (!win) return;
+            win.webContents.toggleDevTools();
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            win?.webContents.reload();
+          },
+        },
+        {
+          label: "Force Reload",
+          accelerator: "CmdOrCtrl+Shift+R",
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            win?.webContents.reloadIgnoringCache();
+          },
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);

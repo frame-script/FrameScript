@@ -7,7 +7,15 @@ type CurrentFrame = {
   setCurrentFrame: (frame: number) => void
 }
 
-const CurrentFrameContext = React.createContext<CurrentFrame | null>(null)
+const CURRENT_FRAME_CONTEXT_KEY = "__frameScript_CurrentFrameContext"
+const CurrentFrameContext: React.Context<CurrentFrame | null> = (() => {
+  const g = globalThis as unknown as Record<string, unknown>
+  const existing = g[CURRENT_FRAME_CONTEXT_KEY] as React.Context<CurrentFrame | null> | undefined
+  if (existing) return existing
+  const created = React.createContext<CurrentFrame | null>(null)
+  g[CURRENT_FRAME_CONTEXT_KEY] = created
+  return created
+})()
 
 export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentFrame, setCurrentFrame] = useState(0)
@@ -40,7 +48,7 @@ export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ chil
 
 export const useCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext);
-  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>");
 
   const clipStart = useClipStart()
   if (clipStart !== null) {
@@ -52,13 +60,13 @@ export const useCurrentFrame = () => {
 
 export const useGlobalCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext);
-  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>");
   return ctx.currentFrame;
 }
 
 export const useSetGlobalCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext)
-  if (!ctx) throw new Error("useCurrentFrame must be used inside <Timeline>");
+  if (!ctx) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>");
   return ctx.setCurrentFrame;
 }
 

@@ -219,7 +219,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let script = format!(
                     r#"
                     (async () => {{
-                      await window.__frameScript.waitCanvasFrame({});
+                      const api = window.__frameScript;
+                      if (api && typeof api.waitCanvasFrame === "function") {{
+                        try {{
+                          await api.waitCanvasFrame({});
+                        }} catch (_e) {{
+                          // ignore
+                        }}
+                      }}
                     }})()
                 "#,
                     frame
