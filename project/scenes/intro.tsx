@@ -1,12 +1,14 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { useCurrentFrame } from "../../src/lib/frame"
 import { easeInOutCubic, easeOutExpo, fadeInOut, frameProgress, lerp } from "../../src/lib/anim"
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { THEME } from "../theme"
 import { Pill } from "../components/panels"
+import { MOG } from "../mog"
 
 export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
   const f = useCurrentFrame()
+  const contentScale = MOG.contentScale
 
   const appear = frameProgress(f, 0, 28, easeOutExpo)
   const settle = frameProgress(f, 8, 48, easeOutExpo)
@@ -67,11 +69,18 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: 120,
+          padding: MOG.padding,
           opacity,
         }}
       >
-        <div style={{ maxWidth: 1180, width: "100%" }}>
+        <div
+          style={{
+            maxWidth: 1180 / contentScale,
+            width: "100%",
+            transform: `translateY(${MOG.introOffsetY}px) scale(${contentScale})`,
+            transformOrigin: "top center",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Pill style={{ color: THEME.text }}>
               <span style={{ width: 8, height: 8, borderRadius: 99, background: THEME.accent }} />
@@ -96,7 +105,7 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
             <div
               className="mg-title"
               style={{
-                fontSize: 92,
+                fontSize: 120,
                 fontWeight: 800,
                 lineHeight: 1.0,
                 color: THEME.text,
@@ -108,7 +117,7 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
             <div
               style={{
                 marginTop: 12,
-                fontSize: 20,
+                fontSize: 26,
                 lineHeight: 1.5,
                 color: THEME.muted,
                 maxWidth: 880,
@@ -119,7 +128,7 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
             </div>
           </div>
 
-          <div style={{ marginTop: 34, position: "relative", height: 18 }}>
+          <div style={{ marginTop: 34, position: "relative", height: 26 }}>
             <div
               style={{
                 position: "absolute",
@@ -132,8 +141,8 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
             <div
               style={{
                 position: "absolute",
-                top: -26,
-                bottom: -26,
+                top: -34,
+                bottom: -34,
                 width: "35%",
                 left: 0,
                 background: "linear-gradient(90deg, transparent, rgba(34,211,238,0.55), transparent)",
@@ -144,7 +153,7 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
             <div
               style={{
                 position: "absolute",
-                inset: 3,
+                inset: 4,
                 borderRadius: 999,
                 width: `${lerp(0.12, 1, frameProgress(f, 10, durationFrames - 22, easeInOutCubic)) * 100}%`,
                 background: `linear-gradient(90deg, ${THEME.accent}, ${THEME.accent2})`,
@@ -158,4 +167,3 @@ export const IntroScene = ({ durationFrames }: { durationFrames: number }) => {
     </FillFrame>
   )
 }
-

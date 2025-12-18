@@ -4,7 +4,7 @@ import { useGlobalCurrentFrame } from "../frame"
 import { useClipActive, useClipRange, useProvideClipDuration } from "../clip"
 import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan"
 import { fetchAudioBuffer } from "../audio"
-import { useIsPlaying, useIsRender } from "../../StudioApp"
+import { useIsPlaying, useIsRender } from "../studio-state"
 import type { Trim } from "../trim"
 import { resolveTrimFrames } from "../trim"
 

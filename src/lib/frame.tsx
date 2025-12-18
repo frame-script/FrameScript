@@ -1,6 +1,5 @@
 import React, { useContext, useEffect, useState } from "react"
 import { PROJECT_SETTINGS } from "../../project/project"
-import { useClipStart as useClipStart } from "./clip"
 
 type CurrentFrame = {
   currentFrame: number
@@ -8,6 +7,7 @@ type CurrentFrame = {
 }
 
 const CURRENT_FRAME_CONTEXT_KEY = "__frameScript_CurrentFrameContext"
+const CLIP_START_CONTEXT_KEY = "__frameScript_ClipStartContext"
 const CurrentFrameContext: React.Context<CurrentFrame | null> = (() => {
   const g = globalThis as unknown as Record<string, unknown>
   const existing = g[CURRENT_FRAME_CONTEXT_KEY] as React.Context<CurrentFrame | null> | undefined
@@ -16,6 +16,19 @@ const CurrentFrameContext: React.Context<CurrentFrame | null> = (() => {
   g[CURRENT_FRAME_CONTEXT_KEY] = created
   return created
 })()
+
+const ClipStartContext: React.Context<number | null> = (() => {
+  const g = globalThis as unknown as Record<string, unknown>
+  const existing = g[CLIP_START_CONTEXT_KEY] as React.Context<number | null> | undefined
+  if (existing) return existing
+  const created = React.createContext<number | null>(null)
+  g[CLIP_START_CONTEXT_KEY] = created
+  return created
+})()
+
+export const WithClipStart: React.FC<{ start: number; children: React.ReactNode }> = ({ start, children }) => {
+  return <ClipStartContext value={start}>{children}</ClipStartContext>
+}
 
 export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentFrame, setCurrentFrame] = useState(0)
@@ -50,12 +63,8 @@ export const useCurrentFrame = () => {
   const ctx = useContext(CurrentFrameContext);
   if (!ctx) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>");
 
-  const clipStart = useClipStart()
-  if (clipStart !== null) {
-    return Math.max(ctx.currentFrame - clipStart, 0)
-  }
-
-  return ctx.currentFrame;
+  const clipStart = useContext(ClipStartContext) ?? 0
+  return Math.max(ctx.currentFrame - clipStart, 0)
 }
 
 export const useGlobalCurrentFrame = () => {

@@ -1,18 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PROJECT, PROJECT_SETTINGS } from "../project/project";
 import { WithCurrentFrame } from "./lib/frame"
 import { TimelineUI } from "./ui/timeline";
 import { ClipVisibilityPanel } from "./ui/clip-visibility";
 import { Store } from "./util/state";
+import { StudioStateContext } from "./lib/studio-state"
 
-type StudioState = {
-  isPlaying: boolean
-  setIsPlaying: (flag: boolean) => void
-  isPlayingStore: Store<boolean>
-  isRender: boolean
-}
-
-export const StudioStateContext = createContext<StudioState | null>(null)
+// Back-compat re-exports (avoid HMR issues if some modules still import these from StudioApp).
+export { StudioStateContext, useIsPlaying, useIsPlayingStore, useIsRender, useSetIsPlaying } from "./lib/studio-state"
 
 export const StudioApp = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,18 +15,15 @@ export const StudioApp = () => {
   const previewRef = useRef<HTMLDivElement>(null);
   const [verticalRatio, setVerticalRatio] = useState(0.6); // top area height ratio
   const [horizontalRatio, setHorizontalRatio] = useState(0.3); // clips width ratio within top area
-  const previewAspect = PROJECT_SETTINGS.width && PROJECT_SETTINGS.height
-    ? `${PROJECT_SETTINGS.width} / ${PROJECT_SETTINGS.height}`
-    : "16 / 9";
-  const previewAspectValue =
-    PROJECT_SETTINGS.width && PROJECT_SETTINGS.height
-      ? PROJECT_SETTINGS.height / PROJECT_SETTINGS.width
-      : 9 / 16;
+  const projectWidth = PROJECT_SETTINGS.width || 1920
+  const projectHeight = PROJECT_SETTINGS.height || 1080
+  const previewAspect = `${projectWidth} / ${projectHeight}`
+  const previewAspectValue = projectHeight / projectWidth
   const previewMinWidth = 320;
   const previewMinHeight = previewMinWidth * previewAspectValue;
   const timelineMinHeight = 200;
-  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
-  const hasPreviewSize = previewSize.width > 0 && previewSize.height > 0;
+  const [previewViewport, setPreviewViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const hasPreviewViewport = previewViewport.width > 0 && previewViewport.height > 0;
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -87,28 +79,33 @@ export const StudioApp = () => {
     if (!target) return;
 
     const update = (width: number, height: number) => {
-      const aspect = previewAspectValue;
-      let w = width;
-      let h = width * aspect;
-      if (h > height) {
-        h = height;
-        w = height / aspect;
-      }
-      setPreviewSize({ width: w, height: h });
-    };
+      setPreviewViewport({ width, height });
+    }
 
-    const rect = target.getBoundingClientRect();
-    update(rect.width, rect.height);
+    update(target.clientWidth, target.clientHeight)
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        update(width, height);
+        const { width, height } = entry.contentRect
+        update(width, height)
       }
-    });
+    })
     observer.observe(target);
     return () => observer.disconnect();
   }, [previewAspectValue]);
+
+  const previewScale = useCallback(() => {
+    const vw = previewViewport.width
+    const vh = previewViewport.height
+    if (vw <= 0 || vh <= 0) return 0
+    const sx = vw / projectWidth
+    const sy = vh / projectHeight
+    return Math.max(0.01, Math.min(sx, sy))
+  }, [previewViewport.height, previewViewport.width, projectHeight, projectWidth])
+
+  const scale = previewScale()
+  const scaledWidth = projectWidth * scale
+  const scaledHeight = projectHeight * scale
 
 
   const isPlayingStoreRef = useRef<Store<boolean> | null>(null);
@@ -191,19 +188,28 @@ export const StudioApp = () => {
                 >
                   <div
                     style={{
-                      width: hasPreviewSize ? previewSize.width : "100%",
-                      height: hasPreviewSize ? previewSize.height : "auto",
-                      maxWidth: "100%",
-                      maxHeight: "100%",
+                      width: scaledWidth,
+                      height: scaledHeight,
+                      visibility: hasPreviewViewport ? "visible" : "hidden",
                       aspectRatio: previewAspect,
                       border: "1px solid #444",
                       borderRadius: 1,
                       overflow: "hidden",
                       backgroundColor: "#000",
                       boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+                      position: "relative",
                     }}
                   >
-                    <PROJECT />
+                    <div
+                      style={{
+                        width: projectWidth,
+                        height: projectHeight,
+                        transform: `scale(${scale})`,
+                        transformOrigin: "top left",
+                      }}
+                    >
+                      <PROJECT />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -231,27 +237,3 @@ export const StudioApp = () => {
     </StudioStateContext>
   );
 };
-
-export const useIsPlaying = () => {
-  const ctx = useContext(StudioStateContext);
-  if (!ctx) throw new Error("useIsPlaying must be used inside <StudioStateContext>");
-  return ctx.isPlaying;
-}
-
-export const useSetIsPlaying = () => {
-  const ctx = useContext(StudioStateContext);
-  if (!ctx) throw new Error("useSetIsPlaying must be used inside <StudioStateContext>");
-  return ctx.setIsPlaying;
-}
-
-export const useIsPlayingStore = () => {
-  const ctx = useContext(StudioStateContext);
-  if (!ctx) throw new Error("useIsPlayingStore must be used inside <StudioStateContext>");
-  return ctx.isPlayingStore;
-};
-
-export const useIsRender = () => {
-  const ctx = useContext(StudioStateContext);
-  if (!ctx) throw new Error("useIsRender must be used inside <StudioStateContext>");
-  return ctx.isRender;
-}

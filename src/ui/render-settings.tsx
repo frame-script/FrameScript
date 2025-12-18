@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PROJECT_SETTINGS } from "../../project/project";
 import { PROJECT } from "../../project/project";
-import { StudioStateContext } from "../StudioApp";
+import { StudioStateContext } from "../lib/studio-state";
 import { WithCurrentFrame } from "../lib/frame";
 import { useTimelineClips } from "../lib/timeline";
 import { Store } from "../util/state";

@@ -17,10 +17,10 @@ export const PROJECT_SETTINGS: ProjectSettings = {
   fps: 60,
 }
 
-const intro = seconds(2.5)
-const features = seconds(3.5)
-const timeline = seconds(3.5)
-const outro = seconds(2.5)
+const intro = seconds(3.5)
+const features = seconds(5.0)
+const timeline = seconds(5.0)
+const outro = seconds(3.5)
 
 export const PROJECT = () => {
   return (
@@ -49,4 +49,3 @@ export const PROJECT = () => {
     </Project>
   )
 }
-

@@ -1,18 +1,20 @@
-import React from "react"
 import { useCurrentFrame } from "../../src/lib/frame"
 import { easeInOutCubic, easeOutExpo, fadeInOut, frameProgress, lerp } from "../../src/lib/anim"
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { THEME } from "../theme"
 import { GlassPanel, Pill } from "../components/panels"
+import { MOG } from "../mog"
 
 export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
   const f = useCurrentFrame()
+  const contentScale = MOG.contentScale
   const opacity = fadeInOut(f, durationFrames, { in: 14, out: 18 })
   const inT = frameProgress(f, 0, 26, easeOutExpo)
   const outT = frameProgress(f, Math.max(0, durationFrames - 34), durationFrames - 1, easeInOutCubic)
 
   const y = lerp(18, 0, inT) + lerp(0, -10, outT)
   const scale = lerp(0.99, 1, inT) * lerp(1, 0.985, outT)
+  const finalScale = scale * contentScale
 
   return (
     <FillFrame>
@@ -33,12 +35,19 @@ export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
           inset: 0,
           display: "grid",
           placeItems: "center",
-          padding: 120,
+          padding: MOG.padding,
           opacity,
         }}
       >
-        <div style={{ transform: `translateY(${y}px) scale(${scale})`, maxWidth: 1100, width: "100%" }}>
-          <GlassPanel style={{ padding: 28, borderRadius: 20 }}>
+        <div
+          style={{
+            transform: `translateY(${y}px) scale(${finalScale})`,
+            transformOrigin: "center",
+            maxWidth: (1100 * 1.25) / contentScale,
+            width: "100%",
+          }}
+        >
+          <GlassPanel style={{ padding: 34, borderRadius: 20 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <Pill style={{ color: THEME.text }}>
                 <span style={{ width: 8, height: 8, borderRadius: 99, background: THEME.accent }} />
@@ -57,7 +66,7 @@ export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
               className="mg-title"
               style={{
                 marginTop: 18,
-                fontSize: 60,
+                fontSize: 78,
                 fontWeight: 900,
                 color: THEME.text,
                 letterSpacing: "-0.03em",
@@ -67,14 +76,17 @@ export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
               まずは、作ってみよう。
             </div>
 
-            <div style={{ marginTop: 10, color: THEME.muted, fontSize: 16, lineHeight: 1.55 }}>
-              `project/` を編集して、プレビューしながら仕上げる。書き出しはメニューから Render…。
+            <div style={{ marginTop: 12, color: THEME.muted, fontSize: 19, lineHeight: 1.55 }}>
+              `project/` を編集して、プレビューしながら仕上げる。
+            </div>
+            <div style={{ marginTop: 12, color: THEME.muted, fontSize: 19, lineHeight: 1.55 }}>
+              書き出しはメニューから Render…。
             </div>
 
             <div style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap" }}>
               <div
                 style={{
-                  padding: "10px 14px",
+                  padding: "12px 16px",
                   borderRadius: 12,
                   background: `linear-gradient(90deg, ${THEME.accent}, ${THEME.accent2})`,
                   color: "#06121f",
@@ -86,7 +98,7 @@ export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
               </div>
               <div
                 style={{
-                  padding: "10px 14px",
+                  padding: "12px 16px",
                   borderRadius: 12,
                   border: `1px solid ${THEME.border}`,
                   background: "rgba(15, 23, 42, 0.6)",
@@ -103,4 +115,3 @@ export const OutroScene = ({ durationFrames }: { durationFrames: number }) => {
     </FillFrame>
   )
 }
-

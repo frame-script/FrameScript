@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { useTimelineClips } from "../lib/timeline"
-import { useIsPlaying, useSetIsPlaying } from "../StudioApp"
+import { useIsPlaying, useSetIsPlaying } from "../lib/studio-state"
 
 const iconStyle: React.CSSProperties = {
   fontSize: 14,

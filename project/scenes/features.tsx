@@ -4,6 +4,7 @@ import { easeInOutCubic, easeOutCubic, fadeInOut, frameProgress, lerp, stagger }
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { THEME } from "../theme"
 import { GlassPanel, Pill } from "../components/panels"
+import { MOG } from "../mog"
 
 const FeatureCard = ({
   title,
@@ -20,8 +21,11 @@ const FeatureCard = ({
 }) => (
   <GlassPanel
     style={{
-      padding: 22,
-      minHeight: 168,
+      padding: 26,
+      minHeight: 210,
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
       position: "relative",
       overflow: "hidden",
       ...style,
@@ -38,8 +42,8 @@ const FeatureCard = ({
     <div style={{ position: "relative", display: "flex", gap: 14, alignItems: "flex-start" }}>
       <div
         style={{
-          width: 44,
-          height: 44,
+          width: 54,
+          height: 54,
           borderRadius: 12,
           display: "grid",
           placeItems: "center",
@@ -51,10 +55,10 @@ const FeatureCard = ({
         {icon}
       </div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: THEME.text, fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>
+        <div style={{ color: THEME.text, fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em" }}>
           {title}
         </div>
-        <div style={{ marginTop: 6, color: THEME.muted, fontSize: 14, lineHeight: 1.55 }}>
+        <div style={{ marginTop: 8, color: THEME.muted, fontSize: 16, lineHeight: 1.55 }}>
           {body}
         </div>
       </div>
@@ -84,6 +88,7 @@ const IconRocket = () => (
 
 export const FeaturesScene = ({ durationFrames }: { durationFrames: number }) => {
   const f = useCurrentFrame()
+  const contentScale = MOG.contentScale
   const opacity = fadeInOut(f, durationFrames, { in: 14, out: 16 })
 
   const headIn = frameProgress(f, 0, 24, easeOutCubic)
@@ -121,14 +126,21 @@ export const FeaturesScene = ({ durationFrames }: { durationFrames: number }) =>
       />
       <div style={{ position: "absolute", inset: 0, opacity: 0.18, animation: "mgScanline 1s ease-in-out infinite", background: "linear-gradient(180deg, transparent, rgba(34,211,238,0.25), transparent)" }} />
 
-      <div style={{ position: "absolute", inset: 0, padding: 120, opacity }}>
-        <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+      <div style={{ position: "absolute", inset: 0, padding: MOG.padding, opacity }}>
+        <div
+          style={{
+            maxWidth: 1240 / contentScale,
+            margin: "0 auto",
+            transform: `translateY(${MOG.featuresOffsetY}px) scale(${contentScale})`,
+            transformOrigin: "top center",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12, transform: `translateY(${headY}px)` }}>
             <Pill style={{ color: THEME.text }}>
               <span style={{ width: 8, height: 8, borderRadius: 99, background: THEME.accent2 }} />
               What you can do
             </Pill>
-            <div style={{ color: THEME.muted, fontSize: 14 }}>
+            <div style={{ color: THEME.muted, fontSize: 16 }}>
               Build motion graphics with the same stack you ship apps with
             </div>
           </div>
@@ -137,7 +149,7 @@ export const FeaturesScene = ({ durationFrames }: { durationFrames: number }) =>
             className="mg-title"
             style={{
               marginTop: 22,
-              fontSize: 56,
+              fontSize: 72,
               fontWeight: 850,
               color: THEME.text,
               letterSpacing: "-0.02em",
@@ -151,10 +163,18 @@ export const FeaturesScene = ({ durationFrames }: { durationFrames: number }) =>
               const start = stagger(i, 10, 10)
               const t = frameProgress(f, start, start + 26, easeOutCubic)
               const y = lerp(22, 0, t)
-              const s = lerp(0.98, 1, t)
+              const cardScale = lerp(0.98, 1, t)
               const a = frameProgress(f, start, start + 18, easeInOutCubic)
               return (
-                <div key={card.title} style={{ transform: `translateY(${y}px) scale(${s})`, opacity: a }}>
+                <div
+                  key={card.title}
+                  style={{
+                    transform: `translateY(${y}px) scale(${cardScale})`,
+                    opacity: a,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
                   <FeatureCard {...card} />
                 </div>
               )
@@ -165,4 +185,3 @@ export const FeaturesScene = ({ durationFrames }: { durationFrames: number }) =>
     </FillFrame>
   )
 }
-

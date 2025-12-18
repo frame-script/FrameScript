@@ -1,5 +1,5 @@
-import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react"
-import { useGlobalCurrentFrame } from "./frame"
+import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { WithClipStart, useCurrentFrame, useGlobalCurrentFrame } from "./frame"
 import { useClipVisibility, useTimelineRegistration } from "./timeline"
 import { registerClipGlobal, unregisterClipGlobal } from "./timeline"
 import { PROJECT_SETTINGS } from "../../project/project"
@@ -67,9 +67,11 @@ export const ClipStatic = ({ start, end, label, children, laneId }: ClipStaticPr
 
   return (
     <ClipContext.Provider value={{ id, baseStart: clampedStart, baseEnd: clampedEnd, depth, active: isActive }}>
-      <div style={{ display: isActive ? "contents" : "none" }}>
-        {children}
-      </div>
+      <WithClipStart start={clampedStart}>
+        <div style={{ display: isActive ? "contents" : "none" }}>
+          {children}
+        </div>
+      </WithClipStart>
     </ClipContext.Provider>
   )
 }
@@ -110,6 +112,54 @@ type ClipProps = {
   onDurationChange?: (frames: number) => void
 }
 
+const ClipAnimationSync = ({ children }: { children: React.ReactNode }) => {
+  const localFrame = useCurrentFrame()
+  const active = useClipActive()
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useLayoutEffect(() => {
+    if (!active) return
+
+    const root = rootRef.current
+    if (!root) return
+
+    const fps = PROJECT_SETTINGS.fps
+    if (fps <= 0) return
+
+    const timeMs = (localFrame / fps) * 1000
+
+    const animations: Animation[] = []
+    // Collect animations under this clip, but don't trample nested clips that have their own clock.
+    // (Nested clips register their own root wrapper with `data-framescript-clip-root`.)
+    const ATTR = "data-framescript-clip-root"
+    const stack: Element[] = [root]
+    while (stack.length > 0) {
+      const el = stack.pop()!
+      animations.push(...el.getAnimations())
+      for (const child of Array.from(el.children)) {
+        if (child !== root && child.hasAttribute(ATTR)) continue
+        stack.push(child)
+      }
+    }
+
+    for (const anim of animations) {
+      try {
+        // Drive CSS animations by timeline scrubbing rather than wall-clock time.
+        if (anim.playState !== "paused") anim.pause()
+        anim.currentTime = timeMs
+      } catch {
+        // Ignore read-only / detached animations.
+      }
+    }
+  }, [active, localFrame])
+
+  return (
+    <div ref={rootRef} style={{ display: "contents" }} data-framescript-clip-root="1">
+      {children}
+    </div>
+  )
+}
+
 // Clip (duration-aware): computes its duration from children via useProvideClipDuration or duration prop.
 export const Clip = ({
   start = 0,
@@ -120,7 +170,6 @@ export const Clip = ({
   onDurationChange,
 }: ClipProps) => {
   const [frames, setFrames] = useState<number>(Math.max(0, duration ?? 0))
-  const animRootRef = useRef<HTMLDivElement | null>(null)
 
   const handleReport = useCallback(
     (value: number) => {
@@ -146,29 +195,10 @@ export const Clip = ({
 
   const end = start + Math.max(0, frames) - 1
 
-  useEffect(() => {
-    const root = animRootRef.current
-    if (!root || frames <= 0) return
-    const durationMs = (frames / PROJECT_SETTINGS.fps) * 1000
-    const targets: Element[] = [root, ...Array.from(root.querySelectorAll("*"))]
-    for (const el of targets) {
-      const animations = el.getAnimations()
-      for (const anim of animations) {
-        try {
-          anim.effect?.updateTiming({ duration: durationMs })
-        } catch {
-          // ignore errors from read-only animations
-        }
-      }
-    }
-  }, [frames])
-
   return (
     <DurationReportContext.Provider value={handleReport}>
       <ClipStatic start={start} end={end < start ? start : end} label={label} laneId={laneId}>
-        <div ref={animRootRef} style={{ display: "contents" }}>
-          {children}
-        </div>
+        <ClipAnimationSync>{children}</ClipAnimationSync>
       </ClipStatic>
     </DurationReportContext.Provider>
   )

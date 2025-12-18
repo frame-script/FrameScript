@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useId, useMemo, useRef } from "react";
 import { useCurrentFrame, useSetGlobalCurrentFrame } from "../frame";
 import { PROJECT_SETTINGS } from "../../../project/project";
-import { useIsPlaying, useIsRender } from "../../StudioApp";
+import { useIsPlaying, useIsRender } from "../studio-state";
 import { useClipActive, useClipRange, useClipStart, useProvideClipDuration } from "../clip";
 import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan";
 import { VideoCanvasRender } from "./video-render";

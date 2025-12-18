@@ -4,7 +4,7 @@ import { useTimelineClips, useClipVisibilityState } from "../lib/timeline"
 import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { TransportControls } from "./transport"
-import { useIsPlaying, useSetIsPlaying } from "../StudioApp"
+import { useIsPlaying, useSetIsPlaying } from "../lib/studio-state"
 
 type PositionedClip = TimelineClip & { trackIndex: number }
 

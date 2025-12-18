@@ -2,7 +2,7 @@ import React, { useCallback, useRef } from "react"
 import ReactDOM from "react-dom/client"
 import { PROJECT } from "../../project/project"
 import { Store } from "../util/state"
-import { StudioStateContext } from "../StudioApp"
+import { StudioStateContext } from "../lib/studio-state"
 import { WithCurrentFrame } from "../lib/frame"
 
 const RanderRoot = () => {

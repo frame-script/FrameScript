@@ -1,14 +1,15 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { useCurrentFrame } from "../../src/lib/frame"
 import { easeInOutCubic, easeOutExpo, fadeInOut, frameProgress, lerp } from "../../src/lib/anim"
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { THEME } from "../theme"
 import { GlassPanel, Pill } from "../components/panels"
+import { MOG } from "../mog"
 
 const MiniTimeline = ({ progress }: { progress: number }) => {
   const playheadX = `${lerp(8, 92, progress)}%`
   return (
-    <GlassPanel style={{ padding: 18, borderRadius: 18 }}>
+    <GlassPanel style={{ padding: 22, borderRadius: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ color: THEME.text, fontWeight: 750, letterSpacing: "-0.01em" }}>Timeline</div>
         <Pill>
@@ -22,15 +23,15 @@ const MiniTimeline = ({ progress }: { progress: number }) => {
         </div>
       </div>
 
-      <div style={{ marginTop: 14, position: "relative", height: 92 }}>
+      <div style={{ marginTop: 16, position: "relative", height: 120 }}>
         <div style={{ position: "absolute", inset: 0, borderRadius: 12, background: "rgba(3, 7, 18, 0.65)", border: `1px solid ${THEME.border}` }} />
 
-        {[
-          { top: 16, left: 8, width: 34, color: THEME.accent },
-          { top: 44, left: 16, width: 48, color: THEME.accent2 },
-          { top: 16, left: 48, width: 26, color: THEME.warn },
-          { top: 44, left: 68, width: 22, color: THEME.accent },
-        ].map((c, i) => (
+          {[
+            { top: 16, left: 8, width: 34, color: THEME.accent },
+            { top: 44, left: 16, width: 48, color: THEME.accent2 },
+            { top: 16, left: 48, width: 26, color: THEME.warn },
+            { top: 44, left: 68, width: 22, color: THEME.accent },
+          ].map((c, i) => (
           <div
             key={i}
             style={{
@@ -38,7 +39,7 @@ const MiniTimeline = ({ progress }: { progress: number }) => {
               top: c.top,
               left: `${c.left}%`,
               width: `${c.width}%`,
-              height: 18,
+              height: 22,
               borderRadius: 8,
               background: `linear-gradient(90deg, ${c.color}, rgba(255,255,255,0.10))`,
               boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
@@ -50,8 +51,8 @@ const MiniTimeline = ({ progress }: { progress: number }) => {
         <div
           style={{
             position: "absolute",
-            top: 10,
-            bottom: 10,
+            top: 12,
+            bottom: 12,
             left: playheadX,
             width: 2,
             background: THEME.warn,
@@ -61,11 +62,11 @@ const MiniTimeline = ({ progress }: { progress: number }) => {
         <div
           style={{
             position: "absolute",
-            top: 2,
+            top: 4,
             left: playheadX,
             transform: "translateX(-50%)",
-            width: 14,
-            height: 14,
+            width: 16,
+            height: 16,
             borderRadius: 5,
             background: THEME.warn,
           }}
@@ -93,7 +94,7 @@ const CodeBlock = ({ highlightLine }: { highlightLine: number }) => {
   )
 
   return (
-    <GlassPanel style={{ padding: 18, borderRadius: 18 }}>
+    <GlassPanel style={{ padding: 22, borderRadius: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ color: THEME.text, fontWeight: 750, letterSpacing: "-0.01em" }}>Project</div>
         <Pill>
@@ -105,8 +106,8 @@ const CodeBlock = ({ highlightLine }: { highlightLine: number }) => {
         style={{
           marginTop: 14,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-          fontSize: 14,
-          lineHeight: 1.6,
+          fontSize: 16,
+          lineHeight: 1.65,
           color: "rgba(226, 232, 240, 0.85)",
           whiteSpace: "pre",
         }}
@@ -120,7 +121,7 @@ const CodeBlock = ({ highlightLine }: { highlightLine: number }) => {
               style={{
                 display: "flex",
                 gap: 14,
-                padding: "3px 8px",
+                padding: "4px 10px",
                 borderRadius: 10,
                 background: active ? "rgba(34,211,238,0.14)" : "transparent",
                 border: active ? "1px solid rgba(34,211,238,0.25)" : "1px solid transparent",
@@ -138,6 +139,7 @@ const CodeBlock = ({ highlightLine }: { highlightLine: number }) => {
 
 export const TimelineScene = ({ durationFrames }: { durationFrames: number }) => {
   const f = useCurrentFrame()
+  const contentScale = MOG.contentScale
 
   const opacity = fadeInOut(f, durationFrames, { in: 14, out: 16 })
   const t = frameProgress(f, 0, durationFrames - 1, easeInOutCubic)
@@ -159,14 +161,21 @@ export const TimelineScene = ({ durationFrames }: { durationFrames: number }) =>
       />
       <div style={{ position: "absolute", inset: 0, opacity: 0.10, animation: "mgGlow 1s ease-in-out infinite", background: "radial-gradient(closest-side at 50% 10%, rgba(255,255,255,0.12), transparent 75%)" }} />
 
-      <div style={{ position: "absolute", inset: 0, padding: 120, opacity }}>
-        <div style={{ maxWidth: 1320, margin: "0 auto" }}>
+      <div style={{ position: "absolute", inset: 0, padding: MOG.padding, opacity }}>
+        <div
+          style={{
+            maxWidth: 1320 / contentScale,
+            margin: "0 auto",
+            transform: `translateY(${MOG.timelineOffsetY}px) scale(${contentScale})`,
+            transformOrigin: "top center",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12, transform: `translateY(${lift}px)` }}>
             <Pill style={{ color: THEME.text }}>
               <span style={{ width: 8, height: 8, borderRadius: 99, background: THEME.warn }} />
               Edit → Preview → Render
             </Pill>
-            <div style={{ color: THEME.muted, fontSize: 14 }}>
+            <div style={{ color: THEME.muted, fontSize: 16 }}>
               currentFrame で動かして、最後に音声も合成
             </div>
           </div>
@@ -175,7 +184,7 @@ export const TimelineScene = ({ durationFrames }: { durationFrames: number }) =>
             className="mg-title"
             style={{
               marginTop: 18,
-              fontSize: 54,
+              fontSize: 70,
               fontWeight: 850,
               color: THEME.text,
               letterSpacing: "-0.02em",
@@ -197,4 +206,3 @@ export const TimelineScene = ({ durationFrames }: { durationFrames: number }) =>
     </FillFrame>
   )
 }
-

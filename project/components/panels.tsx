@@ -1,4 +1,5 @@
 import React from "react"
+import { useIsRender } from "../../src/lib/studio-state"
 import { THEME } from "../theme"
 
 export const GlassPanel = ({
@@ -8,6 +9,7 @@ export const GlassPanel = ({
   children: React.ReactNode
   style?: React.CSSProperties
 }) => {
+  const isRender = useIsRender()
   return (
     <div
       style={{
@@ -15,8 +17,10 @@ export const GlassPanel = ({
         border: `1px solid ${THEME.border}`,
         borderRadius: 16,
         boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(10px)",
-        WebkitBackdropFilter: "blur(10px)",
+        // Headless Chromium can glitch when compositing `backdrop-filter` + transforms (flicker/tearing).
+        // Keep it for preview, but disable it for render output stability.
+        backdropFilter: isRender ? "none" : "blur(10px)",
+        WebkitBackdropFilter: isRender ? "none" : "blur(10px)",
         ...style,
       }}
     >
@@ -49,4 +53,3 @@ export const Pill = ({
     {children}
   </div>
 )
-
