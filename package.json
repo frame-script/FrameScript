@@ -20,7 +20,10 @@
         "dev:electron:bin": "wait-on http://localhost:5173 http://localhost:5174/render && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 RENDER_DEV_SERVER_URL=http://localhost:5174/render FRAMESCRIPT_RUN_MODE=bin electron ./dist-electron/main.js",
         "dev:bin": "concurrently -k \"npm:dev:vite\" \"npm:dev:render\" \"npm:dev:electron:bin\"",
         "start:bin": "npm run build:all && npm run build:binaries && node ./scripts/start-bin.mjs",
-        "start:bin:skip-build": "node ./scripts/start-bin.mjs"
+        "start:bin:skip-build": "node ./scripts/start-bin.mjs",
+        "docs:start": "npm --prefix docs run start",
+        "docs:build": "npm --prefix docs run build",
+        "docs:serve": "npm --prefix docs run serve"
     },
     "dependencies": {
         "react": "^19.2.0",

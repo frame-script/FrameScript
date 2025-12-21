@@ -1,3 +1,8 @@
+---
+title: Render Known Issues
+sidebar_position: 6
+---
+
 # Render known issues (描画関連)
 
 ## English (Summary)

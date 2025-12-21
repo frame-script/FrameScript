@@ -14,6 +14,10 @@ dist-electron
 dist-render
 *.local
 
+docs/.docusaurus
+docs/build
+docs/.cache
+
 target
 frames
 output.mp4
