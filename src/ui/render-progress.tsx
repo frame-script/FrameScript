@@ -6,10 +6,21 @@ type Progress = {
 };
 
 export const RenderProgressPage = () => {
+  const normalizeOutputPath = (value: string | null) => {
+    if (!value) return null;
+    return value.replace(/[\r\n]+/g, "").trim();
+  };
+
   const [progress, setProgress] = useState<Progress>({ completed: 0, total: 0 });
   const isCompleted = progress.total > 0 && progress.completed >= progress.total;
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [outputPath, setOutputPath] = useState<string | null>(() => {
+    const hash = window.location.hash ?? "";
+    const query = hash.includes("?") ? hash.split("?")[1] ?? "" : "";
+    const params = new URLSearchParams(query);
+    return normalizeOutputPath(params.get("output"));
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +43,26 @@ export const RenderProgressPage = () => {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const readOutputPath = async () => {
+      if (!window.renderAPI?.getOutputPath) return;
+      try {
+        const result = await window.renderAPI.getOutputPath();
+        if (alive) {
+          const next = normalizeOutputPath(result.displayPath ?? result.path);
+          setOutputPath(next);
+        }
+      } catch (_error) {
+        // ignore
+      }
+    };
+    void readOutputPath();
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -104,7 +135,9 @@ export const RenderProgressPage = () => {
           />
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#cbd5e1" }}>
-          {isCompleted ? "Completed!" : `${progress.completed} / ${progress.total} frames`}
+          {isCompleted
+            ? `Completed!${outputPath ? ` Output: ${outputPath}` : ""}`
+            : `${progress.completed} / ${progress.total} frames`}
         </div>
       </div>
       <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>

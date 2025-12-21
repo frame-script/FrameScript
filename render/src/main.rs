@@ -69,6 +69,27 @@ async fn wait_for_next_frame(page: &Page) {
     page.evaluate(script).await.unwrap();
 }
 
+async fn wait_for_frame_api(page: &Page) {
+    let script = r#"
+        (async () => {
+          const start = Date.now();
+          while (true) {
+            const api = window.__frameScript;
+            if (api && typeof api.setFrame === "function") return true;
+            if (Date.now() - start > 15000) {
+              throw new Error("frameScript setFrame not available");
+            }
+            await new Promise(resolve => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<String>>();
@@ -155,13 +176,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    //let file = format!("file://{}", canonicalize("index.html")?.to_string_lossy());
-    let url = std::env::var("RENDER_DEV_SERVER_URL")
+    // Render page URL:
+    // - Dev: defaults to Vite dev server.
+    // - Non-dev: Electron can pass a `file://.../dist-render/render.html` URL.
+    let url = std::env::var("RENDER_PAGE_URL")
+        .or_else(|_| std::env::var("RENDER_DEV_SERVER_URL"))
         .unwrap_or_else(|_| "http://localhost:5174/render".to_string());
 
     let mut tasks = FuturesUnordered::new();
 
     static DIRECTORY: &'static str = "frames";
+    let output_path = std::env::var("RENDER_OUTPUT_PATH")
+        .unwrap_or_else(|_| "output.mp4".to_string());
+    let output_path = PathBuf::from(output_path);
 
     tokio::fs::remove_dir_all(DIRECTORY).await.ok();
     tokio::fs::create_dir(DIRECTORY).await?;
@@ -202,13 +229,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let page = browser.new_page(page_url).await.unwrap();
             page.wait_for_navigation().await.unwrap();
+            wait_for_frame_api(&page).await;
 
             for frame in start..end {
                 wait_for_next_frame(&page).await;
 
                 let js = format!(
                     r#"
-                    window.__frameScript.setFrame({})
+                    (() => {{
+                      const api = window.__frameScript;
+                      if (api && typeof api.setFrame === "function") {{
+                        api.setFrame({});
+                      }}
+                    }})()
                     "#,
                     frame
                 );
@@ -269,7 +302,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    crate::ffmpeg::concat_segments_mp4(segs, &PathBuf::from("frames/output.mp4")).await?;
+    let working_output = PathBuf::from("frames/output.mp4");
+    crate::ffmpeg::concat_segments_mp4(segs, &working_output).await?;
 
     let audio_plan_url = std::env::var("RENDER_AUDIO_PLAN_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:3000/render_audio_plan".to_string());
@@ -277,13 +311,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if resp.status().is_success() {
             if let Ok(plan) = resp.json::<AudioPlanResolved>().await {
                 if !plan.segments.is_empty() {
-                    let input_video = PathBuf::from("frames/output.mp4");
+                    let input_video = working_output.clone();
                     let temp_video = PathBuf::from("frames/output.audio.mp4");
                     mux_audio_plan_into_mp4(&input_video, &temp_video, &plan, total_frames, fps)
                         .await?;
                     tokio::fs::remove_file(&input_video).await.ok();
                     tokio::fs::rename(&temp_video, &input_video).await?;
                 }
+            }
+        }
+    }
+
+    if output_path != working_output {
+        if let Some(parent) = output_path.parent() {
+            tokio::fs::create_dir_all(parent).await.ok();
+        }
+        tokio::fs::remove_file(&output_path).await.ok();
+        if let Err(err) = tokio::fs::rename(&working_output, &output_path).await {
+            eprintln!(
+                "[render] rename failed ({}), falling back to copy",
+                err
+            );
+            if tokio::fs::copy(&working_output, &output_path).await.is_ok() {
+                tokio::fs::remove_file(&working_output).await.ok();
             }
         }
     }

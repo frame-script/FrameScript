@@ -9,11 +9,14 @@ import { spawn, ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
+const useDevServer = process.env.VITE_DEV_SERVER_URL !== undefined;
+const runMode = process.env.FRAMESCRIPT_RUN_MODE ?? (useDevServer ? "dev" : "bin");
+const useBinaries = runMode !== "dev";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -32,12 +35,54 @@ type RenderStartPayload = {
   preset: string;
 };
 
+function getPlatformKey() {
+  if (process.platform === "linux" && process.arch === "x64") return "linux-x86_64";
+  if (process.platform === "win32" && process.arch === "x64") return "win32-x86_64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "macos-arm64";
+  return `${process.platform}-${process.arch}`;
+}
+
+function getBackendBinaryPath() {
+  const platformKey = getPlatformKey();
+  const binName = process.platform === "win32" ? "backend.exe" : "backend";
+
+  const candidates = [
+    process.env.FRAMESCRIPT_BACKEND_BIN,
+    path.join(process.cwd(), "bin", platformKey, binName),
+    path.join(process.resourcesPath, "bin", platformKey, binName),
+    path.join(process.resourcesPath, "backend", binName),
+  ].filter(Boolean) as string[];
+
+  const found = candidates.find((p) => fs.existsSync(p));
+  return { platformKey, binName, candidates, path: found ?? candidates[0] };
+}
+
+function getRenderPageUrl() {
+  if (process.env.RENDER_PAGE_URL) return process.env.RENDER_PAGE_URL;
+  if (useDevServer) {
+    return process.env.RENDER_DEV_SERVER_URL ?? "http://localhost:5174/render";
+  }
+  const htmlPath = path.join(process.cwd(), "dist-render", "render.html");
+  return pathToFileURL(htmlPath).toString();
+}
+
+function getRenderOutputPath() {
+  return process.env.FRAMESCRIPT_OUTPUT_PATH ?? path.join(process.cwd(), "output.mp4");
+}
+
+function getRenderOutputDisplayPath() {
+  const absolute = getRenderOutputPath();
+  const relative = path.relative(process.cwd(), absolute);
+  const display = relative || absolute;
+  return display.split(path.sep).join("/");
+}
+
 function startBackend(): Promise<void> {
   if (backendProcess) {
     return Promise.resolve();
   }
 
-  if (isDev) {
+  if (!useBinaries) {
     const backendCwd = path.join(process.cwd(), "backend");
 
     backendProcess = spawn("cargo", ["run"], {
@@ -48,20 +93,19 @@ function startBackend(): Promise<void> {
     console.log("[backend] spawn: cargo run (dev)");
 
   } else {
-    const binaryName =
-      process.platform === "win32" ? "backend.exe" : "backend";
+    const info = getBackendBinaryPath();
+    if (!fs.existsSync(info.path)) {
+      throw new Error(
+        `Backend binary not found for platform "${info.platformKey}". Tried:\n` +
+          info.candidates.map((p) => `- ${p}`).join("\n"),
+      );
+    }
 
-    const backendPath = path.join(
-      process.resourcesPath,
-      "backend",
-      binaryName,
-    );
-
-    backendProcess = spawn(backendPath, [], {
+    backendProcess = spawn(info.path, [], {
       stdio: "pipe",
     });
 
-    console.log("[backend] spawn:", backendPath);
+    console.log("[backend] spawn:", info.path);
   }
 
   backendProcess.stdout?.on("data", (data) => {
@@ -119,7 +163,7 @@ async function waitForHealthz(): Promise<void> {
 }
 
 function resolveRenderSettingsUrl() {
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+  if (useDevServer && process.env.VITE_DEV_SERVER_URL) {
     return `${process.env.VITE_DEV_SERVER_URL}/#/render-settings`;
   }
 
@@ -128,12 +172,13 @@ function resolveRenderSettingsUrl() {
 }
 
 function resolveRenderProgressUrl() {
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
-    return `${process.env.VITE_DEV_SERVER_URL}/#/render-progress`;
+  const outputParam = encodeURIComponent(getRenderOutputDisplayPath());
+  if (useDevServer && process.env.VITE_DEV_SERVER_URL) {
+    return `${process.env.VITE_DEV_SERVER_URL}/#/render-progress?output=${outputParam}`;
   }
 
   const indexPath = path.join(__dirname, "../dist/index.html");
-  return { file: indexPath, hash: "render-progress" } as const;
+  return { file: indexPath, hash: `render-progress?output=${outputParam}` } as const;
 }
 
 function resolveRenderPreloadPath() {
@@ -151,16 +196,16 @@ function resolveRenderPreloadPath() {
 }
 
 function getRenderBinaryInfo() {
-  const platformKey = (() => {
-    if (process.platform === "linux" && process.arch === "x64") return "linux-x86_64";
-    if (process.platform === "win32" && process.arch === "x64") return "win32-x86_64";
-    if (process.platform === "darwin" && process.arch === "arm64") return "macos-arm64";
-    return `${process.platform}-${process.arch}`;
-  })();
-
+  const platformKey = getPlatformKey();
   const binName = process.platform === "win32" ? "render.exe" : "render";
-  const binPath = path.join(process.cwd(), "bin", platformKey, binName);
-  return { platformKey, binName, binPath };
+  const candidates = [
+    process.env.FRAMESCRIPT_RENDER_BIN,
+    path.join(process.cwd(), "bin", platformKey, binName),
+    path.join(process.resourcesPath, "bin", platformKey, binName),
+    path.join(process.resourcesPath, "render", binName),
+  ].filter(Boolean) as string[];
+  const binPath = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+  return { platformKey, binName, binPath, candidates };
 }
 
 function startRenderProcess(payload: RenderStartPayload) {
@@ -172,11 +217,16 @@ function startRenderProcess(payload: RenderStartPayload) {
     renderChild = null;
   }
 
-  if (isDev) {
+  if (!useBinaries) {
     const renderCwd = path.join(process.cwd(), "render");
     try {
       renderChild = spawn("cargo", ["run", "--", argsString], {
         cwd: renderCwd,
+        env: {
+          ...process.env,
+          RENDER_PAGE_URL: getRenderPageUrl(),
+          RENDER_OUTPUT_PATH: getRenderOutputPath(),
+        },
         stdio: "inherit",
       });
     } catch (error) {
@@ -196,11 +246,20 @@ function startRenderProcess(payload: RenderStartPayload) {
     const { binPath, platformKey } = getRenderBinaryInfo();
 
     if (!fs.existsSync(binPath)) {
-      throw new Error(`Render binary not found for platform "${platformKey}": ${binPath}`);
+      const info = getRenderBinaryInfo();
+      throw new Error(
+        `Render binary not found for platform "${platformKey}". Tried:\n` +
+          info.candidates.map((p) => `- ${p}`).join("\n"),
+      );
     }
 
     try {
       renderChild = spawn(binPath, [argsString], {
+        env: {
+          ...process.env,
+          RENDER_PAGE_URL: getRenderPageUrl(),
+          RENDER_OUTPUT_PATH: getRenderOutputPath(),
+        },
         stdio: "inherit",
       });
     } catch (error) {
@@ -236,7 +295,7 @@ async function createWindow() {
     },
   });
 
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+  if (useDevServer && process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     //mainWindow.webContents.openDevTools();
   } else {
@@ -308,6 +367,7 @@ function createRenderProgressWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: resolveRenderPreloadPath(),
     },
   });
   renderProgressWindow.setMenu(null);
@@ -327,7 +387,7 @@ function createRenderProgressWindow() {
 
 function setupRenderIpc() {
   ipcMain.handle("render:getPlatform", () => {
-    if (isDev) {
+    if (!useBinaries) {
       const renderDir = path.join(process.cwd(), "render");
       return {
         platform: "dev",
@@ -338,6 +398,10 @@ function setupRenderIpc() {
     }
     const info = getRenderBinaryInfo();
     return { platform: info.platformKey, binPath: info.binPath, binName: info.binName, isDev: false };
+  });
+
+  ipcMain.handle("render:getOutputPath", () => {
+    return { path: getRenderOutputPath(), displayPath: getRenderOutputDisplayPath() };
   });
 
   ipcMain.handle("render:openProgress", () => {

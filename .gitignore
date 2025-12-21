@@ -16,6 +16,7 @@ dist-render
 
 target
 frames
+output.mp4
 bin
 
 # Editor directories and files

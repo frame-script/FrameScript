@@ -13,6 +13,7 @@ type RenderStartPayload = {
 interface Window {
   renderAPI?: {
     getPlatform: () => Promise<{ platform: string; binPath: string; binName: string; isDev?: boolean }>;
+    getOutputPath: () => Promise<{ path: string; displayPath?: string }>;
     startRender: (payload: RenderStartPayload) => Promise<{ cmd: string; pid: number | undefined }>;
     openProgress: () => Promise<void>;
   };
