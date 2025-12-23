@@ -9,6 +9,7 @@ import { IntroScene } from "./scenes/intro"
 import { FeaturesScene } from "./scenes/features"
 import { TimelineScene } from "./scenes/timeline"
 import { OutroScene } from "./scenes/outro"
+import { Video } from "../src/lib/video/video"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
   name: "framescript-mog",
@@ -43,6 +44,11 @@ export const PROJECT = () => {
           </Clip>
           <Clip duration={outro} label="Outro">
             <OutroScene durationFrames={Math.round(outro)} />
+          </Clip>
+          <Clip>
+            <FillFrame>
+              <Video video={{ path: "~/Videos/music.mp4" }} />
+            </FillFrame>
           </Clip>
         </ClipSequence>
       </TimeLine>

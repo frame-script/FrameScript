@@ -190,8 +190,8 @@ const VideoCanvas = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: V
   }, [resolvedVideo.path])
 
   const baseStyle: CSSProperties = {
-    width: 640,
-    height: 360,
+    width: "100%",
+    height: "100%",
     backgroundColor: "#000",
   }
 
