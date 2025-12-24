@@ -4,7 +4,7 @@ import { FillFrame } from "../src/lib/layout/fill-frame"
 import { Project, type ProjectSettings } from "../src/lib/project"
 import { TimeLine } from "../src/lib/timeline"
 import { AnimationHandle, useAnimation, useVariable, type Vec2 } from "../src/lib/animation"
-import { easeOutCubic } from "../src/lib/animation/functions"
+import { cubicBezier, easeOutCubic, easeOutExpo } from "../src/lib/animation/functions"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
   name: "framescript-motion-demo",
@@ -35,6 +35,7 @@ const TitleScene = () => {
     const opacity = useVariable(0)
     return { char, offset, opacity, index }
   })
+  const scale = useVariable(1)
 
   const { ready } = useAnimation(async (ctx) => {
     const handles: AnimationHandle[] = []
@@ -42,13 +43,18 @@ const TitleScene = () => {
 
     for (const letter of letters) {
       await ctx.sleep(seconds(0.06))
-      const move = ctx.move(letter.offset).to({ x: 0, y: 0 }, seconds(0.8), easeOutCubic)
+      const move = ctx.move(letter.offset).to({ x: 0, y: 0 }, seconds(0.8), easeOutExpo)
       const fade = ctx.move(letter.opacity).to(1, seconds(0.5), easeOutCubic)
       handles.push(move, fade)
     }
 
     await ctx.parallel(handles)
-    await ctx.sleep(seconds(0.7))
+    await ctx.sleep(seconds(0.3))
+
+    const overshootEase = cubicBezier(1,0,.49,1.77)
+    await ctx.move(scale).to(1.25, seconds(0.6), overshootEase)
+    //await ctx.move(scale).to(1.03, seconds(0.35), easeOutCubic)
+    await ctx.sleep(seconds(0.8))
   }, [])
 
   if (!ready) return null
@@ -62,71 +68,82 @@ const TitleScene = () => {
         style={{
           position: "absolute",
           inset: 0,
-          background:
-            "radial-gradient(1200px 600px at 20% 20%, rgba(59,130,246,0.25), transparent 60%)," +
-            "radial-gradient(900px 700px at 80% 35%, rgba(16,185,129,0.22), transparent 60%)," +
-            "linear-gradient(180deg, #070a16, #0c1222)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.12,
-          background:
-            "repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 24px)",
-        }}
-      />
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 24,
-          fontSize: 120,
-          fontWeight: 800,
-          letterSpacing: "0.08em",
-          color: "#e2e8f0",
-          textShadow: "0 20px 60px rgba(0,0,0,0.45)",
-          fontFamily: "'Trebuchet MS', 'Lucida Grande', 'Arial Black', sans-serif",
+          transform: `scale(${scale.use()})`,
+          transformOrigin: "center",
+          display: "grid",
         }}
       >
-        <div style={{ display: "flex", gap: 18 }}>
-          {left.map((letter) => {
-            const offset = letter.offset.use()
-            const opacity = letter.opacity.use()
-            return (
-              <span
-                key={letter.index}
-                style={{
-                  display: "inline-block",
-                  transform: `translate(${offset.x}px, ${offset.y}px)`,
-                  opacity,
-                }}
-              >
-                {letter.char}
-              </span>
-            )
-          })}
-        </div>
-        <div style={{ width: 56 }} />
-        <div style={{ display: "flex", gap: 18 }}>
-          {right.map((letter) => {
-            const offset = letter.offset.use()
-            const opacity = letter.opacity.use()
-            return (
-              <span
-                key={letter.index}
-                style={{
-                  display: "inline-block",
-                  transform: `translate(${offset.x}px, ${offset.y}px)`,
-                  opacity,
-                }}
-              >
-                {letter.char}
-              </span>
-            )
-          })}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(1200px 600px at 20% 20%, rgba(59,130,246,0.25), transparent 60%)," +
+              "radial-gradient(900px 700px at 80% 35%, rgba(16,185,129,0.22), transparent 60%)," +
+              "linear-gradient(180deg, #070a16, #0c1222)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0.12,
+            background:
+              "repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 24px)",
+          }}
+        />
+
+        <div
+          style={{
+            margin: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 24,
+            fontSize: 120,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            color: "#e2e8f0",
+            textShadow: "0 20px 60px rgba(0,0,0,0.45)",
+            fontFamily: "'Trebuchet MS', 'Lucida Grande', 'Arial Black', sans-serif",
+          }}
+        >
+          <div style={{ display: "flex", gap: 18 }}>
+            {left.map((letter) => {
+              const offset = letter.offset.use()
+              const opacity = letter.opacity.use()
+              return (
+                <span
+                  key={letter.index}
+                  style={{
+                    display: "inline-block",
+                    transform: `translate(${offset.x}px, ${offset.y}px)`,
+                    opacity,
+                  }}
+                >
+                  {letter.char}
+                </span>
+              )
+            })}
+          </div>
+          <div style={{ width: 56 }} />
+          <div style={{ display: "flex", gap: 18 }}>
+            {right.map((letter) => {
+              const offset = letter.offset.use()
+              const opacity = letter.opacity.use()
+              return (
+                <span
+                  key={letter.index}
+                  style={{
+                    display: "inline-block",
+                    transform: `translate(${offset.x}px, ${offset.y}px)`,
+                    opacity,
+                  }}
+                >
+                  {letter.char}
+                </span>
+              )
+            })}
+          </div>
         </div>
       </div>
     </FillFrame>
