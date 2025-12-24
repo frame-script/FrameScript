@@ -16,16 +16,29 @@ type ClipContextValue = { id: string; baseStart: number; baseEnd: number; depth:
 
 const ClipContext = createContext<ClipContextValue | null>(null)
 
+type DurationReporter = {
+  set: (id: string, frames: number) => void
+  remove: (id: string) => void
+}
+
 // Duration reporting from descendants (used by Clip)
-const DurationReportContext = createContext<((frames: number) => void) | null>(null)
+const DurationReportContext = createContext<DurationReporter | null>(null)
 
 export const useProvideClipDuration = (frames: number | null | undefined) => {
   const report = useContext(DurationReportContext)
+  const id = useId()
   useEffect(() => {
-    if (report && frames != null) {
-      report(Math.max(0, frames))
+    if (!report) return
+    if (frames == null) {
+      report.remove(id)
+      return
     }
-  }, [report, frames])
+
+    report.set(id, Math.max(0, frames))
+    return () => {
+      report.remove(id)
+    }
+  }, [report, frames, id])
 }
 
 // Static clip with explicit start/end. Treated as length 0 unless caller provides span.
@@ -170,22 +183,41 @@ export const Clip = ({
   onDurationChange,
 }: ClipProps) => {
   const [frames, setFrames] = useState<number>(Math.max(0, duration ?? 0))
+  const durationsRef = useRef<Map<string, number>>(new Map())
+
+  const resolveReported = useCallback(() => {
+    let max = 0
+    for (const value of durationsRef.current.values()) {
+      if (value > max) max = value
+    }
+    const next = duration != null ? Math.max(0, duration) : max
+    setFrames((prev) => (prev === next ? prev : next))
+  }, [duration])
 
   const handleReport = useCallback(
-    (value: number) => {
-      setFrames((prev) => {
-        if (prev === value) return prev
-        return value
-      })
+    (id: string, value: number) => {
+      durationsRef.current.set(id, Math.max(0, value))
+      resolveReported()
     },
-    [],
+    [resolveReported],
+  )
+
+  const handleRemoveReport = useCallback(
+    (id: string) => {
+      if (!durationsRef.current.has(id)) return
+      durationsRef.current.delete(id)
+      resolveReported()
+    },
+    [resolveReported],
   )
 
   useEffect(() => {
     if (duration != null) {
       setFrames(Math.max(0, duration))
+    } else {
+      resolveReported()
     }
-  }, [duration])
+  }, [duration, resolveReported])
 
   useEffect(() => {
     if (onDurationChange) {
@@ -196,7 +228,7 @@ export const Clip = ({
   const end = start + Math.max(0, frames) - 1
 
   return (
-    <DurationReportContext.Provider value={handleReport}>
+    <DurationReportContext.Provider value={{ set: handleReport, remove: handleRemoveReport }}>
       <ClipStatic start={start} end={end < start ? start : end} label={label} laneId={laneId}>
         <ClipAnimationSync>{children}</ClipAnimationSync>
       </ClipStatic>

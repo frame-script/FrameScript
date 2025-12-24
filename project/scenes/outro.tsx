@@ -1,5 +1,5 @@
 import { useCurrentFrame } from "../../src/lib/frame"
-import { easeInOutCubic, easeOutExpo, fadeInOut, frameProgress, lerp } from "../../src/lib/anim"
+import { easeInOutCubic, easeOutExpo, fadeInOut, frameProgress, lerp } from "../../src/lib/animation/functions"
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { THEME } from "../theme"
 import { GlassPanel, Pill } from "../components/panels"
