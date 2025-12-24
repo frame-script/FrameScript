@@ -26,6 +26,8 @@
         "docs:serve": "npm --prefix docs run serve"
     },
     "dependencies": {
+        "@ffmpeg-installer/ffmpeg": "^1.1.0",
+        "@ffprobe-installer/ffprobe": "^2.1.2",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "react-router-dom": "^6.28.0"
