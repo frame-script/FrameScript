@@ -1,16 +1,14 @@
 ![](./frame-script.gif)
 
-FrameScript is a video editing & motion graphics tool built with React + CSS.
+FrameScriptはReact + CSSで描画・編集する動画編集 & モーショングラフィックスソフトです。
 
-![日本語.md](./README.ja.md)
+## FrameScriptの特徴
 
-## FrameScript features
+- React+CSSに代表されるWebのフロントエンド技術を用いて動画を構築
+- `useAnimation`のAPIを用いた細かなアニメーション制御
+- Rustによって構築された効率的なレンダリングシステム
 
-- Build videos with web front-end technologies such as React + CSS
-- Fine-grained animation control with the `useAnimation` API
-- Efficient rendering system built in Rust
-
-## Build videos with React
+## Reactで動画を構成
 
 ```tsx
 import { Clip } from "../src/lib/clip"
@@ -18,7 +16,7 @@ import { Project, type ProjectSettings } from "../src/lib/project"
 import { TimeLine } from "../src/lib/timeline"
 import { Video } from "../src/lib/video/video"
 
-// Project settings
+// プロジェクトの設定
 export const PROJECT_SETTINGS: ProjectSettings = {
   name: "framescript-minimal",
   width: 1920,
@@ -26,16 +24,16 @@ export const PROJECT_SETTINGS: ProjectSettings = {
   fps: 60,
 }
 
-// Project definition
-// Add elements here to build the video
+// プロジェクトの定義
+// ここに要素を付け足していくことで動画を構築する
 export const PROJECT = () => {
   return (
     <Project>
       <TimeLine>
-        {/* <Clip> is an element displayed on the timeline */}
-        {/* The timeline length reflects the <Video/> length (can be overridden) */}
+        {/* <Clip> はタイムラインに表示される要素 */}
+        {/* タイムライン上の長さは <Video/> の長さを自動で反映する（指定も可能） */}
         <Clip label="Clip Name">
-          { /* <Video/> loads a video */ }
+          { /* <Video/> は動画を読み込む */ }
           <Video video={{ path: "~/Videos/example.mp4" }}/>
         </Clip>
       </TimeLine>
@@ -44,9 +42,9 @@ export const PROJECT = () => {
 }
 ```
 
-## Animation API
+## アニメーションAPI
 
-With `useAnimation`, you can control animations in detail using `async/await`.
+`useAnimation`を使うと`async/await`を用いてアニメーションの細かな操作を実現できます
 
 ```tsx
 import { useAnimation, useVariable } from "../src/lib/animation"
@@ -55,18 +53,18 @@ import { FillFrame } from "../src/lib/layout/fill-frame"
 import { seconds } from "../src/lib/frame"
 
 const CircleScene = () => {
-  // Keep position and opacity as animatable variables
+  // 位置と不透明度をアニメーション可能な変数として保持
   const position = useVariable({ x: -300, y: 0 })
   const opacity = useVariable(0)
 
   useAnimation(async (ctx) => {
-    // Run motions in parallel by creating handles
+    // 同時に動かしたい処理は handle を作って並列で待つ
     const move = ctx.move(position).to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
     const fade = ctx.move(opacity).to(1, seconds(0.6), BEZIER_SMOOTH)
     await ctx.parallel([move, fade])
   }, [])
 
-  // Get values for the current frame
+  // 現在フレームに対応した値を取得
   const pos = position.use()
 
   return (
@@ -90,13 +88,13 @@ const CircleScene = () => {
 <img src="circle.gif" alt="circle_move" loop=infinite>
 
 ## QuickStart
-(Requires Node.js)
+(実行にはNode.jsが必要です)
 ```bash
 npm init @frame-script/latest
 cd <project-path>
 npm run start
 ```
 
-## Documentation
+## ドキュメント
 
 - [FrameScript Docs](https://frame-script.github.io/FrameScript/)
