@@ -3,7 +3,7 @@ title: FrameScript Docs
 sidebar_position: 1
 ---
 
-FrameScript is a code-first motion graphics toolkit built on React, Electron, and Rust.
+FrameScript is a code-first motion graphics and video editing toolkit built with React and CSS.
 You author scenes as React components, preview them in Studio, and render video through headless Chromium.
 
 ## Quick start

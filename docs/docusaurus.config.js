@@ -34,7 +34,16 @@ const config = {
     },
     navbar: {
       title: "FrameScript Docs",
-      items: [{ type: "localeDropdown", position: "right" }],
+      items: [
+        {
+          href: "https://github.com/frame-script/FrameScript",
+          label: "GitHub",
+          position: "right",
+          className: "navbar__github",
+          "aria-label": "GitHub repository",
+        },
+        { type: "localeDropdown", position: "right" },
+      ],
     },
   },
 };

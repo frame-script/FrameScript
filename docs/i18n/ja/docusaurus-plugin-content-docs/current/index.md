@@ -3,7 +3,7 @@ title: FrameScript ドキュメント
 sidebar_position: 1
 ---
 
-FrameScript は React / Electron / Rust を組み合わせた、コードファーストなモーショングラフィックス基盤です。
+FrameScript は React / CSS で描画する、コードファーストな モーショングラフィックス & 動画編集 基盤です。
 React コンポーネントとしてシーンを記述し、Studio でプレビューし、ヘッドレス Chromium で書き出します。
 
 ## クイックスタート
