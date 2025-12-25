@@ -1,10 +1,11 @@
-import { Clip } from "../src/lib/clip"
+import { Clip, ClipSequence } from "../src/lib/clip"
 import { seconds } from "../src/lib/frame"
 import { FillFrame } from "../src/lib/layout/fill-frame"
 import { Project, type ProjectSettings } from "../src/lib/project"
 import { TimeLine } from "../src/lib/timeline"
 import { AnimationHandle, useAnimation, useVariable, type Vec2 } from "../src/lib/animation"
 import { cubicBezier, easeOutCubic, easeOutExpo } from "../src/lib/animation/functions"
+import { Video } from "../src/lib/video/video"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
   name: "framescript-motion-demo",
@@ -51,7 +52,7 @@ const TitleScene = () => {
     await ctx.parallel(handles)
     await ctx.sleep(seconds(0.3))
 
-    const overshootEase = cubicBezier(1,0,.49,1.77)
+    const overshootEase = cubicBezier(1, 0, .49, 1.77)
     await ctx.move(scale).to(1.2, seconds(0.6), overshootEase)
     await ctx.sleep(seconds(0.8))
   }, [])
@@ -153,9 +154,14 @@ export const PROJECT = () => {
   return (
     <Project>
       <TimeLine>
-        <Clip label="FrameScript">
-          <TitleScene />
-        </Clip>
+        <ClipSequence>
+          <Clip label="FrameScript">
+            <TitleScene />
+          </Clip>
+          <Clip>
+            <Video video={{ path: "~/Videos/music.mp4" }} />
+          </Clip>
+        </ClipSequence>
       </TimeLine>
     </Project>
   )

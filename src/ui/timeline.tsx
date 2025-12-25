@@ -5,8 +5,16 @@ import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { TransportControls } from "./transport"
 import { useIsPlaying, useSetIsPlaying } from "../lib/studio-state"
+import { useAudioSegments } from "../lib/audio-plan"
+import { AudioWaveformSegment } from "./audio-waveform"
 
 type PositionedClip = TimelineClip & { trackIndex: number }
+type ClipWaveformSegment = {
+  path: string
+  startOffsetFrames: number
+  durationFrames: number
+  sourceStartFrame: number
+}
 
 const clipGradients = [
   ["#2563eb", "#22d3ee"],
@@ -57,6 +65,7 @@ export function getTimeLineAllFrames(): number {
 export const TimelineUI = () => {
   const clips = useTimelineClips()
   const { hiddenMap } = useClipVisibilityState()
+  const audioSegments = useAudioSegments()
   const currentFrame = useGlobalCurrentFrame()
   const setCurrentFrame = useSetGlobalCurrentFrame()
   const projectSettings = PROJECT_SETTINGS
@@ -65,6 +74,36 @@ export const TimelineUI = () => {
 
   const placedClips = useMemo(() => stackClipsIntoTracks(clips), [clips])
   const trackCount = Math.max(1, placedClips.reduce((max, clip) => Math.max(max, clip.trackIndex + 1), 0))
+  const audioSegmentsByClip = useMemo(() => {
+    const map = new Map<string, ClipWaveformSegment[]>()
+    for (const clip of placedClips) {
+      const segments: ClipWaveformSegment[] = []
+      for (const segment of audioSegments) {
+        const segStart = segment.projectStartFrame
+        const segEnd = segStart + segment.durationFrames - 1
+        if (segEnd < clip.start || segStart > clip.end) {
+          continue
+        }
+
+        const overlapStart = Math.max(clip.start, segStart)
+        const overlapEnd = Math.min(clip.end, segEnd)
+        const durationFrames = Math.max(0, overlapEnd - overlapStart + 1)
+        if (durationFrames <= 0) continue
+
+        const sourceOffset = segment.sourceStartFrame + Math.max(0, overlapStart - segStart)
+        segments.push({
+          path: segment.source.path,
+          startOffsetFrames: Math.max(0, overlapStart - clip.start),
+          durationFrames,
+          sourceStartFrame: sourceOffset,
+        })
+      }
+      if (segments.length > 0) {
+        map.set(clip.id, segments)
+      }
+    }
+    return map
+  }, [audioSegments, placedClips])
   const clipMap = useMemo(() => {
     const map = new Map<string, PositionedClip>()
     placedClips.forEach((c) => map.set(c.id, c))
@@ -405,6 +444,8 @@ export const TimelineUI = () => {
                 const depth = clip.depth ?? 0
                 const [c1, c2] = clipGradients[depth % clipGradients.length]
 
+                const waveformSegments = audioSegmentsByClip.get(clip.id) ?? []
+
                 return (
                   <div
                     key={clip.id}
@@ -427,8 +468,34 @@ export const TimelineUI = () => {
                       opacity: visible ? 1 : 0.35,
                     }}
                   >
-                    <span style={{ fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{label}</span>
-                    <span style={{ fontSize: 12, opacity: 0.8 }}>
+                    {waveformSegments.length > 0 ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: "2px 4px",
+                          opacity: visible ? 0.9 : 0.35,
+                          pointerEvents: "none",
+                          zIndex: 1,
+                        }}
+                      >
+                        {waveformSegments.map((segment, segIndex) => (
+                          <AudioWaveformSegment
+                            key={`${clip.id}-${segIndex}-${segment.path}`}
+                            path={segment.path}
+                            startOffsetFrames={segment.startOffsetFrames}
+                            durationFrames={segment.durationFrames}
+                            sourceStartFrame={segment.sourceStartFrame}
+                            pxPerFrame={pxPerFrame}
+                            height={laneHeight - 12}
+                            color={visible ? "rgba(15,23,42,0.8)" : "rgba(148,163,184,0.6)"}
+                            opacity={visible ? 0.55 : 0.25}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <span style={{ fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", position: "relative", zIndex: 2 }}>{label}</span>
+                    <span style={{ fontSize: 12, opacity: 0.8, position: "relative", zIndex: 2 }}>
                       {formatSeconds(clip.start)}s – {formatSeconds(clip.end)}s
                     </span>
                     {isActive ? (
@@ -445,6 +512,8 @@ export const TimelineUI = () => {
                           fontSize: 11,
                           lineHeight: 1.3,
                           whiteSpace: "nowrap",
+                          position: "relative",
+                          zIndex: 2,
                         }}
                       >
                         {relativeFrame}f
