@@ -35,7 +35,7 @@ run(backendDir, ["cargo", "build", "--release"]);
 run(renderDir, ["cargo", "build", "--release"]);
 
 const backendSrc = path.join(backendDir, "target", "release", `backend${exe}`);
-const renderSrc = path.join(renderDir, "target", "release", `frame-script-render${exe}`);
+const renderSrc = path.join(renderDir, "target", "release", `render${exe}`);
 
 if (!fs.existsSync(backendSrc)) {
   console.error("[build:binaries] backend binary not found:", backendSrc);
