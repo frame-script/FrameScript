@@ -1,8 +1,10 @@
 const config = {
   title: "FrameScript Docs",
   tagline: "Hello, world!",
-  url: "http://localhost",
-  baseUrl: "/",
+  url: "https://frame-script.github.io",
+  baseUrl: "/FrameScript/",
+  organizationName: "frame-script",
+  projectName: "FrameScript",
   onBrokenLinks: "throw",
   onBrokenMarkdownLinks: "warn",
   i18n: {
