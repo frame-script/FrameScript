@@ -19,6 +19,11 @@ const __dirname = path.dirname(__filename);
 const useDevServer = process.env.VITE_DEV_SERVER_URL !== undefined;
 const runMode = process.env.FRAMESCRIPT_RUN_MODE ?? (useDevServer ? "dev" : "bin");
 const useBinaries = runMode !== "dev";
+const APP_NAME = "FrameScript";
+
+if (app.name !== APP_NAME) {
+  app.setName(APP_NAME);
+}
 
 const resolveBundledBinaryPath = (installer: unknown) => {
   const candidate =
