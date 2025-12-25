@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
 import * as ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import * as ffprobeInstaller from "@ffprobe-installer/ffprobe";
+import puppeteer from "puppeteer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,15 +36,33 @@ const resolveBundledBinaryPath = (installer: unknown) => {
   return null;
 };
 
-function getFfmpegEnv(): NodeJS.ProcessEnv {
+const resolvePuppeteerExecutablePath = () => {
+  try {
+    if (typeof puppeteer?.executablePath === "function") {
+      return puppeteer.executablePath();
+    }
+  } catch (_error) {
+    // ignore
+  }
+  return null;
+};
+
+function getBundledBinaryEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   const ffmpegPath = process.env.FRAMESCRIPT_FFMPEG_PATH ?? resolveBundledBinaryPath(ffmpegInstaller);
   const ffprobePath = process.env.FRAMESCRIPT_FFPROBE_PATH ?? resolveBundledBinaryPath(ffprobeInstaller);
+  const chromiumPath =
+    process.env.FRAMESCRIPT_CHROMIUM_PATH ??
+    process.env.PUPPETEER_EXECUTABLE_PATH ??
+    resolvePuppeteerExecutablePath();
   if (ffmpegPath) {
     env.FRAMESCRIPT_FFMPEG_PATH = ffmpegPath;
   }
   if (ffprobePath) {
     env.FRAMESCRIPT_FFPROBE_PATH = ffprobePath;
+  }
+  if (chromiumPath) {
+    env.FRAMESCRIPT_CHROMIUM_PATH = chromiumPath;
   }
   return env;
 }
@@ -120,7 +139,7 @@ function startBackend(): Promise<void> {
       stdio: "pipe",
       env: {
         ...process.env,
-        ...getFfmpegEnv(),
+        ...getBundledBinaryEnv(),
       },
     });
 
@@ -139,7 +158,7 @@ function startBackend(): Promise<void> {
       stdio: "pipe",
       env: {
         ...process.env,
-        ...getFfmpegEnv(),
+        ...getBundledBinaryEnv(),
       },
     });
 
@@ -262,7 +281,7 @@ function startRenderProcess(payload: RenderStartPayload) {
         cwd: renderCwd,
         env: {
           ...process.env,
-          ...getFfmpegEnv(),
+          ...getBundledBinaryEnv(),
           RENDER_PAGE_URL: getRenderPageUrl(),
           RENDER_OUTPUT_PATH: getRenderOutputPath(),
         },
@@ -296,7 +315,7 @@ function startRenderProcess(payload: RenderStartPayload) {
       renderChild = spawn(binPath, [argsString], {
         env: {
           ...process.env,
-          ...getFfmpegEnv(),
+          ...getBundledBinaryEnv(),
           RENDER_PAGE_URL: getRenderPageUrl(),
           RENDER_OUTPUT_PATH: getRenderOutputPath(),
         },

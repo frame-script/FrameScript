@@ -12,7 +12,7 @@ use chromiumoxide::browser::BrowserConfig;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tempfile::TempDir;
 
@@ -29,6 +29,28 @@ struct CancelResponse {
     canceled: bool,
 }
 
+static CHROMIUM_EXECUTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+fn resolve_chromium_executable() -> Option<PathBuf> {
+    CHROMIUM_EXECUTABLE
+        .get_or_init(|| {
+            let path = std::env::var("FRAMESCRIPT_CHROMIUM_PATH")
+                .or_else(|_| std::env::var("PUPPETEER_EXECUTABLE_PATH"))
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from);
+
+            if let Some(path) = path {
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+            None
+        })
+        .clone()
+}
+
 async fn spawn_browser_instance(
     profile_id: usize,
     width: u32,
@@ -38,7 +60,7 @@ async fn spawn_browser_instance(
     let tmp = TempDir::new()?; // ライフタイム管理は適宜
     let user_data_dir: PathBuf = tmp.path().join(format!("profile-{}", profile_id));
 
-    let config = BrowserConfig::builder()
+    let mut builder = BrowserConfig::builder()
         .new_headless_mode()
         .viewport(Viewport {
             width,
@@ -49,8 +71,13 @@ async fn spawn_browser_instance(
             has_touch: false,
         })
         .request_timeout(Duration::from_hours(24))
-        .user_data_dir(user_data_dir) // ★ インスタンスごとに別のディレクトリ
-        .build()?;
+        .user_data_dir(user_data_dir); // ★ インスタンスごとに別のディレクトリ
+
+    if let Some(path) = resolve_chromium_executable() {
+        builder = builder.chrome_executable(path);
+    }
+
+    let config = builder.build()?;
 
     let (browser, handler) = Browser::launch(config).await?;
     Ok((browser, handler))
