@@ -1,6 +1,6 @@
 ---
-title: コンポーネントと API
-sidebar_position: 4
+title: 基本コンポーネント
+sidebar_position: 2
 ---
 
 FrameScript で使う主要プリミティブをまとめます。
@@ -28,9 +28,13 @@ export const PROJECT = () => (
 ```tsx
 import { TimeLine } from "../src/lib/timeline"
 
-<TimeLine>
-  {/* Clip / ClipSequence */}
-</TimeLine>
+export const PROJECT = () => (
+  <Project>
+    <TimeLine>
+      {/* Clip / ClipSequence */}
+    </TimeLine>
+  </Project>
+)
 ```
 
 ## Clips
@@ -62,7 +66,7 @@ import { TimeLine } from "../src/lib/timeline"
 
 ### `<ClipStatic>`
 
-start/end を明示できる静的クリップ。境界を厳密に制御したい場合に使います。
+表示する期間を明示できる静的クリップ。境界を厳密に制御したい場合に使います。
 
 ```tsx
 <ClipStatic start={0} end={119} label="Custom Range">
@@ -73,6 +77,7 @@ start/end を明示できる静的クリップ。境界を厳密に制御した�
 ### `<Serial>`
 
 `<ClipStatic>` を長さを保ったまま直列配置するユーティリティ。
+単純に並べたいときに使います。
 
 ```tsx
 <Serial>
@@ -87,25 +92,15 @@ start/end を明示できる静的クリップ。境界を厳密に制御した�
 
 ## Frame utilities
 
-### `WithCurrentFrame` と hooks
+### `useCurrentFrame()`
+現在のフレーム数を取得します。
+`<Clip>` 内では相対フレームが返ります。
 
-`WithCurrentFrame` は global frame を提供します。
-
-- `useCurrentFrame()` は clip 相対のフレーム。
-- `useGlobalCurrentFrame()` は project 全体のフレーム。
-- `useSetGlobalCurrentFrame()` はスクラブや再生制御に使います。
-
-```tsx
-import { WithCurrentFrame, useCurrentFrame } from "../src/lib/frame"
-
-const Scene = () => {
-  const f = useCurrentFrame()
-  return <div style={{ opacity: f / 60 }}>Hello</div>
-}
-
-<WithCurrentFrame>
-  <Scene />
-</WithCurrentFrame>
+```ts
+// 現在の相対フレーム数を取得
+const currentFrame = useCurrentFrame()
+// 現在の絶対フレームを取得
+const globalCurrentFrame = useGlobalCurrentFrame()
 ```
 
 ### `seconds()`
@@ -127,43 +122,4 @@ const introFrames = seconds(3.5)
   <Background />
   <Foreground />
 </FillFrame>
-```
-
-## Media
-
-### `<Video>`
-
-Studio では `<video>`、レンダー時は WebSocket + Canvas で再生します。
-
-```tsx
-import { Video } from "../src/lib/video/video"
-
-<Video video="assets/demo.mp4" />
-```
-
-`trim` でソースの切り出しも可能です。
-
-```tsx
-<Video video="assets/demo.mp4" trim={{ from: 30, duration: 120 }} />
-```
-
-### `<Sound>`
-
-Studio で音声を再生し、レンダー用の Audio Plan を生成します。
-
-```tsx
-import { Sound } from "../src/lib/sound/sound"
-
-<Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
-```
-
-## Render-aware behavior
-
-### `useIsRender()`
-
-ヘッドレス Chromium では不安定な表現を切り替えたい時に使います。
-
-```tsx
-const isRender = useIsRender()
-return <div style={{ backdropFilter: isRender ? "none" : "blur(10px)" }} />
 ```

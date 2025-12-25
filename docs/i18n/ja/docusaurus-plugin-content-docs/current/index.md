@@ -4,30 +4,42 @@ sidebar_position: 1
 ---
 
 FrameScript は React / Electron / Rust を組み合わせた、コードファーストなモーショングラフィックス基盤です。
-React コンポーネントとしてシーンを記述し、Studio でプレビューし、ヘッドレス Chromium で確定的に書き出します。
+React コンポーネントとしてシーンを記述し、Studio でプレビューし、ヘッドレス Chromium で書き出します。
 
 ## クイックスタート
 
-1) Studio UI を起動（プロジェクトルートの scripts を参照）。
-2) `project/` 内のコンポーネントやシーンを編集。
-3) Timeline でスクラブしてタイミングを確認。
-4) メニューの **Render...** から書き出し。
+### 依存関係
 
-## 主要コンセプト
+:::tip
+FrameScript を動かすには [`Node.js`](https://nodejs.org/ja) が必要です。
 
-- **Project**: 固定サイズの描画領域を提供するルート。
-- **Timeline/Clip**: クリップ範囲を登録し、可視/不可視を制御。
-- **Current frame**: すべてのアニメーションは 1 つのフレームカウンタから導出。
-- **Render mode**: レンダー時は `window.__frameScript.setFrame` で駆動。
+macOS の場合は [`brew`](https://brew.sh/) を使ってインストールすることを推奨します。
+:::
 
-## まず見るべき場所
+### プロジェクトの作成
 
-- `project/project.tsx` が全体の構成とクリップ順序を定義。
-- `project/scenes/*` が各シーンの実装。
-- `src/lib/*` が Clip/Timeline/Frame/Media の基盤。
+任意のディレクトリで以下のコマンドを実行します。
 
-## 次に読む
+```bash
+npm init @frame-script/latest
+```
 
-- コンポーネントと API: `components`
-- レンダーの仕組み: `rendering`
-- Studio の使い方: `studio-usage`
+このコマンドを実行すると対話形式でプロジェクトを作成できます。
+
+作成されたディレクトリに移動して、
+
+```bash
+cd <project-path>
+```
+
+以下を実行します。
+
+```bash
+npm run start
+```
+
+FrameScript Studio が立ち上がります。
+
+### プロジェクトを編集
+
+プロジェクトは `project/project.tsx` に記述されています。

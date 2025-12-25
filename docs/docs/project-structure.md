@@ -3,19 +3,20 @@ title: Project Structure
 sidebar_position: 2
 ---
 
-This project has two parts: the Studio app and the content you author.
+The project is split into the Studio app and the content you author.
+In most cases, you only need to edit `project/`.
 
 ## Key directories
 
-- `project/`: Your creative code (scenes, theme, components).
-- `src/lib/`: Core primitives (clip, timeline, frame, media).
-- `src/ui/`: Studio UI (timeline, transport, render dialogs).
-- `backend/`: Rust backend for video/audio decode.
-- `render/`: Rust renderer that drives headless Chromium.
+- `project/`: Creative code (scenes, theme, components)
+- `src/lib/`: Core primitives (Clip, Timeline, Frame, Media)
+- `src/ui/`: Studio UI (timeline, transport, render dialogs)
+- `backend/`: Rust decode server
+- `render/`: Renderer that drives headless Chromium
 
-## Editing your project
+## The main entry point
 
-Your main composition lives in `project/project.tsx`:
+`project/project.tsx` defines the overall composition. You place scenes and clips here.
 
 ```tsx
 <Project>
@@ -30,11 +31,3 @@ Your main composition lives in `project/project.tsx`:
   </TimeLine>
 </Project>
 ```
-
-Scenes go under `project/scenes/` and can use any React-based layout.
-
-## Theme and globals
-
-- `project/theme.ts` defines your palette.
-- `project/styles.tsx` defines global CSS and keyframes.
-- `project/components/` is a good home for shared UI pieces.

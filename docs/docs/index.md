@@ -4,31 +4,40 @@ sidebar_position: 1
 ---
 
 FrameScript is a code-first motion graphics toolkit built on React, Electron, and Rust.
-You author scenes as React components, preview them in the Studio UI, and render deterministic
-video output through a headless Chromium pipeline.
+You author scenes as React components, preview them in Studio, and render video through headless Chromium.
 
 ## Quick start
 
-1) Start the Studio UI (see project root scripts).
-2) Edit `project/` components and scenes.
-3) Use the Timeline panel to scrub, play, and verify clip timing.
-4) Open **Render...** from the menu and export a video.
+### Dependencies
 
-## Core concepts
+:::tip
+FrameScript requires [`Node.js`](https://nodejs.org/en).
 
-- **Project**: Wraps the visual tree and provides a fixed render surface.
-- **Timeline/Clips**: Clips register their time spans and are shown/hidden automatically.
-- **Current frame**: All animation is derived from a single global frame counter.
-- **Render mode**: When rendering, the app is driven by `window.__frameScript.setFrame`.
+On macOS, we recommend installing it via [`brew`](https://brew.sh/).
+:::
 
-## Where to start
+### Create a project
 
-- `project/project.tsx` defines the main composition and clip order.
-- `project/scenes/*` contains scene implementations.
-- `src/lib/*` provides the clip, timeline, frame, and media primitives.
+Run the following command in any directory:
 
-## Recommended reading
+```bash
+npm init @frame-script/latest
+```
 
-- Components and APIs: `components`
-- Render pipeline: `rendering`
-- Studio usage: `studio-usage`
+Move into the created directory:
+
+```bash
+cd <project-path>
+```
+
+Then start the Studio:
+
+```bash
+npm run start
+```
+
+FrameScript Studio should launch.
+
+### Edit the project
+
+Your project lives in `project/project.tsx`.

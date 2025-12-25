@@ -4,6 +4,7 @@ sidebar_position: 2
 ---
 
 プロジェクトは Studio 本体と、あなたが書くコンテンツに分かれています。
+基本的には `project/` のみを編集すれば十分です。
 
 ## 主要ディレクトリ
 
@@ -15,7 +16,7 @@ sidebar_position: 2
 
 ## 作品コードの中心
 
-`project/project.tsx` に全体構成を記述します。
+`project/project.tsx` に全体構成を記述します。ここにシーンやクリップを並べていく形です。
 
 ```tsx
 <Project>
@@ -30,11 +31,3 @@ sidebar_position: 2
   </TimeLine>
 </Project>
 ```
-
-各シーンは `project/scenes/` に置き、React で自由に構成できます。
-
-## Theme と Global styles
-
-- `project/theme.ts` で色やアクセントを定義。
-- `project/styles.tsx` でグローバル CSS を定義。
-- `project/components/` に共有 UI を配置。
