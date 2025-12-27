@@ -157,6 +157,20 @@ fn escape_concat_path(p: &str) -> String {
     p.replace('\'', r"'\''")
 }
 
+fn normalize_concat_path(path: &str) -> String {
+    if cfg!(windows) {
+        let mut normalized = path.to_string();
+        if let Some(rest) = normalized.strip_prefix(r"\\?\UNC\") {
+            normalized = format!(r"\\{}", rest);
+        } else if let Some(rest) = normalized.strip_prefix(r"\\?\") {
+            normalized = rest.to_string();
+        }
+        normalized.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
+}
+
 pub async fn concat_segments_mp4(
     segments: Vec<PathBuf>,
     output_path: &Path,
@@ -166,13 +180,22 @@ pub async fn concat_segments_mp4(
     }
 
     let list_path = output_path.with_extension("segments.txt");
+    let list_dir = list_path.parent().unwrap_or_else(|| Path::new("."));
+    let list_dir_abs = tokio::task::spawn_blocking({
+        let list_dir = list_dir.to_path_buf();
+        move || std::fs::canonicalize(&list_dir).unwrap_or(list_dir)
+    })
+    .await?;
 
     let mut lines = String::new();
     for seg in segments {
-        let abs = tokio::task::spawn_blocking(move || std::fs::canonicalize(seg))
-            .await??
-            .to_string_lossy()
-            .to_string();
+        let abs_path = tokio::task::spawn_blocking(move || std::fs::canonicalize(seg))
+            .await??;
+        let rel_path = match abs_path.strip_prefix(&list_dir_abs) {
+            Ok(rel) => rel.to_path_buf(),
+            Err(_) => abs_path,
+        };
+        let abs = normalize_concat_path(rel_path.to_string_lossy().as_ref());
 
         lines.push_str("file '");
         lines.push_str(&escape_concat_path(&abs));

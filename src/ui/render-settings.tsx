@@ -43,7 +43,7 @@ export const RenderSettingsPage = () => {
   const [frames, setFrames] = useState(Math.round((PROJECT_SETTINGS.fps ?? 60) * 5));
   const [workers, setWorkers] = useState(() => {
     if (typeof navigator !== "undefined" && navigator.hardwareConcurrency) {
-      return Math.max(1, navigator.hardwareConcurrency);
+      return Math.max(1, navigator.hardwareConcurrency / 2);
     }
     return 2;
   });
