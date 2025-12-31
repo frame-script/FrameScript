@@ -228,6 +228,11 @@ pub struct AudioSegmentResolved {
     pub source_start_frame: i64,
     #[serde(rename = "durationFrames")]
     pub duration_frames: i64,
+    #[serde(rename = "fadeInFrames")]
+    pub fade_in_frames: Option<i64>,
+    #[serde(rename = "fadeOutFrames")]
+    pub fade_out_frames: Option<i64>,
+    pub volume: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -317,11 +322,38 @@ pub async fn mux_audio_plan_into_mp4(
         let dur_sec = duration_frames / fps;
         let delay_ms = ((project_start_frame / fps) * 1000.0).round().max(0.0) as i64;
 
-        filter_parts.push(format!(
-            "[{input_idx}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS,aresample=48000,adelay={delay_ms}:all=1[a{n}]",
+        let fade_in_frames = seg.fade_in_frames.unwrap_or(0).max(0) as f64;
+        let fade_out_frames = seg.fade_out_frames.unwrap_or(0).max(0) as f64;
+        let volume = match seg.volume {
+            Some(value) if value.is_finite() => value.max(0.0),
+            _ => 1.0,
+        };
+        let fade_in_sec = (fade_in_frames / fps).max(0.0).min(dur_sec);
+        let fade_out_sec = (fade_out_frames / fps).max(0.0).min(dur_sec);
+
+        let mut chain = format!(
+            "[{input_idx}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS,aresample=48000",
             fmt_f(start_sec),
             fmt_f(dur_sec),
-        ));
+        );
+
+        if (volume - 1.0).abs() > f64::EPSILON {
+            chain.push_str(&format!(",volume={}", fmt_f(volume)));
+        }
+        if fade_in_sec > 0.0 {
+            chain.push_str(&format!(",afade=t=in:st=0:d={}", fmt_f(fade_in_sec)));
+        }
+        if fade_out_sec > 0.0 {
+            let fade_out_start = (dur_sec - fade_out_sec).max(0.0);
+            chain.push_str(&format!(
+                ",afade=t=out:st={}:d={}",
+                fmt_f(fade_out_start),
+                fmt_f(fade_out_sec),
+            ));
+        }
+
+        chain.push_str(&format!(",adelay={delay_ms}:all=1[a{n}]"));
+        filter_parts.push(chain);
 
         segment_labels.push(format!("[a{n}]"));
     }

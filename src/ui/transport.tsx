@@ -78,7 +78,11 @@ export const TransportControls = () => {
   const fps = PROJECT_SETTINGS.fps
   const [loop, setLoop] = useState(true)
   const rafRef = useRef<number | null>(null)
-  const lastTimeRef = useRef<number | null>(null)
+  const playbackStartTimeRef = useRef<number | null>(null)
+  const playbackStartFrameRef = useRef(currentFrame)
+  const lastSetFrameRef = useRef(currentFrame)
+  const queuedFrameRef = useRef<number | null>(null)
+  const renderedFrameRef = useRef(currentFrame)
   const playingRef = useRef(false)
   const frameRef = useRef(currentFrame)
   const frameFloatRef = useRef<number>(currentFrame)
@@ -86,8 +90,25 @@ export const TransportControls = () => {
   const isPlaying = useIsPlaying()
   const setIsPlaying = useSetIsPlaying()
 
-  frameRef.current = currentFrame
-  frameFloatRef.current = currentFrame
+  useEffect(() => {
+    renderedFrameRef.current = currentFrame
+    if (!playingRef.current) {
+      frameRef.current = currentFrame
+      frameFloatRef.current = currentFrame
+      playbackStartFrameRef.current = currentFrame
+      lastSetFrameRef.current = currentFrame
+      return
+    }
+
+    const drift = currentFrame - lastSetFrameRef.current
+    if (Math.abs(drift) > 2) {
+      frameRef.current = currentFrame
+      frameFloatRef.current = currentFrame
+      playbackStartFrameRef.current = currentFrame
+      playbackStartTimeRef.current = null
+      lastSetFrameRef.current = currentFrame
+    }
+  }, [currentFrame])
 
   const durationFrames = useMemo(() => {
     const maxClipEnd = clips.reduce((max, clip) => Math.max(max, clip.end + 1), 0)
@@ -97,32 +118,56 @@ export const TransportControls = () => {
   const stopPlayback = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = null
-    lastTimeRef.current = null
+    playbackStartTimeRef.current = null
+    queuedFrameRef.current = null
     playingRef.current = false
     setIsPlaying(false)
   }, [setIsPlaying])
 
+  const scheduleFrameCommit = useCallback(
+    (nextFrame: number) => {
+      queuedFrameRef.current = nextFrame
+      if (renderedFrameRef.current !== lastSetFrameRef.current) {
+        return
+      }
+      const queued = queuedFrameRef.current
+      if (queued == null) return
+      queuedFrameRef.current = null
+      if (queued !== frameRef.current) {
+        frameRef.current = queued
+        lastSetFrameRef.current = queued
+        setCurrentFrame(queued)
+      }
+    },
+    [setCurrentFrame],
+  )
+
   const tick = useCallback((timestamp: number) => {
     if (!playingRef.current) return
-    const last = lastTimeRef.current ?? timestamp
-    const deltaMs = timestamp - last
-    const advance = (deltaMs / 1000) * fps
-    const baseFloat = frameFloatRef.current
-    const nextFloat = baseFloat + advance
+    if (playbackStartTimeRef.current == null) {
+      playbackStartTimeRef.current = timestamp
+      playbackStartFrameRef.current = frameRef.current
+    }
+    const elapsedMs = timestamp - playbackStartTimeRef.current
+    const nextFloat = playbackStartFrameRef.current + (elapsedMs / 1000) * fps
     const nextInt = Math.floor(nextFloat)
-    lastTimeRef.current = timestamp
 
     const endFrame = durationFrames - 1
     if (nextFloat > endFrame) {
       if (loop) {
         frameRef.current = 0
         frameFloatRef.current = 0
-        setCurrentFrame(0)
+        playbackStartFrameRef.current = 0
+        playbackStartTimeRef.current = timestamp
+        lastSetFrameRef.current = 0
+        scheduleFrameCommit(0)
         rafRef.current = requestAnimationFrame(tick)
       } else {
         frameRef.current = endFrame
         frameFloatRef.current = endFrame
-        setCurrentFrame(endFrame)
+        playbackStartFrameRef.current = endFrame
+        lastSetFrameRef.current = endFrame
+        scheduleFrameCommit(endFrame)
         stopPlayback()
       }
       return
@@ -130,11 +175,10 @@ export const TransportControls = () => {
 
     frameFloatRef.current = nextFloat
     if (nextInt !== frameRef.current) {
-      frameRef.current = nextInt
-      setCurrentFrame(nextInt)
+      scheduleFrameCommit(nextInt)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [durationFrames, fps, loop, setCurrentFrame, stopPlayback])
+  }, [durationFrames, fps, loop, scheduleFrameCommit, stopPlayback])
 
   const togglePlay = useCallback(() => {
     if (playingRef.current) {
@@ -143,9 +187,14 @@ export const TransportControls = () => {
     }
     playingRef.current = true
     setIsPlaying(true)
-    lastTimeRef.current = null
+    frameRef.current = currentFrame
+    frameFloatRef.current = currentFrame
+    playbackStartFrameRef.current = currentFrame
+    playbackStartTimeRef.current = null
+    lastSetFrameRef.current = currentFrame
+    queuedFrameRef.current = null
     rafRef.current = requestAnimationFrame(tick)
-  }, [stopPlayback, tick])
+  }, [currentFrame, setIsPlaying, stopPlayback, tick])
 
   useEffect(() => {
     if (!isPlaying && playingRef.current) {
@@ -162,12 +211,14 @@ export const TransportControls = () => {
   const step = useCallback(
     (delta: number) => {
       stopPlayback()
-      const target = Math.max(0, frameRef.current + delta)
-      frameRef.current = target
-      frameFloatRef.current = target
-      setCurrentFrame(target)
-    },
-    [setCurrentFrame, stopPlayback],
+    const target = Math.max(0, frameRef.current + delta)
+    frameRef.current = target
+    frameFloatRef.current = target
+    lastSetFrameRef.current = target
+    queuedFrameRef.current = null
+    setCurrentFrame(target)
+  },
+  [setCurrentFrame, stopPlayback],
   )
 
   const jumpToStart = useCallback(() => {
@@ -175,6 +226,8 @@ export const TransportControls = () => {
     setCurrentFrame(0)
     frameRef.current = 0
     frameFloatRef.current = 0
+    lastSetFrameRef.current = 0
+    queuedFrameRef.current = null
   }, [setCurrentFrame, stopPlayback])
 
   const jumpToEnd = useCallback(() => {
@@ -182,6 +235,8 @@ export const TransportControls = () => {
     const target = Math.max(0, durationFrames - 1)
     frameRef.current = target
     frameFloatRef.current = target
+    lastSetFrameRef.current = target
+    queuedFrameRef.current = null
     setCurrentFrame(target)
   }, [durationFrames, setCurrentFrame, stopPlayback])
 

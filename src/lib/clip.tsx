@@ -286,6 +286,11 @@ export const Clip = ({
     [resolveReported],
   )
 
+  const durationReporter = useMemo(
+    () => ({ set: handleReport, remove: handleRemoveReport }),
+    [handleReport, handleRemoveReport],
+  )
+
   useEffect(() => {
     if (duration != null) {
       setFrames(Math.max(0, duration))
@@ -300,10 +305,12 @@ export const Clip = ({
     }
   }, [frames, onDurationChange])
 
+  useProvideClipDuration(frames)
+
   const end = start + Math.max(0, frames) - 1
 
   return (
-    <DurationReportContext.Provider value={{ set: handleReport, remove: handleRemoveReport }}>
+    <DurationReportContext.Provider value={durationReporter}>
       <ClipStatic start={start} end={end < start ? start : end} label={label} laneId={laneId}>
         <ClipAnimationSync>{children}</ClipAnimationSync>
       </ClipStatic>
@@ -383,8 +390,6 @@ export const ClipSequence = ({
   ) as ClipElementDyn[]
   const [durations, setDurations] = useState<Map<string, number>>(new Map())
 
-  if (items.length === 0) return null
-
   const handleDurationChange = useCallback(
     (key: string) => (value: number) => {
       setDurations((prev) => {
@@ -414,6 +419,9 @@ export const ClipSequence = ({
   })
 
   const total = cursor - start
+  useProvideClipDuration(total)
+
+  if (items.length === 0) return null
 
   useEffect(() => {
     if (onDurationChange) {

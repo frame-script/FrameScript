@@ -21,6 +21,8 @@ docs/.cache
 target
 frames
 output.mp4
+loudnorm.json
+output_youtube.mp4
 bin
 
 # Editor directories and files

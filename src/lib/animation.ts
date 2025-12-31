@@ -80,6 +80,7 @@ type MoveController<T> = {
 
 type AnimationContext = {
   sleep: (frames: number) => AnimationHandle
+  waitUntil: (frame: number) => AnimationHandle
   move: <T extends VariableType>(variable: Variable<T>) => MoveController<T>
   parallel: (handles: AnimationHandle[]) => AnimationHandle
 }
@@ -390,6 +391,10 @@ export const useAnimation = (
         const delta = toFrames(frames)
         const end = internal.now + delta
         return new AnimationHandle(internal, end)
+      },
+      waitUntil: (frame: number) => {
+        const target = Math.max(internal.now, toFrames(frame))
+        return new AnimationHandle(internal, target)
       },
       move: (variable) => {
         internal.register(variable as Variable<unknown>)

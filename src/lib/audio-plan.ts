@@ -36,6 +36,9 @@ export type AudioSegment = {
   projectStartFrame: number
   sourceStartFrame: number
   durationFrames: number
+  fadeInFrames?: number
+  fadeOutFrames?: number
+  volume?: number
 }
 
 type Listener = () => void
@@ -73,7 +76,10 @@ export const registerAudioSegmentGlobal = (segment: AudioSegment) => {
       ("path" in segment.source ? segment.source.path : "") &&
     existing.projectStartFrame === segment.projectStartFrame &&
     existing.sourceStartFrame === segment.sourceStartFrame &&
-    existing.durationFrames === segment.durationFrames
+    existing.durationFrames === segment.durationFrames &&
+    (existing.fadeInFrames ?? 0) === (segment.fadeInFrames ?? 0) &&
+    (existing.fadeOutFrames ?? 0) === (segment.fadeOutFrames ?? 0) &&
+    (existing.volume ?? 1) === (segment.volume ?? 1)
   ) {
     return
   }

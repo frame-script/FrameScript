@@ -35,6 +35,9 @@ export type Sound = {
 export type SoundProps = {
   sound: Sound | string
   trim?: Trim
+  fadeInFrames?: number
+  fadeOutFrames?: number
+  volume?: number
 }
 
 /**
@@ -114,7 +117,13 @@ export const sound_length = (sound: Sound | string): number => {
  * <Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
  * ```
  */
-export const Sound = ({ sound, trim }: SoundProps) => {
+export const Sound = ({
+  sound,
+  trim,
+  fadeInFrames = 0,
+  fadeOutFrames = 0,
+  volume = 1,
+}: SoundProps) => {
   const id = useId()
   const clipRange = useClipRange()
   const isActive = useClipActive()
@@ -138,6 +147,7 @@ export const Sound = ({ sound, trim }: SoundProps) => {
     0,
     rawDurationFrames - trimStartFrames - trimEndFrames,
   )
+  const normalizedVolume = Number.isFinite(volume) ? Math.max(0, volume) : 1
 
   useProvideClipDuration(durationFrames)
 
@@ -222,9 +232,34 @@ export const Sound = ({ sound, trim }: SoundProps) => {
 
       const source = ctx.createBufferSource()
       source.buffer = buffer
-      source.connect(gainRef.current ?? ctx.destination)
+      const gain = gainRef.current ?? ctx.destination
+      source.connect(gain)
       sourceRef.current = source
       playingPathRef.current = resolvedSound.path
+
+      if (gainRef.current) {
+        const now = ctx.currentTime
+        const fadeInSec = Math.min(Math.max(0, fadeInFrames) / fps, clampedDur)
+        const remaining = Math.max(0, clampedDur - fadeInSec)
+        const fadeOutSec = Math.min(Math.max(0, fadeOutFrames) / fps, remaining)
+
+        gainRef.current.gain.cancelScheduledValues(now)
+        if (fadeInSec > 0) {
+          gainRef.current.gain.setValueAtTime(0, now)
+          gainRef.current.gain.linearRampToValueAtTime(
+            normalizedVolume,
+            now + fadeInSec,
+          )
+        } else {
+          gainRef.current.gain.setValueAtTime(normalizedVolume, now)
+        }
+
+        if (fadeOutSec > 0) {
+          const fadeOutStart = now + clampedDur - fadeOutSec
+          gainRef.current.gain.setValueAtTime(normalizedVolume, fadeOutStart)
+          gainRef.current.gain.linearRampToValueAtTime(0, now + clampedDur)
+        }
+      }
 
       source.onended = () => {
         if (sourceRef.current === source) {
@@ -239,6 +274,9 @@ export const Sound = ({ sound, trim }: SoundProps) => {
       clipRange,
       durationFrames,
       ensureAudioContext,
+      fadeInFrames,
+      fadeOutFrames,
+      normalizedVolume,
       resolvedSound.path,
       stopPlayback,
       trimStartFrames,
@@ -254,18 +292,32 @@ export const Sound = ({ sound, trim }: SoundProps) => {
     const clamped = Math.min(clipDurationFrames, availableFrames)
     if (clamped <= 0) return
 
+    const fadeIn = Math.max(0, Math.round(fadeInFrames))
+    const fadeOut = Math.max(0, Math.round(fadeOutFrames))
     registerAudioSegmentGlobal({
       id,
       source: { kind: "sound", path: resolvedSound.path },
       projectStartFrame,
       sourceStartFrame: trimStartFrames,
       durationFrames: clamped,
+      fadeInFrames: Math.min(fadeIn, clamped),
+      fadeOutFrames: Math.min(fadeOut, clamped),
+      volume: normalizedVolume,
     })
 
     return () => {
       unregisterAudioSegmentGlobal(id)
     }
-  }, [clipRange, durationFrames, id, resolvedSound.path, trimStartFrames])
+  }, [
+    clipRange,
+    durationFrames,
+    fadeInFrames,
+    fadeOutFrames,
+    id,
+    normalizedVolume,
+    resolvedSound.path,
+    trimStartFrames,
+  ])
 
   useEffect(() => {
     if (isRender) return

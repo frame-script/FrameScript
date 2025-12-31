@@ -8,6 +8,16 @@ import { normalizeVideo, video_fps, video_length, type Video, type VideoResolved
 
 // Track pending frame draws so headless callers can await completion.
 const pendingFramePromises = new Set<Promise<void>>();
+const waitCanvasFrameCallbacks = new Map<string, (frame: number) => Promise<void>>();
+const updateGlobalWaitCanvasFrame = () => {
+  if (typeof window === "undefined") return;
+  const api = ((window as any).__frameScript ||= {});
+  api.waitCanvasFrame = async (frame: number) => {
+    const callbacks = Array.from(waitCanvasFrameCallbacks.values());
+    if (callbacks.length === 0) return;
+    await Promise.all(callbacks.map((cb) => cb(frame)));
+  };
+};
 
 const trackPending = (manual: ManualPromise<void>) => {
   pendingFramePromises.add(manual.promise);
@@ -55,7 +65,9 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
   const currentFrame = useCurrentFrame();
   const currentFrameRef = useRef(currentFrame);
+  const waitCanvasIdRef = useRef(`video-${Math.random().toString(36).slice(2)}`);
   const visible = useClipActive()
+  const clipStart = useClipStart()
 
   useEffect(() => {
     currentFrameRef.current = currentFrame;
@@ -88,6 +100,10 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       entry.manual.reject(reason);
     }
     pendingMapRef.current.clear();
+    for (const waiter of waitersRef.current.values()) {
+      waiter.reject(reason);
+    }
+    waitersRef.current.clear();
   }, []);
 
   const createOrGetFramePromise = useCallback((target: number) => {
@@ -97,6 +113,9 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
     }
 
     const manual = createManualPromise()
+    manual.promise.finally(() => {
+      waitersRef.current.delete(target)
+    })
     trackPending(manual)
     waitersRef.current.set(target, manual)
     return manual
@@ -107,8 +126,25 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
     if (projectFrame > prev) {
       lastDrawnFrameRef.current = projectFrame;
     }
+    const hadWaiter = waitersRef.current.has(projectFrame);
     createOrGetFramePromise(projectFrame).resolve()
   }, []);
+
+  const sendPlaybackFrameRequest = useCallback((playbackFrame: number) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const req = {
+      video: resolved.path,
+      width: PROJECT_SETTINGS.width,
+      height: PROJECT_SETTINGS.height,
+      frame: playbackFrame,
+    };
+
+    ws.send(JSON.stringify(req));
+  }, [resolved.path]);
 
   const sendFrameRequest = useCallback(
     (frame: number) => {
@@ -121,10 +157,6 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       const sourceEnd = Math.max(sourceStart, rawDurationFrames - trimEndFrames - 1);
 
       requestedFrameRef.current = clampedFrame;
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return;
-      }
 
       const playbackFrameRaw =
         fps > 0
@@ -134,33 +166,29 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
       const alreadyDrawn =
         lastDrawnFrameRef.current != null && lastDrawnFrameRef.current >= clampedFrame;
-      const hasPendingSamePlayback = pendingMapRef.current.has(playbackFrame);
-      if (alreadyDrawn && !hasPendingSamePlayback) {
-        return;
+      const existingPending = pendingMapRef.current.get(playbackFrame);
+      if (alreadyDrawn && !existingPending) return;
+
+      if (existingPending) {
+        if (existingPending.projectFrame !== clampedFrame) {
+          existingPending.projectFrame = clampedFrame;
+        }
+      } else {
+        const manual = createManualPromise();
+        trackPending(manual);
+        pendingMapRef.current.set(playbackFrame, { manual, projectFrame: clampedFrame });
       }
 
-      const manual = createManualPromise();
-      trackPending(manual);
-
-      const existing = pendingMapRef.current.get(playbackFrame);
-      if (existing) {
-        existing.manual.reject(new Error("superseded by newer request"));
-      }
-      pendingMapRef.current.set(playbackFrame, { manual, projectFrame: clampedFrame });
-
-      const req = {
-        video: resolved.path,
-        width: PROJECT_SETTINGS.width,
-        height: PROJECT_SETTINGS.height,
-        frame: playbackFrame,
-      };
-
-      ws.send(JSON.stringify(req));
+      sendPlaybackFrameRequest(playbackFrame);
     },
-    [durationFrames, fps, resolved.path, trimEndFrames, trimStartFrames, rawDurationFrames],
+    [durationFrames, fps, rawDurationFrames, sendPlaybackFrameRequest, trimEndFrames, trimStartFrames],
   );
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -173,18 +201,27 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       }
     };
 
+    let disposed = false;
+
     const scheduleReconnect = () => {
+      if (disposed) return;
       if (reconnectTimerRef.current != null) return;
       reconnectTimerRef.current = window.setTimeout(() => {
         reconnectTimerRef.current = null;
+        if (disposed) return;
         connect();
       }, 300);
     };
 
-    const handleDisconnect = (reason: unknown) => {
-      rejectPendingRequests(reason);
+    const handleDisconnect = (reason: unknown, shouldRetry: boolean) => {
       wsRef.current = null;
-      scheduleReconnect();
+      if (shouldRetry) {
+        if (!disposed) {
+          scheduleReconnect();
+        }
+      } else {
+        rejectPendingRequests(reason);
+      }
     };
 
     const connect = () => {
@@ -194,7 +231,14 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       wsRef.current = socket;
 
       socket.onopen = () => {
+        if (disposed) return;
         clearReconnectTimer();
+        const pendingEntries = Array.from(pendingMapRef.current.keys());
+        if (pendingEntries.length > 0) {
+          for (const frameIndex of pendingEntries) {
+            sendPlaybackFrameRequest(frameIndex);
+          }
+        }
         const target = requestedFrameRef.current ?? currentFrameRef.current;
         sendFrameRequest(target);
       };
@@ -241,17 +285,20 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       };
 
       socket.onerror = (event) => {
-        handleDisconnect(event);
+        if (disposed) return;
+        handleDisconnect(event, true);
       };
 
       socket.onclose = () => {
-        handleDisconnect(new Error("socket closed"));
+        if (disposed) return;
+        handleDisconnect(new Error("socket closed"), true);
       };
     };
 
     connect();
 
     return () => {
+      disposed = true;
       clearReconnectTimer();
       const ws = wsRef.current;
       wsRef.current = null;
@@ -260,39 +307,42 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       }
       rejectPendingRequests(new Error("component unmounted"));
     };
-  }, [rejectPendingRequests, resolveWaiters, sendFrameRequest]);
+  }, [rejectPendingRequests, resolveWaiters, sendFrameRequest, sendPlaybackFrameRequest, visible]);
 
   useEffect(() => {
+    if (!visible) return;
     sendFrameRequest(currentFrame);
-  }, [currentFrame, sendFrameRequest]);
+  }, [currentFrame, sendFrameRequest, visible]);
 
-
-  const clipStart = useClipStart()
 
   useEffect(() => {
     const waitCanvasFrame = async (frame: number) => {
       if (!visible) {
         return
       }
-
-      if (clipStart) {
-        await createOrGetFramePromise(frame - clipStart).promise
-      } else {
-        await createOrGetFramePromise(frame).promise
-      }
+      const startOffset = clipStart ?? 0
+      const relativeFrame = frame - startOffset
+      if (relativeFrame < 0 || durationFrames <= 0) return
+      const maxFrame = Math.max(0, durationFrames - 1)
+      const clampedFrame = Math.min(Math.max(relativeFrame, 0), maxFrame)
+      const lastDrawn = lastDrawnFrameRef.current
+      if (lastDrawn != null && lastDrawn >= clampedFrame) return
+      await createOrGetFramePromise(clampedFrame).promise
     }
 
-    (window as any).__frameScript = {
-      ...(window as any).__frameScript,
-      waitCanvasFrame,
+    const id = waitCanvasIdRef.current
+    if (visible) {
+      waitCanvasFrameCallbacks.set(id, waitCanvasFrame)
+    } else {
+      waitCanvasFrameCallbacks.delete(id)
     }
+    updateGlobalWaitCanvasFrame()
 
     return () => {
-      if ((window as any).__frameScript) {
-        delete (window as any).__frameScript.waitCanvasFrame
-      }
+      waitCanvasFrameCallbacks.delete(id)
+      updateGlobalWaitCanvasFrame()
     }
-  }, [clipStart, visible])
+  }, [clipStart, createOrGetFramePromise, durationFrames, visible])
 
   const baseStyle: CSSProperties = {
     width: "100%",

@@ -1,3 +1,4 @@
+import { DrawText } from "../src/lib/animation/misc/draw-text"
 import { Clip } from "../src/lib/clip"
 import { seconds } from "../src/lib/frame"
 import { FillFrame } from "../src/lib/layout/fill-frame"
@@ -14,9 +15,11 @@ export const PROJECT_SETTINGS: ProjectSettings = {
 const HelloScene = () => {
   return (
     <FillFrame style={{ alignItems: "center", justifyContent: "center" }}>
-      <div style={{ fontSize: 64, fontWeight: 600, color: "#f8fafc" }}>
-        Hello, world!
-      </div>
+      <DrawText
+        text="Hello, world!"
+        fontUrl="./NotoSerifCJKJP-Medium.ttf"
+        durationFrames={seconds(2)}
+      />
     </FillFrame>
   )
 }

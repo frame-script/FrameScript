@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { useEffect, useId, useMemo, useRef } from "react";
-import { useCurrentFrame, useSetGlobalCurrentFrame } from "../frame";
+import { useCurrentFrame } from "../frame";
 import { PROJECT_SETTINGS } from "../../../project/project";
 import { useIsPlaying, useIsRender } from "../studio-state";
-import { useClipActive, useClipRange, useClipStart, useProvideClipDuration } from "../clip";
+import { useClipActive, useClipRange, useProvideClipDuration } from "../clip";
 import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan";
 import { VideoCanvasRender } from "./video-render";
 import type { Trim } from "../trim";
@@ -288,26 +288,6 @@ const VideoCanvas = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: V
       playingFlag.current = false
     }
   }, [isPlaying, isVisible])
-
-  const setGlobalCurrentFrame = useSetGlobalCurrentFrame()
-  const clipStart = useClipStart() ?? 0
-
-  useEffect(() => {
-    const el = elementRef.current
-    if (!el || !isPlaying || !isVisible) return
-
-    let raf: number | null = null
-    const tick = () => {
-      const time = el.currentTime
-      const frame = Math.round(time * PROJECT_SETTINGS.fps) - trimStartFrames
-      setGlobalCurrentFrame(Math.max(0, frame) + clipStart)
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => {
-      if (raf != null) cancelAnimationFrame(raf)
-    }
-  }, [clipStart, isPlaying, isVisible, setGlobalCurrentFrame])
 
   return (
     <video

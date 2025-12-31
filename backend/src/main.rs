@@ -42,6 +42,11 @@ struct AudioQuery {
     path: String,
 }
 
+#[derive(Deserialize)]
+struct FileQuery {
+    path: String,
+}
+
 #[derive(Clone)]
 struct AppState;
 
@@ -87,6 +92,11 @@ struct AudioSegment {
     source_start_frame: i64,
     #[serde(rename = "durationFrames")]
     duration_frames: i64,
+    #[serde(rename = "fadeInFrames")]
+    fade_in_frames: Option<i64>,
+    #[serde(rename = "fadeOutFrames")]
+    fade_out_frames: Option<i64>,
+    volume: Option<f64>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -112,6 +122,11 @@ struct AudioSegmentResolved {
     source_start_frame: i64,
     #[serde(rename = "durationFrames")]
     duration_frames: i64,
+    #[serde(rename = "fadeInFrames")]
+    fade_in_frames: i64,
+    #[serde(rename = "fadeOutFrames")]
+    fade_out_frames: i64,
+    volume: f64,
 }
 
 #[derive(Serialize, Clone)]
@@ -126,6 +141,7 @@ static RENDER_AUDIO_PLAN: std::sync::LazyLock<std::sync::Mutex<Option<AudioPlanR
 static RENDER_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOTAL: AtomicUsize = AtomicUsize::new(0);
 static RENDER_CANCEL: AtomicBool = AtomicBool::new(false);
+static NEXT_SESSION_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[tokio::main]
 async fn main() {
@@ -148,6 +164,7 @@ async fn main() {
             "/audio/meta",
             get(audio_meta_handler).options(options_handler),
         )
+        .route("/file", get(file_handler).options(options_handler))
         .route(
             "/set_cache_size",
             post(set_cache_size_handler).options(options_handler),
@@ -360,6 +377,48 @@ async fn audio_handler(
     Ok(resp)
 }
 
+fn cors_status(status: StatusCode) -> axum::response::Response {
+    let mut resp = axum::response::Response::new(axum::body::Body::empty());
+    *resp.status_mut() = status;
+    apply_cors(resp.headers_mut());
+    resp
+}
+
+async fn file_handler(
+    State(_state): State<AppState>,
+    Query(FileQuery { path }): Query<FileQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let resolved_path = match resolve_path_to_string(&path) {
+        Ok(value) => value,
+        Err(_) => return Ok(cors_status(StatusCode::BAD_REQUEST)),
+    };
+    let mut file = match tokio::fs::File::open(&resolved_path).await {
+        Ok(value) => value,
+        Err(_) => return Ok(cors_status(StatusCode::NOT_FOUND)),
+    };
+    let metadata = match file.metadata().await {
+        Ok(value) => value,
+        Err(_) => return Ok(cors_status(StatusCode::INTERNAL_SERVER_ERROR)),
+    };
+    let len = metadata.len();
+
+    let stream = ReaderStream::with_capacity(file.take(len), 16 * 1024);
+    let mut resp = axum::response::Response::new(axum::body::Body::from_stream(stream));
+    *resp.status_mut() = StatusCode::OK;
+
+    let headers = resp.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/octet-stream"),
+    );
+    if let Ok(v) = header::HeaderValue::from_str(&len.to_string()) {
+        headers.insert(header::CONTENT_LENGTH, v);
+    }
+    apply_cors(headers);
+
+    Ok(resp)
+}
+
 async fn healthz_handler() -> impl IntoResponse {
     let mut headers = HeaderMap::new();
     apply_cors(&mut headers);
@@ -406,6 +465,7 @@ async fn audio_meta_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, _state: AppState) {
+    let session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed) as u64;
     info!("client connected");
 
     while let Some(msg) = socket.next().await {
@@ -438,6 +498,7 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
                         path,
                         width,
                         height,
+                        session_id,
                     })
                     .await;
                 let frame_rgba = decoder.get_frame(target_frame).await;
@@ -468,6 +529,7 @@ async fn handle_socket(mut socket: WebSocket, _state: AppState) {
         }
     }
 
+    DECODER.clear_session(session_id);
     info!("client disconnected");
 }
 
@@ -591,13 +653,25 @@ async fn set_audio_plan_handler(
             Ok(ms) if ms > 0 => ms,
             _ => continue,
         };
-        let source_total_frames =
-            ((source_duration_ms as f64 / 1000.0) * fps).round().max(0.0) as i64;
+        let source_total_frames = ((source_duration_ms as f64 / 1000.0) * fps)
+            .round()
+            .max(0.0) as i64;
         let available = (source_total_frames - source_start_frame).max(0);
         let duration_frames = duration_frames.min(available);
         if duration_frames == 0 {
             continue;
         }
+
+        let fade_in_frames = seg.fade_in_frames.unwrap_or(0).max(0).min(duration_frames);
+        let fade_out_frames = seg
+            .fade_out_frames
+            .unwrap_or(0)
+            .max(0)
+            .min(duration_frames);
+        let volume = match seg.volume {
+            Some(value) if value.is_finite() => value.max(0.0),
+            _ => 1.0,
+        };
 
         segments.push(AudioSegmentResolved {
             id: seg.id,
@@ -605,6 +679,9 @@ async fn set_audio_plan_handler(
             project_start_frame,
             source_start_frame,
             duration_frames,
+            fade_in_frames,
+            fade_out_frames,
+            volume,
         });
     }
 
@@ -617,10 +694,14 @@ async fn get_audio_plan_handler(State(_state): State<AppState>) -> impl IntoResp
     let mut headers = HeaderMap::new();
     apply_cors(&mut headers);
 
-    let plan = RENDER_AUDIO_PLAN.lock().unwrap().clone().unwrap_or(AudioPlanResolved {
-        fps: 60.0,
-        segments: Vec::new(),
-    });
+    let plan = RENDER_AUDIO_PLAN
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or(AudioPlanResolved {
+            fps: 60.0,
+            segments: Vec::new(),
+        });
 
     (headers, Json(plan))
 }
