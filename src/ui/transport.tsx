@@ -155,18 +155,11 @@ export const TransportControls = () => {
     const endFrame = durationFrames - 1
     if (nextFloat > endFrame) {
       if (loop) {
-        frameRef.current = 0
-        frameFloatRef.current = 0
         playbackStartFrameRef.current = 0
         playbackStartTimeRef.current = timestamp
-        lastSetFrameRef.current = 0
         scheduleFrameCommit(0)
         rafRef.current = requestAnimationFrame(tick)
       } else {
-        frameRef.current = endFrame
-        frameFloatRef.current = endFrame
-        playbackStartFrameRef.current = endFrame
-        lastSetFrameRef.current = endFrame
         scheduleFrameCommit(endFrame)
         stopPlayback()
       }
