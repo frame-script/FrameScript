@@ -17,7 +17,8 @@ const HelloScene = () => {
     <FillFrame style={{ alignItems: "center", justifyContent: "center" }}>
       <DrawText
         text="Hello, world!"
-        fontUrl="./NotoSerifCJKJP-Medium.ttf"
+        fontUrl="assets/NotoSerifCJKJP-Medium.ttf"
+        strokeWidth={2}
         durationFrames={seconds(2)}
       />
     </FillFrame>
