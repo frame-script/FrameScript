@@ -28,7 +28,7 @@ use tracing::{error, info};
 
 use crate::{
     decoder::{DECODER, DecoderKey, set_max_cache_size},
-    ffmpeg::{probe_audio_duration_ms, probe_video_duration_ms, probe_video_fps},
+    ffmpeg::{probe_audio_duration_ms, probe_video_dimensions, probe_video_duration_ms, probe_video_fps},
     util::resolve_path_to_string,
 };
 
@@ -429,6 +429,8 @@ async fn healthz_handler() -> impl IntoResponse {
 struct VideoMetadataResponse {
     duration_ms: u64,
     fps: f64,
+    width: u32,
+    height: u32,
 }
 
 async fn video_meta_handler(
@@ -440,8 +442,10 @@ async fn video_meta_handler(
         probe_video_duration_ms(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let fps = probe_video_fps(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let (width, height) =
+        probe_video_dimensions(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let mut resp = Json(VideoMetadataResponse { duration_ms, fps }).into_response();
+    let mut resp = Json(VideoMetadataResponse { duration_ms, fps, width, height }).into_response();
     apply_cors(resp.headers_mut());
     Ok(resp)
 }

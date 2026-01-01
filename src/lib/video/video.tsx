@@ -66,7 +66,45 @@ const buildMetaUrl = (video: Video) => {
   return url.toString();
 }
 
-const videoLengthCache = new Map<string, number>()
+type VideoMeta = {
+  duration_ms: number
+  fps: number
+  width: number
+  height: number
+}
+
+const videoMetaCache = new Map<string, VideoMeta>()
+
+const fetchVideoMetaSync = (video: Video): VideoMeta => {
+  if (videoMetaCache.has(video.path)) {
+    return videoMetaCache.get(video.path)!
+  }
+
+  const fallback: VideoMeta = { duration_ms: 0, fps: 0, width: 0, height: 0 }
+
+  try {
+    const xhr = new XMLHttpRequest()
+    xhr.open("GET", buildMetaUrl(video), false) // 同期リクエストで初期ロード用途
+    xhr.send()
+
+    if (xhr.status >= 200 && xhr.status < 300) {
+      const payload = JSON.parse(xhr.responseText) as Partial<VideoMeta>
+      const meta: VideoMeta = {
+        duration_ms: typeof payload.duration_ms === "number" ? Math.max(0, payload.duration_ms) : 0,
+        fps: typeof payload.fps === "number" ? payload.fps : 0,
+        width: typeof payload.width === "number" ? Math.max(0, Math.round(payload.width)) : 0,
+        height: typeof payload.height === "number" ? Math.max(0, Math.round(payload.height)) : 0,
+      }
+      videoMetaCache.set(video.path, meta)
+      return meta
+    }
+  } catch (error) {
+    console.error("fetchVideoMetaSync(): failed to fetch metadata", error)
+  }
+
+  videoMetaCache.set(video.path, fallback)
+  return fallback
+}
 
 /**
  * Returns video length in frames (project FPS).
@@ -80,34 +118,10 @@ const videoLengthCache = new Map<string, number>()
  */
 export const video_length = (video: Video | string): number => {
   const resolved = normalizeVideo(video)
-
-  if (videoLengthCache.has(resolved.path)) {
-    return videoLengthCache.get(resolved.path)!
-  }
-
-  try {
-    const xhr = new XMLHttpRequest()
-    xhr.open("GET", buildMetaUrl(resolved), false) // 同期リクエストで初期ロード用途
-    xhr.send()
-
-    if (xhr.status >= 200 && xhr.status < 300) {
-      const payload = JSON.parse(xhr.responseText) as { duration_ms?: number, fps?: number }
-      const seconds = typeof payload.duration_ms === "number"
-        ? Math.max(0, payload.duration_ms) / 1000
-        : 0
-      const frames = Math.round(seconds * PROJECT_SETTINGS.fps)
-      videoLengthCache.set(resolved.path, frames)
-      return frames
-    }
-  } catch (error) {
-    console.error("video_length(): failed to fetch metadata", error)
-  }
-
-  videoLengthCache.set(resolved.path, 0)
-  return 0
+  const meta = fetchVideoMetaSync(resolved)
+  const seconds = meta.duration_ms > 0 ? meta.duration_ms / 1000 : 0
+  return Math.round(seconds * PROJECT_SETTINGS.fps)
 }
-
-const videoFpsCache = new Map<string, number>()
 
 /**
  * Returns the source video FPS.
@@ -121,28 +135,19 @@ const videoFpsCache = new Map<string, number>()
  */
 export const video_fps = (video: Video | string): number => {
   const resolved = normalizeVideo(video)
+  const meta = fetchVideoMetaSync(resolved)
+  return meta.fps
+}
 
-  if (videoFpsCache.has(resolved.path)) {
-    return videoFpsCache.get(resolved.path)!
-  }
+export type VideoDimensions = {
+  width: number
+  height: number
+}
 
-  try {
-    const xhr = new XMLHttpRequest()
-    xhr.open("GET", buildMetaUrl(resolved), false) // 同期リクエストで初期ロード用途
-    xhr.send()
-
-    if (xhr.status >= 200 && xhr.status < 300) {
-      const payload = JSON.parse(xhr.responseText) as { duration_ms?: number, fps?: number }
-      const fps = typeof payload.fps === "number" ? payload.fps : 0
-      videoFpsCache.set(resolved.path, fps)
-      return fps
-    }
-  } catch (error) {
-    console.error("video_fps(): failed to fetch metadata", error)
-  }
-
-  videoFpsCache.set(resolved.path, 0)
-  return 0
+export const video_dimensions = (video: Video | string): VideoDimensions => {
+  const resolved = normalizeVideo(video)
+  const meta = fetchVideoMetaSync(resolved)
+  return { width: meta.width, height: meta.height }
 }
 
 /**
@@ -175,6 +180,19 @@ export const Video = ({ video, style, trim }: VideoProps) => {
   const id = useId()
   const clipRange = useClipRange()
   const resolvedVideo = useMemo(() => normalizeVideo(video), [video])
+  const resolvedStyle = useMemo(() => {
+    if (style?.aspectRatio != null) {
+      return style
+    }
+    const { width, height } = video_dimensions(resolvedVideo)
+    if (width <= 0 || height <= 0) {
+      return style
+    }
+    return {
+      ...style,
+      aspectRatio: `${width} / ${height}`,
+    }
+  }, [resolvedVideo, style])
   const rawDurationFrames = useMemo(() => video_length(resolvedVideo), [resolvedVideo])
   const { trimStartFrames, trimEndFrames } = useMemo(
     () =>
@@ -211,7 +229,7 @@ export const Video = ({ video, style, trim }: VideoProps) => {
     return (
       <VideoCanvasRender
         video={video}
-        style={style}
+        style={resolvedStyle}
         trimStartFrames={trimStartFrames}
         trimEndFrames={trimEndFrames}
       />
@@ -220,7 +238,7 @@ export const Video = ({ video, style, trim }: VideoProps) => {
     return (
       <VideoCanvas
         video={video}
-        style={style}
+        style={resolvedStyle}
         trimStartFrames={trimStartFrames}
         trimEndFrames={trimEndFrames}
       />

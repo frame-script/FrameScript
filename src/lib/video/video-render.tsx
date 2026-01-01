@@ -52,6 +52,7 @@ export type VideoCanvasRenderProps = {
 export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: VideoCanvasRenderProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const canvasSizeRef = useRef({ width: PROJECT_SETTINGS.width, height: PROJECT_SETTINGS.height });
   const pendingMapRef = useRef<Map<number, { manual: ManualPromise<void>; projectFrame: number }>>(new Map());
   const waitersRef = useRef<Map<number, ManualPromise<void>>>(new Map());
   const lastDrawnFrameRef = useRef<number | null>(null);
@@ -87,6 +88,7 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
         canvas.width = nextWidth;
         canvas.height = nextHeight;
       }
+      canvasSizeRef.current = { width: canvas.width, height: canvas.height };
     };
 
     resize();
@@ -126,7 +128,6 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
     if (projectFrame > prev) {
       lastDrawnFrameRef.current = projectFrame;
     }
-    const hadWaiter = waitersRef.current.has(projectFrame);
     createOrGetFramePromise(projectFrame).resolve()
   }, []);
 
@@ -138,8 +139,8 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
     const req = {
       video: resolved.path,
-      width: PROJECT_SETTINGS.width,
-      height: PROJECT_SETTINGS.height,
+      width: canvasSizeRef.current.width,
+      height: canvasSizeRef.current.height,
       frame: playbackFrame,
     };
 

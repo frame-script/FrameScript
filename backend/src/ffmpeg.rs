@@ -17,6 +17,8 @@ struct FfprobeStream {
     avg_frame_rate: Option<String>,
     r_frame_rate: Option<String>,
     nb_frames: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +146,23 @@ pub fn probe_video_fps(path: &str) -> Result<f64, String> {
         .ok_or_else(|| "failed to read fps".to_string())?;
 
     Ok(fps)
+}
+
+pub fn probe_video_dimensions(path: &str) -> Result<(u32, u32), String> {
+    let output = run_ffprobe(path, Some("v:0"), "stream=width,height")?;
+    let stream = output
+        .streams
+        .as_ref()
+        .and_then(|streams| streams.first())
+        .ok_or_else(|| "failed to read dimensions".to_string())?;
+
+    let width = stream.width.unwrap_or(0);
+    let height = stream.height.unwrap_or(0);
+    if width > 0 && height > 0 {
+        Ok((width, height))
+    } else {
+        Err("failed to read dimensions".to_string())
+    }
 }
 
 /// Return audio duration in milliseconds using ffprobe metadata.
