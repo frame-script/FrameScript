@@ -242,6 +242,12 @@ pub enum AudioSourceResolved {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioLoudnessPreset {
+    Youtube,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct AudioSegmentResolved {
     pub id: String,
     pub source: AudioSourceResolved,
@@ -262,6 +268,7 @@ pub struct AudioSegmentResolved {
 pub struct AudioPlanResolved {
     pub fps: f64,
     pub segments: Vec<AudioSegmentResolved>,
+    pub loudness: Option<AudioLoudnessPreset>,
 }
 
 pub async fn mux_audio_plan_into_mp4(
@@ -391,9 +398,14 @@ pub async fn mux_audio_plan_into_mp4(
         .collect::<String>();
 
     let total_inputs = 1 + seg_count;
-    filter_parts.push(format!(
-        "{mix_inputs}amix=inputs={total_inputs}:duration=first:normalize=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[aout]"
-    ));
+    let mut mix_chain = format!(
+        "{mix_inputs}amix=inputs={total_inputs}:duration=first:normalize=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
+    );
+    if matches!(plan.loudness, Some(AudioLoudnessPreset::Youtube)) {
+        mix_chain.push_str(",loudnorm=I=-14:TP=-1:LRA=11");
+    }
+    mix_chain.push_str("[aout]");
+    filter_parts.push(mix_chain);
 
     let filter_complex = filter_parts.join(";");
 

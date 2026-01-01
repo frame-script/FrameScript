@@ -82,6 +82,12 @@ enum AudioSourceRef {
     Sound { path: String },
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+enum AudioLoudnessPreset {
+    Youtube,
+}
+
 #[derive(Deserialize, Clone)]
 struct AudioSegment {
     id: String,
@@ -103,6 +109,7 @@ struct AudioSegment {
 struct AudioPlanRequest {
     fps: f64,
     segments: Vec<AudioSegment>,
+    loudness: Option<AudioLoudnessPreset>,
 }
 
 #[derive(Serialize, Clone)]
@@ -133,6 +140,7 @@ struct AudioSegmentResolved {
 struct AudioPlanResolved {
     fps: f64,
     segments: Vec<AudioSegmentResolved>,
+    loudness: Option<AudioLoudnessPreset>,
 }
 
 static RENDER_AUDIO_PLAN: std::sync::LazyLock<std::sync::Mutex<Option<AudioPlanResolved>>> =
@@ -689,7 +697,11 @@ async fn set_audio_plan_handler(
         });
     }
 
-    *RENDER_AUDIO_PLAN.lock().unwrap() = Some(AudioPlanResolved { fps, segments });
+    *RENDER_AUDIO_PLAN.lock().unwrap() = Some(AudioPlanResolved {
+        fps,
+        segments,
+        loudness: payload.loudness,
+    });
 
     (headers, StatusCode::OK)
 }
@@ -705,6 +717,7 @@ async fn get_audio_plan_handler(State(_state): State<AppState>) -> impl IntoResp
         .unwrap_or(AudioPlanResolved {
             fps: 60.0,
             segments: Vec::new(),
+            loudness: None,
         });
 
     (headers, Json(plan))

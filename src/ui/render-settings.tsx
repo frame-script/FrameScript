@@ -12,6 +12,10 @@ const encodeOptions = [
   { value: "H264", label: "H264 (software)" },
   { value: "H265", label: "H265 (software)" },
 ];
+const loudnessOptions = [
+  { value: "off", label: "Default", help: "Keep the mix as-is." },
+  { value: "youtube", label: "YouTube", help: "Target -14 LUFS, -1 dBTP." },
+];
 
 const containerStyle: CSSProperties = {
   padding: 20,
@@ -35,6 +39,22 @@ const inputStyle: CSSProperties = {
   background: "#0f172a",
   color: "#e5e7eb",
 };
+const sectionStyle: CSSProperties = {
+  background: "#0f172a",
+  border: "1px solid #1f2a3c",
+  borderRadius: 12,
+  padding: 12,
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+const sectionTitleStyle: CSSProperties = {
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "#94a3b8",
+  fontWeight: 600,
+};
 
 export const RenderSettingsPage = () => {
   const [width, setWidth] = useState(PROJECT_SETTINGS.width ?? 1920);
@@ -49,6 +69,7 @@ export const RenderSettingsPage = () => {
   });
   const [encode, setEncode] = useState<"H264" | "H265">("H264");
   const [preset, setPreset] = useState("medium");
+  const [loudness, setLoudness] = useState<"off" | "youtube">("off");
   const [cacheGiB, setCacheGiB] = useState(4);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,13 +141,21 @@ export const RenderSettingsPage = () => {
         // ignore; still try to start render
       }
       try {
+        const audioPlanPayload: {
+          fps: number;
+          segments: typeof audioSegments;
+          loudness?: "youtube";
+        } = {
+          fps: Number(fps),
+          segments: audioSegments,
+        };
+        if (loudness === "youtube") {
+          audioPlanPayload.loudness = "youtube";
+        }
         await fetch("http://127.0.0.1:3000/render_audio_plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fps: Number(fps),
-            segments: audioSegments,
-          }),
+          body: JSON.stringify(audioPlanPayload),
         });
       } catch (_error) {
         // ignore; still try to start render
@@ -255,33 +284,71 @@ export const RenderSettingsPage = () => {
         </div>
       </div>
 
-      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {encodeOptions.map((option) => (
-            <label
-              key={option.value}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #1f2a3c",
-                background: encode === option.value ? "linear-gradient(90deg, #1f2937, #0f172a)" : "#0f172a",
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              <input
-                type="radio"
-                value={option.value}
-                checked={encode === option.value}
-                onChange={() => setEncode(option.value as "H264" | "H265")}
-                style={{ accentColor: "#5bd5ff" }}
-              />
-              {option.label}
-            </label>
-          ))}
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Encoding</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {encodeOptions.map((option) => (
+              <label
+                key={option.value}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #1f2a3c",
+                  background: encode === option.value ? "linear-gradient(90deg, #1f2937, #0f172a)" : "#0f172a",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="radio"
+                  value={option.value}
+                  checked={encode === option.value}
+                  onChange={() => setEncode(option.value as "H264" | "H265")}
+                  style={{ accentColor: "#5bd5ff" }}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Audio</div>
+          <div style={{ fontSize: 12, color: "#cbd5e1" }}>Loudness</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {loudnessOptions.map((option) => (
+              <label
+                key={option.value}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #1f2a3c",
+                  background: loudness === option.value ? "linear-gradient(90deg, #1f2937, #0f172a)" : "#0f172a",
+                  cursor: "pointer",
+                  userSelect: "none",
+                  minWidth: 200,
+                }}
+              >
+                <input
+                  type="radio"
+                  value={option.value}
+                  checked={loudness === option.value}
+                  onChange={() => setLoudness(option.value as "off" | "youtube")}
+                  style={{ accentColor: "#5bd5ff" }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#e5e7eb" }}>{option.label}</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{option.help}</span>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
 
         <div
