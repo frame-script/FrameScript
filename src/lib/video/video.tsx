@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef } from "react";
 import { useCurrentFrame } from "../frame";
 import { PROJECT_SETTINGS } from "../../../project/project";
 import { useIsPlaying, useIsRender } from "../studio-state";
-import { useClipActive, useClipRange, useProvideClipDuration } from "../clip";
+import { useClipActive, useClipId, useClipRange, useProvideClipDuration } from "../clip";
 import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan";
 import { VideoCanvasRender } from "./video-render";
 import type { Trim } from "../trim";
@@ -37,6 +37,7 @@ export type VideoProps = {
   video: Video | string
   style?: CSSProperties
   trim?: Trim
+  showWaveform?: boolean
 }
 
 /**
@@ -175,9 +176,10 @@ export type VideoResolvedTrimProps = {
  * <Video video="assets/demo.mp4" trim={{ from: 30, duration: 120 }} />
  * ```
  */
-export const Video = ({ video, style, trim }: VideoProps) => {
+export const Video = ({ video, style, trim, showWaveform }: VideoProps) => {
   const isRender = useIsRender()
   const id = useId()
+  const clipId = useClipId()
   const clipRange = useClipRange()
   const resolvedVideo = useMemo(() => normalizeVideo(video), [video])
   const resolvedStyle = useMemo(() => {
@@ -215,15 +217,17 @@ export const Video = ({ video, style, trim }: VideoProps) => {
     registerAudioSegmentGlobal({
       id,
       source: { kind: "video", path: resolvedVideo.path },
+      clipId: clipId ?? undefined,
       projectStartFrame,
       sourceStartFrame: trimStartFrames,
       durationFrames,
+      showWaveform,
     })
 
     return () => {
       unregisterAudioSegmentGlobal(id)
     }
-  }, [clipRange, id, rawDurationFrames, resolvedVideo.path, trimEndFrames, trimStartFrames])
+  }, [clipId, clipRange, id, rawDurationFrames, resolvedVideo.path, showWaveform, trimEndFrames, trimStartFrames])
 
   if (isRender) {
     return (

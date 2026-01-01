@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef } from "react"
 import { PROJECT_SETTINGS } from "../../../project/project"
 import { useGlobalCurrentFrame } from "../frame"
-import { useClipActive, useClipRange, useProvideClipDuration } from "../clip"
+import { useClipActive, useClipId, useClipRange, useProvideClipDuration } from "../clip"
 import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan"
 import { fetchAudioBuffer } from "../audio"
 import { useIsPlaying, useIsRender } from "../studio-state"
@@ -38,6 +38,7 @@ export type SoundProps = {
   fadeInFrames?: number
   fadeOutFrames?: number
   volume?: number
+  showWaveform?: boolean
 }
 
 /**
@@ -123,8 +124,10 @@ export const Sound = ({
   fadeInFrames = 0,
   fadeOutFrames = 0,
   volume = 1,
+  showWaveform,
 }: SoundProps) => {
   const id = useId()
+  const clipId = useClipId()
   const clipRange = useClipRange()
   const isActive = useClipActive()
   const isPlaying = useIsPlaying()
@@ -297,12 +300,14 @@ export const Sound = ({
     registerAudioSegmentGlobal({
       id,
       source: { kind: "sound", path: resolvedSound.path },
+      clipId: clipId ?? undefined,
       projectStartFrame,
       sourceStartFrame: trimStartFrames,
       durationFrames: clamped,
       fadeInFrames: Math.min(fadeIn, clamped),
       fadeOutFrames: Math.min(fadeOut, clamped),
       volume: normalizedVolume,
+      showWaveform,
     })
 
     return () => {
@@ -310,12 +315,14 @@ export const Sound = ({
     }
   }, [
     clipRange,
+    clipId,
     durationFrames,
     fadeInFrames,
     fadeOutFrames,
     id,
     normalizedVolume,
     resolvedSound.path,
+    showWaveform,
     trimStartFrames,
   ])
 

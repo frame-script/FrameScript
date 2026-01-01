@@ -20,6 +20,13 @@ You can trim the source in frames:
 <Video video="assets/demo.mp4" trim={{ from: 30, duration: 120 }} />
 ```
 
+Waveform display in the timeline is automatic for clips shorter than 60 seconds.
+For longer clips, set `showWaveform` to enable it explicitly:
+
+```tsx
+<Video video="assets/demo.mp4" showWaveform />
+```
+
 ### `video_length`
 
 Returns the length of a video in frames.
@@ -36,4 +43,11 @@ Plays audio in Studio and applies it to the final render.
 import { Sound } from "../src/lib/sound/sound"
 
 <Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
+```
+
+Waveform display in the timeline is automatic for clips shorter than 60 seconds.
+For longer clips, set `showWaveform` to enable it explicitly:
+
+```tsx
+<Sound sound="assets/music.mp3" showWaveform />
 ```

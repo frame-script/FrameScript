@@ -148,6 +148,21 @@ export const useClipRange = () => {
 }
 
 /**
+ * Returns the id of the current clip.
+ *
+ * 現在のクリップ ID を返します。
+ *
+ * @example
+ * ```ts
+ * const id = useClipId()
+ * ```
+ */
+export const useClipId = () => {
+  const ctx = useContext(ClipContext)
+  return ctx?.id ?? null
+}
+
+/**
  * Returns the nesting depth of the current clip.
  *
  * 現在のクリップのネスト深度を返します。

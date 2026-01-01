@@ -20,6 +20,13 @@ import { Video } from "../src/lib/video/video"
 <Video video="assets/demo.mp4" trim={{ from: 30, duration: 120 }} />
 ```
 
+タイムラインの波形表示は60秒未満のクリップは自動で有効です。
+長いクリップは `showWaveform` を指定した場合のみ表示されます。
+
+```tsx
+<Video video="assets/demo.mp4" showWaveform />
+```
+
 ### `video_length`
 動画の長さを取得します。
 ```tsx
@@ -34,4 +41,11 @@ Studio で音声を再生しつつ、レンダリング後にも該当箇所に�
 import { Sound } from "../src/lib/sound/sound"
 
 <Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
+```
+
+タイムラインの波形表示は60秒未満のクリップは自動で有効です。
+長いクリップは `showWaveform` を指定した場合のみ表示されます。
+
+```tsx
+<Sound sound="assets/music.mp3" showWaveform />
 ```

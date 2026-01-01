@@ -71,6 +71,7 @@ export const TimelineUI = () => {
   const projectSettings = PROJECT_SETTINGS
   const { fps } = projectSettings
   const [zoom, setZoom] = useState(1)
+  const waveformAutoLimitFrames = Math.max(1, Math.round(fps * 60))
 
   const placedClips = useMemo(() => stackClipsIntoTracks(clips), [clips])
   const trackCount = Math.max(1, placedClips.reduce((max, clip) => Math.max(max, clip.trackIndex + 1), 0))
@@ -79,6 +80,14 @@ export const TimelineUI = () => {
     for (const clip of placedClips) {
       const segments: ClipWaveformSegment[] = []
       for (const segment of audioSegments) {
+        if (segment.clipId && segment.clipId !== clip.id) {
+          continue
+        }
+        const autoAllowed = segment.durationFrames < waveformAutoLimitFrames
+        const shouldShowWaveform = segment.showWaveform ?? autoAllowed
+        if (!shouldShowWaveform) {
+          continue
+        }
         const segStart = segment.projectStartFrame
         const segEnd = segStart + segment.durationFrames - 1
         if (segEnd < clip.start || segStart > clip.end) {
@@ -103,7 +112,7 @@ export const TimelineUI = () => {
       }
     }
     return map
-  }, [audioSegments, placedClips])
+  }, [audioSegments, placedClips, waveformAutoLimitFrames])
   const clipMap = useMemo(() => {
     const map = new Map<string, PositionedClip>()
     placedClips.forEach((c) => map.set(c.id, c))
