@@ -129,6 +129,18 @@ async fn wait_for_animation_ready(page: &Page) {
     page.evaluate(script).await.unwrap();
 }
 
+async fn wait_for_draw_text_ready(page: &Page) {
+    let script = r#"
+        (async () => {
+          const api = window.__frameScript;
+          if (api && typeof api.waitDrawTextReady === "function") {
+            await api.waitDrawTextReady();
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<String>>();
@@ -285,6 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             page.wait_for_navigation().await.unwrap();
             wait_for_frame_api(&page).await;
             wait_for_animation_ready(&page).await;
+            wait_for_draw_text_ready(&page).await;
 
             for frame in start..end {
                 wait_for_next_frame(&page).await;

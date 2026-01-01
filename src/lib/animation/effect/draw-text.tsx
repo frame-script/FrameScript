@@ -28,6 +28,82 @@ type GlyphPath = {
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 const fontCache = new Map<string, Promise<Font>>()
+const DRAW_TEXT_TRACKER_KEY = "__frameScript_DrawTextTracker"
+
+type DrawTextTracker = {
+  pending: number
+  start: () => () => void
+  wait: () => Promise<void>
+}
+
+const getDrawTextTracker = () => {
+  const g = globalThis as unknown as Record<string, unknown>
+  const existing = g[DRAW_TEXT_TRACKER_KEY] as DrawTextTracker | undefined
+  if (existing) return existing
+
+  let pending = 0
+  const waiters = new Set<() => void>()
+
+  const notifyIfReady = () => {
+    if (pending !== 0) return
+    for (const resolve of Array.from(waiters)) {
+      resolve()
+    }
+    waiters.clear()
+  }
+
+  const tracker: DrawTextTracker = {
+    get pending() {
+      return pending
+    },
+    start: () => {
+      pending += 1
+      let done = false
+      return () => {
+        if (done) return
+        done = true
+        pending = Math.max(0, pending - 1)
+        notifyIfReady()
+      }
+    },
+    wait: () => {
+      if (pending === 0) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        waiters.add(resolve)
+      })
+    },
+  }
+
+  g[DRAW_TEXT_TRACKER_KEY] = tracker
+  return tracker
+}
+
+const installDrawTextApi = () => {
+  if (typeof window === "undefined") return
+  const tracker = getDrawTextTracker()
+  const waitDrawTextReady = async () => {
+    while (true) {
+      if (tracker.pending === 0) {
+        if (typeof window.requestAnimationFrame !== "function") {
+          return
+        }
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+        if (tracker.pending === 0) return
+      }
+      await tracker.wait()
+    }
+  }
+
+  ;(window as any).__frameScript = {
+    ...(window as any).__frameScript,
+    waitDrawTextReady,
+    getDrawTextPending: () => tracker.pending,
+  }
+}
+
+if (typeof window !== "undefined") {
+  installDrawTextApi()
+}
 
 const buildFontUrl = (path: string) => {
   const url = new URL("http://localhost:3000/file")
@@ -103,12 +179,32 @@ export const DrawText = ({
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 })
   const pathRefs = useRef<Array<SVGPathElement | null>>([])
   const [glyphLengths, setGlyphLengths] = useState<number[]>([])
+  const [glyphLoadId, setGlyphLoadId] = useState(0)
+  const loadIdRef = useRef(0)
+  const pendingFinishRef = useRef<(() => void) | null>(null)
+
+  const beginPending = () => {
+    loadIdRef.current += 1
+    if (!pendingFinishRef.current) {
+      pendingFinishRef.current = getDrawTextTracker().start()
+    }
+    return loadIdRef.current
+  }
+
+  const endPending = () => {
+    if (pendingFinishRef.current) {
+      pendingFinishRef.current()
+      pendingFinishRef.current = null
+    }
+  }
 
   useEffect(() => {
+    const loadId = beginPending()
     let cancelled = false
     const lines = text.split(/\r?\n/)
     if (!fontUrl || lines.length === 0) {
       setGlyphs([])
+      setGlyphLoadId(loadId)
       setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
       setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
       return
@@ -167,12 +263,14 @@ export const DrawText = ({
           prev.width === width && prev.height === height ? prev : { width, height },
         )
         setGlyphs(nextGlyphs)
+        setGlyphLoadId(loadId)
         setGlyphLengths([])
       })
       .catch((error) => {
         if (cancelled) return
         console.error("DrawText: failed to load font", error)
         setGlyphs([])
+        setGlyphLoadId(loadId)
         setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
         setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
       })
@@ -207,6 +305,23 @@ export const DrawText = ({
       return next
     })
   }, [glyphs])
+
+  useEffect(() => {
+    if (glyphLoadId !== loadIdRef.current) return
+    if (glyphs.length === 0) {
+      endPending()
+      return
+    }
+    if (glyphLengths.length === glyphs.length) {
+      endPending()
+    }
+  }, [glyphLoadId, glyphLengths, glyphs])
+
+  useEffect(() => {
+    return () => {
+      endPending()
+    }
+  }, [])
 
   const drawCount = glyphs.reduce(
     (count, glyph, index) => count + (!glyph.isGap && (glyphLengths[index] ?? 0) > 0 ? 1 : 0),
