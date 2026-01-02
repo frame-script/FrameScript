@@ -14,10 +14,11 @@ use crate::{
     ffmpeg::{bin::ffmpeg_path, hw_decoder, probe_video_fps},
     future::SharedManualFuture,
 };
-use tracing::{warn};
+use tracing::warn;
 
 pub static DECODER: LazyLock<Decoder> = LazyLock::new(|| Decoder::new());
-static FPS_CACHE: LazyLock<Mutex<HashMap<String, f64>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static FPS_CACHE: LazyLock<Mutex<HashMap<String, f64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub struct Decoder {
     map: Mutex<HashMap<DecoderKey, CachedDecoder>>,
@@ -300,11 +301,7 @@ impl CachedDecoder {
     }
 
     fn ensure_stream_task(&self) {
-        if self
-            .inner
-            .stream_running
-            .swap(true, Ordering::Relaxed)
-        {
+        if self.inner.stream_running.swap(true, Ordering::Relaxed) {
             return;
         }
 
@@ -405,8 +402,7 @@ impl FrameStream {
         if backoff > 0.0 {
             cmd.arg("-ss").arg(format!("{:.6}", backoff));
         }
-        cmd
-            .arg("-vf")
+        cmd.arg("-vf")
             .arg(filter)
             .arg("-an")
             .arg("-vsync")
@@ -480,13 +476,6 @@ async fn run_stream_loop(inner: Arc<Inner>) {
         };
 
         if restart {
-            let reason = if stream.is_none() {
-                "init"
-            } else if target_frame < current_frame {
-                "backward"
-            } else {
-                "gap"
-            };
             if let Some(mut old) = stream.take() {
                 old.shutdown().await;
             }

@@ -400,7 +400,7 @@ async fn file_handler(
         Ok(value) => value,
         Err(_) => return Ok(cors_status(StatusCode::BAD_REQUEST)),
     };
-    let mut file = match tokio::fs::File::open(&resolved_path).await {
+    let file = match tokio::fs::File::open(&resolved_path).await {
         Ok(value) => value,
         Err(_) => return Ok(cors_status(StatusCode::NOT_FOUND)),
     };
