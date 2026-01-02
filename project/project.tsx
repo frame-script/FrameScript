@@ -1,4 +1,4 @@
-import { DrawText } from "../src/lib/animation/misc/draw-text"
+import { DrawText } from "../src/lib/animation/effect/draw-text"
 import { Clip } from "../src/lib/clip"
 import { seconds } from "../src/lib/frame"
 import { FillFrame } from "../src/lib/layout/fill-frame"
