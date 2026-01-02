@@ -1,9 +1,15 @@
 import type { CSSProperties } from "react"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import opentype, { type Font } from "opentype.js"
 import { useCurrentFrame } from "../../frame"
+import "mathjax-full/es5/tex-svg"
 
-type DrawTextProps = {
+/**
+ * Props for stroke-animated text.
+ *
+ * ストローク描画アニメーション用のテキスト props。
+ */
+export type DrawTextProps = {
   text: string
   fontUrl: string
   fontSize?: number
@@ -21,9 +27,31 @@ type DrawTextProps = {
   style?: CSSProperties
 }
 
+/**
+ * Props for TeX stroke-animated text.
+ *
+ * TeX のストローク描画アニメーション用 props。
+ */
+export type DrawTexProps = {
+  tex: string
+  fontSize?: number
+  strokeWidth?: number
+  strokeColor?: string
+  fillColor?: string
+  durationFrames?: number
+  delayFrames?: number
+  fillDurationFrames?: number
+  fillDelayFrames?: number
+  outStartFrames?: number
+  outDurationFrames?: number
+  displayMode?: boolean
+  style?: CSSProperties
+}
+
 type GlyphPath = {
   d: string
   isGap: boolean
+  transform?: string
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
@@ -76,6 +104,192 @@ const getDrawTextTracker = () => {
 
   g[DRAW_TEXT_TRACKER_KEY] = tracker
   return tracker
+}
+
+const useDrawTextPending = () => {
+  const loadIdRef = useRef(0)
+  const pendingFinishRef = useRef<(() => void) | null>(null)
+
+  const beginPending = useCallback(() => {
+    loadIdRef.current += 1
+    if (!pendingFinishRef.current) {
+      pendingFinishRef.current = getDrawTextTracker().start()
+    }
+    return loadIdRef.current
+  }, [])
+
+  const endPending = useCallback(() => {
+    if (pendingFinishRef.current) {
+      pendingFinishRef.current()
+      pendingFinishRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      endPending()
+    }
+  }, [endPending])
+
+  return { beginPending, endPending, loadIdRef }
+}
+
+const useGlyphLengths = (glyphs: GlyphPath[]) => {
+  const [glyphLengths, setGlyphLengths] = useState<number[]>([])
+  const pathRefs = useRef<Array<SVGPathElement | null>>([])
+
+  useLayoutEffect(() => {
+    if (glyphs.length === 0) {
+      setGlyphLengths([])
+      return
+    }
+
+    const next = glyphs.map((glyph, index) => {
+      if (glyph.isGap) return 0
+      const el = pathRefs.current[index]
+      if (!el) return 0
+      try {
+        const length = el.getTotalLength()
+        return Number.isFinite(length) ? length : 0
+      } catch {
+        return 0
+      }
+    })
+
+    setGlyphLengths((prev) => {
+      if (prev.length === next.length && prev.every((value, idx) => value === next[idx])) {
+        return prev
+      }
+      return next
+    })
+  }, [glyphs])
+
+  return { glyphLengths, setGlyphLengths, pathRefs }
+}
+
+const renderGlyphSvg = (params: {
+  frame: number
+  glyphs: GlyphPath[]
+  glyphLengths: number[]
+  pathRefs: { current: Array<SVGPathElement | null> }
+  viewBox: string
+  boxSize: { width: number; height: number }
+  strokeWidth: number
+  strokeColor: string
+  resolvedFillColor: string
+  durationFrames: number
+  delayFrames: number
+  fillDurationFrames: number
+  fillDelayFrames: number
+  outStartFrames?: number
+  outDurationFrames?: number
+  style?: CSSProperties
+}) => {
+  const {
+    frame,
+    glyphs,
+    glyphLengths,
+    pathRefs,
+    viewBox,
+    boxSize,
+    strokeWidth,
+    strokeColor,
+    resolvedFillColor,
+    durationFrames,
+    delayFrames,
+    fillDurationFrames,
+    fillDelayFrames,
+    outStartFrames,
+    outDurationFrames,
+    style,
+  } = params
+
+  const drawCount = glyphs.reduce(
+    (count, glyph, index) => count + (!glyph.isGap && (glyphLengths[index] ?? 0) > 0 ? 1 : 0),
+    0,
+  )
+  const perGlyphFrames = drawCount > 0 ? Math.max(1, Math.round(durationFrames / drawCount)) : 0
+  const outPerGlyphFrames =
+    outDurationFrames && outDurationFrames > 0 && drawCount > 0
+      ? Math.max(1, Math.round(outDurationFrames / drawCount))
+      : 0
+
+  let cursor = delayFrames
+  const glyphTimings = glyphs.map((glyph, index) => {
+    if (glyph.isGap || (glyphLengths[index] ?? 0) <= 0) {
+      return { start: cursor, duration: 0 }
+    }
+    const start = cursor
+    cursor += perGlyphFrames
+    return { start, duration: perGlyphFrames }
+  })
+
+  const outStartBase = outStartFrames ?? null
+  const outTimings = glyphs.map(() => ({ start: outStartBase ?? 0, duration: 0 }))
+  if (outStartBase != null && outPerGlyphFrames > 0) {
+    let outCursor = outStartBase
+    const drawable = glyphs
+      .map((glyph, index) => ({ glyph, index }))
+      .filter(({ glyph, index }) => !glyph.isGap && (glyphLengths[index] ?? 0) > 0)
+      .map(({ index }) => index)
+
+    for (let i = drawable.length - 1; i >= 0; i -= 1) {
+      const index = drawable[i]
+      outTimings[index] = { start: outCursor, duration: outPerGlyphFrames }
+      outCursor += outPerGlyphFrames
+    }
+  }
+
+  return (
+    <svg
+      viewBox={viewBox}
+      style={{
+        display: "block",
+        overflow: "visible",
+        width: boxSize.width > 0 ? boxSize.width : undefined,
+        height: boxSize.height > 0 ? boxSize.height : undefined,
+        ...style,
+      }}
+    >
+      {glyphs.map((glyph, index) => {
+        if (!glyph.d) return null
+        const length = glyphLengths[index] ?? 0
+        const timing = glyphTimings[index]
+        const inProgress =
+          timing.duration > 0 ? clamp01((frame - timing.start) / timing.duration) : 0
+        const outTiming = outTimings[index]
+        const outProgress =
+          outTiming.duration > 0 ? clamp01((frame - outTiming.start) / outTiming.duration) : 0
+        const progress = outProgress > 0 ? inProgress * (1 - outProgress) : inProgress
+        const dashOffset = length > 0 ? length * (1 - progress) : 0
+        const fillStart = timing.start + timing.duration + fillDelayFrames
+        const fillProgress =
+          resolvedFillColor === "transparent"
+            ? 0
+            : clamp01((frame - fillStart) / Math.max(1, fillDurationFrames))
+        const fillOpacity = fillProgress * (outProgress > 0 ? 1 - outProgress : 1)
+        return (
+          <path
+            key={`${index}-${glyph.d}`}
+            ref={(el) => {
+              pathRefs.current[index] = el
+            }}
+            d={glyph.d}
+            transform={glyph.transform}
+            fill={resolvedFillColor}
+            fillOpacity={fillOpacity}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={length || 1}
+            strokeDashoffset={dashOffset}
+            style={{ opacity: length > 0 ? 1 : 0 }}
+          />
+        )
+      })}
+    </svg>
+  )
 }
 
 const installDrawTextApi = () => {
@@ -155,6 +369,231 @@ const loadFont = async (fontUrl: string) => {
   return promise
 }
 
+type MathJaxLike = {
+  tex2svg?: (tex: string, options?: Record<string, unknown>) => Element
+  startup?: { promise?: Promise<void> }
+}
+
+const resolveMathJax = () => {
+  const mj = (globalThis as unknown as { MathJax?: MathJaxLike }).MathJax
+  if (!mj || typeof mj.tex2svg !== "function") return null
+  return mj
+}
+
+const parseSvgLength = (value: string | null, em: number, ex: number) => {
+  if (!value) return null
+  const match = value.trim().match(/^([+-]?\d*\.?\d+)([a-z%]*)$/i)
+  if (!match) return null
+  const size = Number.parseFloat(match[1])
+  if (!Number.isFinite(size)) return null
+  const unit = match[2] || "px"
+  if (unit === "em") return size * em
+  if (unit === "ex") return size * ex
+  if (unit === "px" || unit === "") return size
+  return size
+}
+
+const resolveSvgMetrics = (svg: SVGSVGElement, em: number, ex: number) => {
+  const widthAttr = parseSvgLength(svg.getAttribute("width"), em, ex)
+  const heightAttr = parseSvgLength(svg.getAttribute("height"), em, ex)
+
+  const viewBoxAttr = svg.getAttribute("viewBox")
+  if (viewBoxAttr) {
+    const parts = viewBoxAttr
+      .trim()
+      .split(/[ ,]+/)
+      .map((value) => Number.parseFloat(value))
+      .filter((value) => Number.isFinite(value))
+    if (parts.length >= 4) {
+      const width = Math.max(0, widthAttr ?? parts[2])
+      const height = Math.max(0, heightAttr ?? parts[3])
+      return {
+        viewBox: `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]}`,
+        boxSize: { width, height },
+      }
+    }
+  }
+
+  const width = widthAttr ?? 0
+  const height = heightAttr ?? 0
+  return {
+    viewBox: `0 0 ${width} ${height}`,
+    boxSize: { width, height },
+  }
+}
+
+const escapeSelector = (value: string) => {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value)
+  }
+  return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&")
+}
+
+const collectParentTransforms = (element: Element | null) => {
+  const transforms: string[] = []
+  let node = element?.parentElement ?? null
+  while (node) {
+    const t = node.getAttribute("transform")
+    if (t) transforms.push(t)
+    if (node.tagName.toLowerCase() === "svg") break
+    node = node.parentElement
+  }
+  return transforms.reverse()
+}
+
+const collectSelfTransform = (element: Element | null) =>
+  element?.getAttribute("transform")?.trim() || ""
+
+const joinTransforms = (parts: Array<string | null | undefined>) =>
+  parts
+    .map((part) => (part ?? "").trim())
+    .filter((part) => part.length > 0)
+    .join(" ")
+    .trim()
+
+const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
+  const glyphs: GlyphPath[] = []
+  const defs = new Map<string, { d: string; transform?: string }>()
+  svg.querySelectorAll("defs path[id]").forEach((path) => {
+    const id = path.getAttribute("id")
+    const d = path.getAttribute("d")
+    if (!id || !d) return
+    defs.set(id, { d, transform: collectSelfTransform(path) || undefined })
+  })
+
+  const addGlyph = (d: string, node: Element, extraTransform?: string | null) => {
+    if (!d) return
+    const transform = joinTransforms([
+      ...collectParentTransforms(node),
+      collectSelfTransform(node),
+      extraTransform ?? null,
+    ])
+    glyphs.push({ d, isGap: false, transform: transform || undefined })
+  }
+
+  const parsePoints = (value: string | null) => {
+    if (!value) return []
+    const nums = value
+      .trim()
+      .split(/[\s,]+/)
+      .map((part) => Number.parseFloat(part))
+      .filter((num) => Number.isFinite(num))
+    const points: Array<{ x: number; y: number }> = []
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      points.push({ x: nums[i], y: nums[i + 1] })
+    }
+    return points
+  }
+
+  const rectToPath = (rect: SVGRectElement) => {
+    const x = Number.parseFloat(rect.getAttribute("x") ?? "0")
+    const y = Number.parseFloat(rect.getAttribute("y") ?? "0")
+    const width = Number.parseFloat(rect.getAttribute("width") ?? "0")
+    const height = Number.parseFloat(rect.getAttribute("height") ?? "0")
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null
+    }
+    return `M ${x} ${y} h ${width} v ${height} h ${-width} Z`
+  }
+
+  const lineToPath = (line: SVGLineElement) => {
+    const x1 = Number.parseFloat(line.getAttribute("x1") ?? "0")
+    const y1 = Number.parseFloat(line.getAttribute("y1") ?? "0")
+    const x2 = Number.parseFloat(line.getAttribute("x2") ?? "0")
+    const y2 = Number.parseFloat(line.getAttribute("y2") ?? "0")
+    if (![x1, y1, x2, y2].every((v) => Number.isFinite(v))) return null
+    return `M ${x1} ${y1} L ${x2} ${y2}`
+  }
+
+  const polyToPath = (points: Array<{ x: number; y: number }>, close: boolean) => {
+    if (points.length < 2) return null
+    const [first, ...rest] = points
+    const parts = [`M ${first.x} ${first.y}`]
+    for (const pt of rest) {
+      parts.push(`L ${pt.x} ${pt.y}`)
+    }
+    if (close) parts.push("Z")
+    return parts.join(" ")
+  }
+
+  svg.querySelectorAll("path, use, rect, line, polygon, polyline").forEach((node) => {
+    if (!(node instanceof SVGElement)) return
+    if (node.closest("defs")) return
+    const tag = node.tagName.toLowerCase()
+    if (tag === "path") {
+      const d = node.getAttribute("d")
+      if (!d) return
+      addGlyph(d, node)
+      return
+    }
+
+    if (tag === "rect") {
+      const d = rectToPath(node as SVGRectElement)
+      if (!d) return
+      addGlyph(d, node)
+      return
+    }
+
+    if (tag === "line") {
+      const d = lineToPath(node as SVGLineElement)
+      if (!d) return
+      addGlyph(d, node)
+      return
+    }
+
+    if (tag === "polygon" || tag === "polyline") {
+      const points = parsePoints(node.getAttribute("points"))
+      const d = polyToPath(points, tag === "polygon")
+      if (!d) return
+      addGlyph(d, node)
+      return
+    }
+
+    if (tag === "use") {
+      const href =
+        node.getAttribute("href") ||
+        node.getAttribute("xlink:href") ||
+        node.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+      if (!href) return
+      const id = href.startsWith("#") ? href.slice(1) : href
+      const ref = defs.get(id) || (() => {
+        const selector = `#${escapeSelector(id)}`
+        const found = svg.querySelector(selector)
+        if (found instanceof SVGPathElement) {
+          const d = found.getAttribute("d")
+          if (d) return { d, transform: collectSelfTransform(found) || undefined }
+        }
+        return null
+      })()
+      if (!ref?.d) return
+
+      const x = Number.parseFloat(node.getAttribute("x") ?? "0")
+      const y = Number.parseFloat(node.getAttribute("y") ?? "0")
+      const translate =
+        Number.isFinite(x) || Number.isFinite(y) ? `translate(${x || 0} ${y || 0})` : null
+      const transform = joinTransforms([
+        ...collectParentTransforms(node),
+        ref.transform,
+        translate,
+        collectSelfTransform(node),
+      ])
+      glyphs.push({ d: ref.d, isGap: false, transform: transform || undefined })
+    }
+  })
+
+  return glyphs
+}
+
+/**
+ * Renders text as animated SVG strokes.
+ *
+ * テキストを SVG ストロークとして描画します。
+ *
+ * @example
+ * ```tsx
+ * <DrawText text="Hello" fontUrl="assets/Roboto.ttf" />
+ * ```
+ */
 export const DrawText = ({
   text,
   fontUrl,
@@ -177,26 +616,9 @@ export const DrawText = ({
   const [glyphs, setGlyphs] = useState<GlyphPath[]>([])
   const [viewBox, setViewBox] = useState("0 0 0 0")
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 })
-  const pathRefs = useRef<Array<SVGPathElement | null>>([])
-  const [glyphLengths, setGlyphLengths] = useState<number[]>([])
+  const { glyphLengths, setGlyphLengths, pathRefs } = useGlyphLengths(glyphs)
   const [glyphLoadId, setGlyphLoadId] = useState(0)
-  const loadIdRef = useRef(0)
-  const pendingFinishRef = useRef<(() => void) | null>(null)
-
-  const beginPending = () => {
-    loadIdRef.current += 1
-    if (!pendingFinishRef.current) {
-      pendingFinishRef.current = getDrawTextTracker().start()
-    }
-    return loadIdRef.current
-  }
-
-  const endPending = () => {
-    if (pendingFinishRef.current) {
-      pendingFinishRef.current()
-      pendingFinishRef.current = null
-    }
-  }
+  const { beginPending, endPending, loadIdRef } = useDrawTextPending()
 
   useEffect(() => {
     const loadId = beginPending()
@@ -280,31 +702,144 @@ export const DrawText = ({
     }
   }, [align, fontSize, fontUrl, lineHeight, text])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
+    if (glyphLoadId !== loadIdRef.current) return
     if (glyphs.length === 0) {
-      setGlyphLengths([])
+      endPending()
+      return
+    }
+    if (glyphLengths.length === glyphs.length) {
+      endPending()
+    }
+  }, [endPending, glyphLoadId, glyphLengths, glyphs, loadIdRef])
+
+  return renderGlyphSvg({
+    frame,
+    glyphs,
+    glyphLengths,
+    pathRefs,
+    viewBox,
+    boxSize,
+    strokeWidth,
+    strokeColor,
+    resolvedFillColor,
+    durationFrames,
+    delayFrames,
+    fillDurationFrames,
+    fillDelayFrames,
+    outStartFrames,
+    outDurationFrames,
+    style,
+  })
+}
+
+/**
+ * Renders TeX as animated SVG strokes using MathJax (if available).
+ *
+ * MathJax がある場合に TeX を SVG に変換して描画します。
+ *
+ * @example
+ * ```tsx
+ * <DrawTex tex={"\\\\int_0^1 x^2 dx"} fontSize={96} />
+ * ```
+ */
+export const DrawTex = ({
+  tex,
+  fontSize = 96,
+  strokeWidth = 20,
+  strokeColor = "#ffffff",
+  fillColor,
+  durationFrames = 180,
+  delayFrames = 0,
+  fillDurationFrames = 18,
+  fillDelayFrames = 0,
+  outStartFrames,
+  outDurationFrames,
+  displayMode = false,
+  style,
+}: DrawTexProps) => {
+  const frame = useCurrentFrame()
+  const resolvedFillColor = fillColor ?? strokeColor
+  const [glyphs, setGlyphs] = useState<GlyphPath[]>([])
+  const [viewBox, setViewBox] = useState("0 0 0 0")
+  const [boxSize, setBoxSize] = useState({ width: 0, height: 0 })
+  const { glyphLengths, setGlyphLengths, pathRefs } = useGlyphLengths(glyphs)
+  const [glyphLoadId, setGlyphLoadId] = useState(0)
+  const { beginPending, endPending, loadIdRef } = useDrawTextPending()
+
+  const texInput = useMemo(() => tex.trim(), [tex])
+
+  useEffect(() => {
+    const loadId = beginPending()
+    let cancelled = false
+
+    if (!texInput) {
+      setGlyphs([])
+      setGlyphLoadId(loadId)
+      setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
+      setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
       return
     }
 
-    const next = glyphs.map((glyph, index) => {
-      if (glyph.isGap) return 0
-      const el = pathRefs.current[index]
-      if (!el) return 0
-      try {
-        const length = el.getTotalLength()
-        return Number.isFinite(length) ? length : 0
-      } catch {
-        return 0
+    const run = async () => {
+      const mj = resolveMathJax()
+      if (!mj) {
+        console.error("DrawTex: MathJax is not available")
+        if (!cancelled) {
+          setGlyphs([])
+          setGlyphLoadId(loadId)
+          setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
+          setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+        }
+        return
       }
-    })
 
-    setGlyphLengths((prev) => {
-      if (prev.length === next.length && prev.every((value, idx) => value === next[idx])) {
-        return prev
+      try {
+        if (mj.startup?.promise) {
+          await mj.startup.promise
+        }
+        const ex = fontSize * 0.45
+        const svgNode = mj.tex2svg?.(texInput, {
+          display: displayMode,
+          em: fontSize,
+          ex,
+        })
+        if (!svgNode) {
+          throw new Error("DrawTex: failed to create SVG")
+        }
+        const svg =
+          svgNode instanceof SVGSVGElement
+            ? svgNode
+            : (svgNode.querySelector?.("svg") as SVGSVGElement | null)
+        if (!svg) {
+          throw new Error("DrawTex: SVG element not found")
+        }
+
+        const metrics = resolveSvgMetrics(svg, fontSize, ex)
+        const glyphs = collectSvgGlyphs(svg)
+
+        if (cancelled) return
+        setViewBox(metrics.viewBox)
+        setBoxSize(metrics.boxSize)
+        setGlyphs(glyphs)
+        setGlyphLoadId(loadId)
+        setGlyphLengths([])
+      } catch (error) {
+        if (cancelled) return
+        console.error("DrawTex: failed to render tex", error)
+        setGlyphs([])
+        setGlyphLoadId(loadId)
+        setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
+        setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
       }
-      return next
-    })
-  }, [glyphs])
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [beginPending, displayMode, fontSize, texInput, setGlyphLengths])
 
   useEffect(() => {
     if (glyphLoadId !== loadIdRef.current) return
@@ -315,97 +850,24 @@ export const DrawText = ({
     if (glyphLengths.length === glyphs.length) {
       endPending()
     }
-  }, [glyphLoadId, glyphLengths, glyphs])
+  }, [endPending, glyphLoadId, glyphLengths, glyphs, loadIdRef])
 
-  useEffect(() => {
-    return () => {
-      endPending()
-    }
-  }, [])
-
-  const drawCount = glyphs.reduce(
-    (count, glyph, index) => count + (!glyph.isGap && (glyphLengths[index] ?? 0) > 0 ? 1 : 0),
-    0,
-  )
-  const perGlyphFrames = drawCount > 0 ? Math.max(1, Math.round(durationFrames / drawCount)) : 0
-  const outPerGlyphFrames =
-    outDurationFrames && outDurationFrames > 0 && drawCount > 0
-      ? Math.max(1, Math.round(outDurationFrames / drawCount))
-      : 0
-
-  let cursor = delayFrames
-  const glyphTimings = glyphs.map((glyph, index) => {
-    if (glyph.isGap || (glyphLengths[index] ?? 0) <= 0) {
-      return { start: cursor, duration: 0 }
-    }
-    const start = cursor
-    cursor += perGlyphFrames
-    return { start, duration: perGlyphFrames }
+  return renderGlyphSvg({
+    frame,
+    glyphs,
+    glyphLengths,
+    pathRefs,
+    viewBox,
+    boxSize,
+    strokeWidth,
+    strokeColor,
+    resolvedFillColor,
+    durationFrames,
+    delayFrames,
+    fillDurationFrames,
+    fillDelayFrames,
+    outStartFrames,
+    outDurationFrames,
+    style,
   })
-
-  const outStartBase = outStartFrames ?? null
-  const outTimings = glyphs.map(() => ({ start: outStartBase ?? 0, duration: 0 }))
-  if (outStartBase != null && outPerGlyphFrames > 0) {
-    let outCursor = outStartBase
-    const drawable = glyphs
-      .map((glyph, index) => ({ glyph, index }))
-      .filter(({ glyph, index }) => !glyph.isGap && (glyphLengths[index] ?? 0) > 0)
-      .map(({ index }) => index)
-
-    for (let i = drawable.length - 1; i >= 0; i -= 1) {
-      const index = drawable[i]
-      outTimings[index] = { start: outCursor, duration: outPerGlyphFrames }
-      outCursor += outPerGlyphFrames
-    }
-  }
-
-  return (
-    <svg
-      viewBox={viewBox}
-      style={{
-        display: "block",
-        overflow: "visible",
-        width: boxSize.width > 0 ? boxSize.width : undefined,
-        height: boxSize.height > 0 ? boxSize.height : undefined,
-        ...style,
-      }}
-    >
-      {glyphs.map((glyph, index) => {
-        if (!glyph.d) return null
-        const length = glyphLengths[index] ?? 0
-        const timing = glyphTimings[index]
-        const inProgress =
-          timing.duration > 0 ? clamp01((frame - timing.start) / timing.duration) : 0
-        const outTiming = outTimings[index]
-        const outProgress =
-          outTiming.duration > 0 ? clamp01((frame - outTiming.start) / outTiming.duration) : 0
-        const progress = outProgress > 0 ? inProgress * (1 - outProgress) : inProgress
-        const dashOffset = length > 0 ? length * (1 - progress) : 0
-        const fillStart = timing.start + timing.duration + fillDelayFrames
-        const fillProgress =
-          resolvedFillColor === "transparent"
-            ? 0
-            : clamp01((frame - fillStart) / Math.max(1, fillDurationFrames))
-        const fillOpacity = fillProgress * (outProgress > 0 ? 1 - outProgress : 1)
-        return (
-          <path
-            key={`${index}-${glyph.d}`}
-            ref={(el) => {
-              pathRefs.current[index] = el
-            }}
-            d={glyph.d}
-            fill={resolvedFillColor}
-            fillOpacity={fillOpacity}
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={length || 1}
-            strokeDashoffset={dashOffset}
-            style={{ opacity: length > 0 ? 1 : 0 }}
-          />
-        )
-      })}
-    </svg>
-  )
 }

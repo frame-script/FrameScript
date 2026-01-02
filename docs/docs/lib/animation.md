@@ -86,3 +86,24 @@ const Impact = () => (
   </FillFrame>
 )
 ```
+
+## Effects: DrawText
+
+`<DrawText />` renders text as animated SVG strokes using a supplied font file.
+
+```tsx
+import { DrawText } from "../src/lib/animation/effect/draw-text"
+
+<DrawText text="Hello" fontUrl="assets/Roboto.ttf" fontSize={96} />
+```
+
+## Effects: DrawTex
+
+`<DrawTex />` renders TeX as animated SVG strokes (MathJax SVG output).
+MathJax must be available in the build (this project uses a static import in `draw-text.tsx`).
+
+```tsx
+import { DrawTex } from "../src/lib/animation/effect/draw-text"
+
+<DrawTex tex={"\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"} fontSize={96} />
+```
