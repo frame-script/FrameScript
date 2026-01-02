@@ -49,3 +49,23 @@ import { Sound } from "../src/lib/sound/sound"
 ```tsx
 <Sound sound="assets/music.mp3" showWaveform />
 ```
+
+### `<Character>`
+
+音量に応じて口の閉じた/開いた画像を切り替えます。
+`clipLabel` を指定すると、そのラベルのクリップ内の音声にのみ反応します。
+
+```tsx
+import { Character } from "../src/lib/sound/character"
+
+<Clip label="Voice">
+  <Sound sound="assets/voice.mp3" />
+</Clip>
+
+<Character
+  mouthClosed="assets/char_closed.png"
+  mouthOpen="assets/char_open.png"
+  threshold={0.12}
+  clipLabel="Voice"
+/>
+```

@@ -71,3 +71,18 @@ useAnimation(async (ctx) => {
 ```
 
 The key is that you can start motions early and await them later. That makes it easy to layer animations without complex bookkeeping.
+
+## Effects: SpeedLines
+
+`<SpeedLines />` is a focused-line overlay that reacts to the current frame and adds a subtle jitter.
+
+```tsx
+import { SpeedLines } from "../src/lib/animation/effect/speed-lines"
+import { FillFrame } from "../src/lib/layout/fill-frame"
+
+const Impact = () => (
+  <FillFrame>
+    <SpeedLines />
+  </FillFrame>
+)
+```

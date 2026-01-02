@@ -51,3 +51,23 @@ For longer clips, set `showWaveform` to enable it explicitly:
 ```tsx
 <Sound sound="assets/music.mp3" showWaveform />
 ```
+
+### `<Character>`
+
+Switches between closed/open mouth images based on audio loudness.
+If `clipLabel` is provided, it only reacts to audio inside clips with that label.
+
+```tsx
+import { Character } from "../src/lib/sound/character"
+
+<Clip label="Voice">
+  <Sound sound="assets/voice.mp3" />
+</Clip>
+
+<Character
+  mouthClosed="assets/char_closed.png"
+  mouthOpen="assets/char_open.png"
+  threshold={0.12}
+  clipLabel="Voice"
+/>
+```

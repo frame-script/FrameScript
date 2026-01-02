@@ -71,3 +71,18 @@ useAnimation(async (ctx) => {
 ```
 
 ポイントは「先に動かしておいて、あとで await する」ことができる点です。これにより、同期的に順番通りに実行するだけでなく、簡単に重ね合わせ（並行演出）も作れます。
+
+## Effects: SpeedLines
+
+`<SpeedLines />` は集中線のオーバーレイで、フレームに合わせて微妙に揺れます。
+
+```tsx
+import { SpeedLines } from "../src/lib/animation/effect/speed-lines"
+import { FillFrame } from "../src/lib/layout/fill-frame"
+
+const Impact = () => (
+  <FillFrame>
+    <SpeedLines />
+  </FillFrame>
+)
+```

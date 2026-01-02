@@ -5,7 +5,12 @@ import { type AudioSegment, useAudioSegments } from "../audio-plan"
 import { loadWaveformData, type WaveformData } from "../audio-waveform"
 import { useTimelineClips } from "../timeline"
 
-type CharacterProps = {
+/**
+ * Character mouth-flap props driven by audio amplitude.
+ *
+ * キャラの口パク用 props。
+ */
+export type CharacterProps = {
   mouthClosed: string
   mouthOpen: string
   threshold?: number
@@ -90,6 +95,24 @@ const resolveSegmentAmplitude = (
   return amplitude
 }
 
+/**
+ * Switches between closed/open mouth images based on audio loudness.
+ *
+ * 音量に応じて口の閉じた/開いた画像を切り替えます。
+ *
+ * @example
+ * ```tsx
+ * <Clip label="Voice">
+ *   <Sound sound="assets/voice.mp3" />
+ * </Clip>
+ * <Character
+ *   mouthClosed="assets/char_closed.png"
+ *   mouthOpen="assets/char_open.png"
+ *   threshold={0.12}
+ *   clipLabel="Voice"
+ * />
+ * ```
+ */
 export const Character = ({
   mouthClosed,
   mouthOpen,
