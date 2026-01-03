@@ -21,6 +21,7 @@ docs/.cache
 target
 frames
 output.mp4
+output.gif
 loudnorm.json
 output_youtube.mp4
 bin

@@ -18,9 +18,9 @@ const HelloScene = () => {
   const progress = useVariable(0)
 
   useAnimation(async (context) => {
-    await context.move(progress).to(1, seconds(2), BEZIER_SMOOTH)
+    await context.move(progress).to(1, seconds(3), BEZIER_SMOOTH)
     await context.sleep(seconds(1))
-    await context.move(progress).to(0, seconds(2), BEZIER_SMOOTH)
+    await context.move(progress).to(0, seconds(3), BEZIER_SMOOTH)
   }, [])
 
   return (
