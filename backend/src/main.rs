@@ -3,7 +3,7 @@ pub mod ffmpeg;
 pub mod future;
 pub mod util;
 
-use std::{net::SocketAddr, ops::Bound, sync::atomic::AtomicBool};
+use std::{net::SocketAddr, ops::Bound, sync::atomic::AtomicBool, time::{SystemTime, UNIX_EPOCH}};
 
 use axum::{
     Router,
@@ -143,13 +143,33 @@ struct AudioPlanResolved {
     loudness: Option<AudioLoudnessPreset>,
 }
 
+#[derive(Deserialize)]
+struct RenderLogRequest {
+    message: String,
+    level: Option<String>,
+    session: Option<String>,
+    context: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Clone)]
+struct RenderLogEntry {
+    timestamp_ms: u64,
+    message: String,
+    level: String,
+    session: Option<String>,
+    context: Option<serde_json::Value>,
+}
+
 static RENDER_AUDIO_PLAN: std::sync::LazyLock<std::sync::Mutex<Option<AudioPlanResolved>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+static RENDER_LOGS: std::sync::LazyLock<std::sync::Mutex<Vec<RenderLogEntry>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
 static RENDER_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOTAL: AtomicUsize = AtomicUsize::new(0);
 static RENDER_CANCEL: AtomicBool = AtomicBool::new(false);
 static NEXT_SESSION_ID: AtomicUsize = AtomicUsize::new(1);
+const MAX_RENDER_LOGS: usize = 2000;
 
 #[tokio::main]
 async fn main() {
@@ -181,6 +201,12 @@ async fn main() {
             "/render_progress",
             post(set_progress_handler)
                 .get(get_progress_handler)
+                .options(options_handler),
+        )
+        .route(
+            "/render_log",
+            post(render_log_handler)
+                .get(get_render_log_handler)
                 .options(options_handler),
         )
         .route(
@@ -597,6 +623,59 @@ async fn get_progress_handler(State(_state): State<AppState>) -> impl IntoRespon
     (headers, Json(response))
 }
 
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+async fn render_log_handler(
+    State(_state): State<AppState>,
+    Json(payload): Json<RenderLogRequest>,
+) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+
+    let entry = RenderLogEntry {
+        timestamp_ms: now_ms(),
+        message: payload.message,
+        level: payload.level.unwrap_or_else(|| "info".to_string()),
+        session: payload.session,
+        context: payload.context,
+    };
+
+    {
+        let mut logs = RENDER_LOGS.lock().unwrap();
+        logs.push(entry.clone());
+        if logs.len() > MAX_RENDER_LOGS {
+            let trim = logs.len() - MAX_RENDER_LOGS;
+            logs.drain(0..trim);
+        }
+    }
+
+    let session = entry.session.as_deref().unwrap_or("-");
+    let context = entry
+        .context
+        .as_ref()
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    info!(
+        "[render_log:{}] {} session={} context={}",
+        entry.level, entry.message, session, context
+    );
+
+    (headers, StatusCode::OK)
+}
+
+async fn get_render_log_handler(State(_state): State<AppState>) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    apply_cors(&mut headers);
+
+    let logs = RENDER_LOGS.lock().unwrap().clone();
+    (headers, Json(logs))
+}
+
 async fn render_cancel_handler(State(_state): State<AppState>) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
     apply_cors(&mut headers);
@@ -617,6 +696,7 @@ async fn reset_handler(State(_state): State<AppState>) -> impl IntoResponse {
     DECODER.clear().await;
     RENDER_CANCEL.store(false, Ordering::Relaxed);
     *RENDER_AUDIO_PLAN.lock().unwrap() = None;
+    RENDER_LOGS.lock().unwrap().clear();
     (headers, StatusCode::OK)
 }
 

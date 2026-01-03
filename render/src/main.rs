@@ -12,8 +12,8 @@ use chromiumoxide::browser::BrowserConfig;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use tempfile::TempDir;
 
 use crate::ffmpeg::{AudioPlanResolved, SegmentWriter, mux_audio_plan_into_mp4};
@@ -70,6 +70,7 @@ async fn spawn_browser_instance(
             is_landscape: false,
             has_touch: false,
         })
+        //.arg("--use-angle=swiftshader")
         .request_timeout(Duration::from_hours(24))
         .user_data_dir(user_data_dir); // ★ インスタンスごとに別のディレクトリ
 
@@ -138,6 +139,37 @@ async fn wait_for_draw_text_ready(page: &Page) {
           }
         })()
     "#;
+    page.evaluate(script).await.unwrap();
+}
+
+async fn wait_for_webgl_ready(page: &Page) {
+    let script = r#"
+        (async () => {
+          const api = window.__frameScript;
+          if (api && typeof api.waitWebGLReady === "function") {
+            await api.waitWebGLReady();
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
+async fn wait_for_webgl_frame(page: &Page, frame: usize) {
+    let script = format!(
+        r#"
+        (async () => {{
+          const api = window.__frameScript;
+          if (api && typeof api.waitWebGLFrame === "function") {{
+            try {{
+              await api.waitWebGLFrame({});
+            }} catch (_e) {{
+              // ignore
+            }}
+          }}
+        }})()
+    "#,
+        frame
+    );
     page.evaluate(script).await.unwrap();
 }
 
@@ -298,6 +330,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             wait_for_frame_api(&page).await;
             wait_for_animation_ready(&page).await;
             wait_for_draw_text_ready(&page).await;
+            wait_for_webgl_ready(&page).await;
 
             for frame in start..end {
                 wait_for_next_frame(&page).await;
@@ -333,6 +366,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     frame
                 );
                 page.evaluate(script).await.unwrap();
+
+                wait_for_webgl_frame(&page, frame).await;
 
                 let bytes = page
                     .screenshot(

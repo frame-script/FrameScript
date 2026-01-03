@@ -33,15 +33,17 @@
         "mathjax-full": "^3.2.1",
         "opentype.js": "^1.3.4",
         "puppeteer": "^24.1.1",
-        "react": "^19.2.0",
-        "react-dom": "^19.2.0",
-        "react-router-dom": "^6.28.0"
-    },
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.28.0",
+    "three": "^0.166.1"
+  },
     "devDependencies": {
         "@eslint/js": "^9.39.1",
         "@types/node": "^24.10.1",
         "@types/react": "^19.2.5",
         "@types/react-dom": "^19.2.3",
+        "@types/three": "^0.166.0",
         "@vitejs/plugin-react": "^5.1.1",
         "@webgpu/types": "^0.1.67",
         "concurrently": "^9.2.1",
