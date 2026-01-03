@@ -18,10 +18,12 @@ export type DrawTextProps = {
   fillColor?: string
   durationFrames?: number
   delayFrames?: number
+  lagRatio?: number
   fillDurationFrames?: number
   fillDelayFrames?: number
   outStartFrames?: number
   outDurationFrames?: number
+  outLagRatio?: number
   lineHeight?: number
   align?: "left" | "center" | "right"
   style?: CSSProperties
@@ -40,10 +42,12 @@ export type DrawTexProps = {
   fillColor?: string
   durationFrames?: number
   delayFrames?: number
+  lagRatio?: number
   fillDurationFrames?: number
   fillDelayFrames?: number
   outStartFrames?: number
   outDurationFrames?: number
+  outLagRatio?: number
   displayMode?: boolean
   style?: CSSProperties
 }
@@ -55,6 +59,7 @@ type GlyphPath = {
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+const DEFAULT_LAG_RATIO = 0.6
 const fontCache = new Map<string, Promise<Font>>()
 const DRAW_TEXT_TRACKER_KEY = "__frameScript_DrawTextTracker"
 
@@ -179,10 +184,12 @@ const renderGlyphSvg = (params: {
   resolvedFillColor: string
   durationFrames: number
   delayFrames: number
+  lagRatio?: number
   fillDurationFrames: number
   fillDelayFrames: number
   outStartFrames?: number
   outDurationFrames?: number
+  outLagRatio?: number
   style?: CSSProperties
 }) => {
   const {
@@ -197,10 +204,12 @@ const renderGlyphSvg = (params: {
     resolvedFillColor,
     durationFrames,
     delayFrames,
+    lagRatio,
     fillDurationFrames,
     fillDelayFrames,
     outStartFrames,
     outDurationFrames,
+    outLagRatio,
     style,
   } = params
 
@@ -208,11 +217,21 @@ const renderGlyphSvg = (params: {
     (count, glyph, index) => count + (!glyph.isGap && (glyphLengths[index] ?? 0) > 0 ? 1 : 0),
     0,
   )
-  const perGlyphFrames = drawCount > 0 ? Math.max(1, Math.round(durationFrames / drawCount)) : 0
+  const safeLagRatio = Number.isFinite(lagRatio) ? Math.max(0, lagRatio ?? 0) : DEFAULT_LAG_RATIO
+  const safeOutLagRatio = Number.isFinite(outLagRatio)
+    ? Math.max(0, outLagRatio ?? 0)
+    : safeLagRatio
+  const inDenom = 1 + safeLagRatio * Math.max(0, drawCount - 1)
+  const perGlyphFrames =
+    drawCount > 0 ? Math.max(1, Math.round(durationFrames / Math.max(1, inDenom))) : 0
+  const stepFrames = drawCount > 1 ? Math.max(1, Math.round(perGlyphFrames * safeLagRatio)) : perGlyphFrames
+  const outDenom = 1 + safeOutLagRatio * Math.max(0, drawCount - 1)
   const outPerGlyphFrames =
     outDurationFrames && outDurationFrames > 0 && drawCount > 0
-      ? Math.max(1, Math.round(outDurationFrames / drawCount))
+      ? Math.max(1, Math.round(outDurationFrames / Math.max(1, outDenom)))
       : 0
+  const outStepFrames =
+    drawCount > 1 ? Math.max(1, Math.round(outPerGlyphFrames * safeOutLagRatio)) : outPerGlyphFrames
 
   let cursor = delayFrames
   const glyphTimings = glyphs.map((glyph, index) => {
@@ -220,7 +239,7 @@ const renderGlyphSvg = (params: {
       return { start: cursor, duration: 0 }
     }
     const start = cursor
-    cursor += perGlyphFrames
+    cursor += stepFrames
     return { start, duration: perGlyphFrames }
   })
 
@@ -236,7 +255,7 @@ const renderGlyphSvg = (params: {
     for (let i = drawable.length - 1; i >= 0; i -= 1) {
       const index = drawable[i]
       outTimings[index] = { start: outCursor, duration: outPerGlyphFrames }
-      outCursor += outPerGlyphFrames
+      outCursor += outStepFrames
     }
   }
 
@@ -603,10 +622,12 @@ export const DrawText = ({
   fillColor,
   durationFrames = 180,
   delayFrames = 0,
+  lagRatio = 0.5,
   fillDurationFrames = 18,
   fillDelayFrames = 0,
   outStartFrames,
   outDurationFrames,
+  outLagRatio = 0.5,
   lineHeight = 1.2,
   align = "left",
   style,
@@ -725,10 +746,12 @@ export const DrawText = ({
     resolvedFillColor,
     durationFrames,
     delayFrames,
+    lagRatio,
     fillDurationFrames,
     fillDelayFrames,
     outStartFrames,
     outDurationFrames,
+    outLagRatio,
     style,
   })
 }
@@ -751,10 +774,12 @@ export const DrawTex = ({
   fillColor,
   durationFrames = 180,
   delayFrames = 0,
+  lagRatio = 0.5,
   fillDurationFrames = 18,
   fillDelayFrames = 0,
   outStartFrames,
   outDurationFrames,
+  outLagRatio = 0.5,
   displayMode = false,
   style,
 }: DrawTexProps) => {
@@ -864,10 +889,12 @@ export const DrawTex = ({
     resolvedFillColor,
     durationFrames,
     delayFrames,
+    lagRatio,
     fillDurationFrames,
     fillDelayFrames,
     outStartFrames,
     outDurationFrames,
+    outLagRatio,
     style,
   })
 }
