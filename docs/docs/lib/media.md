@@ -27,6 +27,16 @@ For longer clips, set `showWaveform` to enable it explicitly:
 <Video video="assets/demo.mp4" showWaveform />
 ```
 
+### `<Img>`
+
+Image component that waits for decode before the headless renderer captures frames.
+
+```tsx
+import { Img } from "../src/lib/image"
+
+<Img src="assets/intro.png" />
+```
+
 ### `video_length`
 
 Returns the length of a video in frames.

@@ -142,6 +142,18 @@ async fn wait_for_draw_text_ready(page: &Page) {
     page.evaluate(script).await.unwrap();
 }
 
+async fn wait_for_images_ready(page: &Page) {
+    let script = r#"
+        (async () => {
+          const api = window.__frameScript;
+          if (api && typeof api.waitImagesReady === "function") {
+            await api.waitImagesReady();
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
 async fn wait_for_webgl_ready(page: &Page) {
     let script = r#"
         (async () => {
@@ -367,6 +379,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 page.evaluate(script).await.unwrap();
 
+                wait_for_images_ready(&page).await;
                 wait_for_webgl_frame(&page, frame).await;
 
                 let bytes = page

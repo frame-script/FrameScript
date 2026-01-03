@@ -27,6 +27,16 @@ import { Video } from "../src/lib/video/video"
 <Video video="assets/demo.mp4" showWaveform />
 ```
 
+### `<Img>`
+
+レンダラーがフレームを取得する前にデコード完了を待つ画像コンポーネントです。
+
+```tsx
+import { Img } from "../src/lib/image"
+
+<Img src="assets/intro.png" />
+```
+
 ### `video_length`
 動画の長さを取得します。
 ```tsx
