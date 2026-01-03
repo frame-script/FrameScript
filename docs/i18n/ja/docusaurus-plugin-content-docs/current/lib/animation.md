@@ -92,9 +92,19 @@ const Impact = () => (
 `<DrawText />` はフォントファイルを使ってテキストを SVG ストロークで描画します。
 
 ```tsx
+import { useAnimation, useVariable } from "../src/lib/animation"
 import { DrawText } from "../src/lib/animation/effect/draw-text"
+import { seconds } from "../src/lib/frame"
 
-<DrawText text="Hello" fontUrl="assets/Roboto.ttf" fontSize={96} />
+const Title = () => {
+  const progress = useVariable(0)
+
+  useAnimation(async (context) => {
+    await context.move(progress).to(1, seconds(2))
+  })
+
+  return <DrawText text="Hello" fontUrl="assets/Roboto.ttf" fontSize={96} progress={progress} />
+}
 ```
 
 ## Effects: DrawTex
@@ -103,7 +113,19 @@ import { DrawText } from "../src/lib/animation/effect/draw-text"
 MathJax がビルドに含まれている必要があります（このプロジェクトでは `draw-text.tsx` で静的 import しています）。
 
 ```tsx
+import { useAnimation, useVariable } from "../src/lib/animation"
 import { DrawTex } from "../src/lib/animation/effect/draw-text"
+import { seconds } from "../src/lib/frame"
 
-<DrawTex tex={"\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"} fontSize={96} />
+const Formula = () => {
+  const progress = useVariable(0)
+
+  useAnimation(async (context) => {
+    await context.move(progress).to(1, seconds(2))
+  })
+
+  return (
+    <DrawTex tex={"\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"} fontSize={96} progress={progress} />
+  )
+}
 ```

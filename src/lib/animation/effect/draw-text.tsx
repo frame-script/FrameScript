@@ -2,6 +2,8 @@ import type { CSSProperties } from "react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import opentype, { type Font } from "opentype.js"
 import { useCurrentFrame } from "../../frame"
+import { useProvideClipDuration } from "../../clip"
+import type { Variable } from "../../animation"
 import "mathjax-full/es5/tex-svg"
 
 /**
@@ -18,6 +20,8 @@ export type DrawTextProps = {
   fillColor?: string
   durationFrames?: number
   delayFrames?: number
+  frame?: number | Variable<number>
+  progress?: number | Variable<number>
   lagRatio?: number
   fillDurationFrames?: number
   fillDelayFrames?: number
@@ -42,6 +46,8 @@ export type DrawTexProps = {
   fillColor?: string
   durationFrames?: number
   delayFrames?: number
+  frame?: number | Variable<number>
+  progress?: number | Variable<number>
   lagRatio?: number
   fillDurationFrames?: number
   fillDelayFrames?: number
@@ -60,6 +66,16 @@ type GlyphPath = {
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 const DEFAULT_LAG_RATIO = 0.6
+
+const resolveTimelineValue = (
+  source: number | Variable<number> | undefined,
+  baseFrame: number,
+) => {
+  if (source == null) return null
+  if (typeof source === "number") return source
+  if (typeof source.get === "function") return source.get(baseFrame)
+  return null
+}
 const fontCache = new Map<string, Promise<Font>>()
 const DRAW_TEXT_TRACKER_KEY = "__frameScript_DrawTextTracker"
 
@@ -172,6 +188,88 @@ const useGlyphLengths = (glyphs: GlyphPath[]) => {
   return { glyphLengths, setGlyphLengths, pathRefs }
 }
 
+const getDrawableCount = (glyphs: GlyphPath[], glyphLengths: number[]) => {
+  let count = 0
+  glyphs.forEach((glyph, index) => {
+    if (glyph.isGap) return
+    if ((glyphLengths[index] ?? 0) > 0) count += 1
+  })
+  if (count > 0) return count
+  return glyphs.filter((glyph) => !glyph.isGap).length
+}
+
+const resolveStaggerTiming = (totalFrames: number, count: number, ratio: number) => {
+  if (count <= 0) return { per: 0, step: 0 }
+  const denom = 1 + ratio * Math.max(0, count - 1)
+  const per = Math.max(1, Math.round(totalFrames / Math.max(1, denom)))
+  const step = count > 1 ? Math.max(1, Math.round(per * ratio)) : per
+  return { per, step }
+}
+
+const computeTotalDuration = (params: {
+  glyphs: GlyphPath[]
+  glyphLengths: number[]
+  durationFrames: number
+  delayFrames: number
+  lagRatio?: number
+  fillDurationFrames: number
+  fillDelayFrames: number
+  outStartFrames?: number
+  outDurationFrames?: number
+  outLagRatio?: number
+  resolvedFillColor: string
+}) => {
+  const {
+    glyphs,
+    glyphLengths,
+    durationFrames,
+    delayFrames,
+    lagRatio,
+    fillDurationFrames,
+    fillDelayFrames,
+    outStartFrames,
+    outDurationFrames,
+    outLagRatio,
+    resolvedFillColor,
+  } = params
+
+  const drawCount = getDrawableCount(glyphs, glyphLengths)
+  const safeDelay = Math.max(0, delayFrames)
+  if (drawCount <= 0) {
+    return Math.max(1, Math.round(Math.max(0, durationFrames) + safeDelay))
+  }
+
+  const safeLagRatio = Number.isFinite(lagRatio) ? Math.max(0, lagRatio ?? 0) : DEFAULT_LAG_RATIO
+  const safeOutLagRatio = Number.isFinite(outLagRatio)
+    ? Math.max(0, outLagRatio ?? 0)
+    : safeLagRatio
+  const { per: perGlyphFrames, step: stepFrames } = resolveStaggerTiming(
+    durationFrames,
+    drawCount,
+    safeLagRatio,
+  )
+
+  let lastStrokeEnd = safeDelay + stepFrames * (drawCount - 1) + perGlyphFrames
+  let total = lastStrokeEnd
+
+  if (resolvedFillColor !== "transparent" && fillDurationFrames > 0) {
+    const fillEnd = lastStrokeEnd + Math.max(0, fillDelayFrames) + fillDurationFrames
+    total = Math.max(total, fillEnd)
+  }
+
+  if (outStartFrames != null && outDurationFrames && outDurationFrames > 0) {
+    const { per: outPer, step: outStep } = resolveStaggerTiming(
+      outDurationFrames,
+      drawCount,
+      safeOutLagRatio,
+    )
+    const outEnd = Math.max(0, outStartFrames) + outStep * (drawCount - 1) + outPer
+    total = Math.max(total, outEnd)
+  }
+
+  return Math.max(1, Math.round(total))
+}
+
 const renderGlyphSvg = (params: {
   frame: number
   glyphs: GlyphPath[]
@@ -213,25 +311,20 @@ const renderGlyphSvg = (params: {
     style,
   } = params
 
-  const drawCount = glyphs.reduce(
-    (count, glyph, index) => count + (!glyph.isGap && (glyphLengths[index] ?? 0) > 0 ? 1 : 0),
-    0,
-  )
+  const drawCount = getDrawableCount(glyphs, glyphLengths)
   const safeLagRatio = Number.isFinite(lagRatio) ? Math.max(0, lagRatio ?? 0) : DEFAULT_LAG_RATIO
   const safeOutLagRatio = Number.isFinite(outLagRatio)
     ? Math.max(0, outLagRatio ?? 0)
     : safeLagRatio
-  const inDenom = 1 + safeLagRatio * Math.max(0, drawCount - 1)
-  const perGlyphFrames =
-    drawCount > 0 ? Math.max(1, Math.round(durationFrames / Math.max(1, inDenom))) : 0
-  const stepFrames = drawCount > 1 ? Math.max(1, Math.round(perGlyphFrames * safeLagRatio)) : perGlyphFrames
-  const outDenom = 1 + safeOutLagRatio * Math.max(0, drawCount - 1)
-  const outPerGlyphFrames =
-    outDurationFrames && outDurationFrames > 0 && drawCount > 0
-      ? Math.max(1, Math.round(outDurationFrames / Math.max(1, outDenom)))
-      : 0
-  const outStepFrames =
-    drawCount > 1 ? Math.max(1, Math.round(outPerGlyphFrames * safeOutLagRatio)) : outPerGlyphFrames
+  const { per: perGlyphFrames, step: stepFrames } = resolveStaggerTiming(
+    durationFrames,
+    drawCount,
+    safeLagRatio,
+  )
+  const { per: outPerGlyphFrames, step: outStepFrames } =
+    outDurationFrames && outDurationFrames > 0
+      ? resolveStaggerTiming(outDurationFrames, drawCount, safeOutLagRatio)
+      : { per: 0, step: 0 }
 
   let cursor = delayFrames
   const glyphTimings = glyphs.map((glyph, index) => {
@@ -610,7 +703,18 @@ const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
  *
  * @example
  * ```tsx
- * <DrawText text="Hello" fontUrl="assets/Roboto.ttf" />
+ * import { useAnimation, useVariable } from "../src/lib/animation"
+ * import { seconds } from "../src/lib/frame"
+ *
+ * const Title = () => {
+ *   const progress = useVariable(0)
+ *
+ *   useAnimation(async (context) => {
+ *     await context.move(progress).to(1, seconds(2))
+ *   })
+ *
+ *   return <DrawText text="Hello" fontUrl="assets/Roboto.ttf" progress={progress} />
+ * }
  * ```
  */
 export const DrawText = ({
@@ -622,6 +726,8 @@ export const DrawText = ({
   fillColor,
   durationFrames = 180,
   delayFrames = 0,
+  frame: frameOverride,
+  progress: progressOverride,
   lagRatio = 0.5,
   fillDurationFrames = 18,
   fillDelayFrames = 0,
@@ -632,7 +738,7 @@ export const DrawText = ({
   align = "left",
   style,
 }: DrawTextProps) => {
-  const frame = useCurrentFrame()
+  const baseFrame = useCurrentFrame()
   const resolvedFillColor = fillColor ?? strokeColor
   const [glyphs, setGlyphs] = useState<GlyphPath[]>([])
   const [viewBox, setViewBox] = useState("0 0 0 0")
@@ -640,6 +746,48 @@ export const DrawText = ({
   const { glyphLengths, setGlyphLengths, pathRefs } = useGlyphLengths(glyphs)
   const [glyphLoadId, setGlyphLoadId] = useState(0)
   const { beginPending, endPending, loadIdRef } = useDrawTextPending()
+  const totalDuration = useMemo(
+    () =>
+      computeTotalDuration({
+        glyphs,
+        glyphLengths,
+        durationFrames,
+        delayFrames,
+        lagRatio,
+        fillDurationFrames,
+        fillDelayFrames,
+        outStartFrames,
+        outDurationFrames,
+        outLagRatio,
+        resolvedFillColor,
+      }),
+    [
+      glyphs,
+      glyphLengths,
+      durationFrames,
+      delayFrames,
+      lagRatio,
+      fillDurationFrames,
+      fillDelayFrames,
+      outStartFrames,
+      outDurationFrames,
+      outLagRatio,
+      resolvedFillColor,
+    ],
+  )
+  useProvideClipDuration(totalDuration)
+  const progressValue = resolveTimelineValue(progressOverride, baseFrame)
+  const frameValue = resolveTimelineValue(frameOverride, baseFrame)
+  const resolvedFrame = useMemo(() => {
+    if (progressValue != null) {
+      const span = Math.max(0, totalDuration - 1)
+      return clamp01(progressValue) * span
+    }
+    if (frameValue != null) {
+      return Math.max(0, frameValue)
+    }
+    return baseFrame
+  }, [baseFrame, frameValue, progressValue, totalDuration])
 
   useEffect(() => {
     const loadId = beginPending()
@@ -735,7 +883,7 @@ export const DrawText = ({
   }, [endPending, glyphLoadId, glyphLengths, glyphs, loadIdRef])
 
   return renderGlyphSvg({
-    frame,
+    frame: resolvedFrame,
     glyphs,
     glyphLengths,
     pathRefs,
@@ -763,7 +911,20 @@ export const DrawText = ({
  *
  * @example
  * ```tsx
- * <DrawTex tex={"\\\\int_0^1 x^2 dx"} fontSize={96} />
+ * import { useAnimation, useVariable } from "../src/lib/animation"
+ * import { seconds } from "../src/lib/frame"
+ *
+ * const Formula = () => {
+ *   const progress = useVariable(0)
+ *
+ *   useAnimation(async (context) => {
+ *     await context.move(progress).to(1, seconds(2))
+ *   })
+ *
+ *   return (
+ *     <DrawTex tex={"\\\\sum_{i=1}^{n} i = \\\\frac{n(n+1)}{2}"} fontSize={96} progress={progress} />
+ *   )
+ * }
  * ```
  */
 export const DrawTex = ({
@@ -774,6 +935,8 @@ export const DrawTex = ({
   fillColor,
   durationFrames = 180,
   delayFrames = 0,
+  frame: frameOverride,
+  progress: progressOverride,
   lagRatio = 0.5,
   fillDurationFrames = 18,
   fillDelayFrames = 0,
@@ -783,7 +946,7 @@ export const DrawTex = ({
   displayMode = false,
   style,
 }: DrawTexProps) => {
-  const frame = useCurrentFrame()
+  const baseFrame = useCurrentFrame()
   const resolvedFillColor = fillColor ?? strokeColor
   const [glyphs, setGlyphs] = useState<GlyphPath[]>([])
   const [viewBox, setViewBox] = useState("0 0 0 0")
@@ -791,6 +954,48 @@ export const DrawTex = ({
   const { glyphLengths, setGlyphLengths, pathRefs } = useGlyphLengths(glyphs)
   const [glyphLoadId, setGlyphLoadId] = useState(0)
   const { beginPending, endPending, loadIdRef } = useDrawTextPending()
+  const totalDuration = useMemo(
+    () =>
+      computeTotalDuration({
+        glyphs,
+        glyphLengths,
+        durationFrames,
+        delayFrames,
+        lagRatio,
+        fillDurationFrames,
+        fillDelayFrames,
+        outStartFrames,
+        outDurationFrames,
+        outLagRatio,
+        resolvedFillColor,
+      }),
+    [
+      glyphs,
+      glyphLengths,
+      durationFrames,
+      delayFrames,
+      lagRatio,
+      fillDurationFrames,
+      fillDelayFrames,
+      outStartFrames,
+      outDurationFrames,
+      outLagRatio,
+      resolvedFillColor,
+    ],
+  )
+  useProvideClipDuration(totalDuration)
+  const progressValue = resolveTimelineValue(progressOverride, baseFrame)
+  const frameValue = resolveTimelineValue(frameOverride, baseFrame)
+  const resolvedFrame = useMemo(() => {
+    if (progressValue != null) {
+      const span = Math.max(0, totalDuration - 1)
+      return clamp01(progressValue) * span
+    }
+    if (frameValue != null) {
+      return Math.max(0, frameValue)
+    }
+    return baseFrame
+  }, [baseFrame, frameValue, progressValue, totalDuration])
 
   const texInput = useMemo(() => tex.trim(), [tex])
 
@@ -878,7 +1083,7 @@ export const DrawTex = ({
   }, [endPending, glyphLoadId, glyphLengths, glyphs, loadIdRef])
 
   return renderGlyphSvg({
-    frame,
+    frame: resolvedFrame,
     glyphs,
     glyphLengths,
     pathRefs,

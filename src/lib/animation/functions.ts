@@ -128,6 +128,30 @@ export const cubicBezier = (x1: number, y1: number, x2: number, y2: number): Eas
 }
 
 /**
+ * Linear easing (constant speed, no acceleration).
+ *
+ * 等速のイージング（加減速なし）。
+ *
+ * @example
+ * ```ts
+ * const ease = easeLinear
+ * ```
+ */
+export const easeLinear: Easing = (t) => clamp(t, 0, 1)
+
+/**
+ * Preset cubic-bezier easing for linear motion.
+ *
+ * 等速向けのプリセット（加減速なし）。
+ *
+ * @example
+ * ```ts
+ * const ease = BEZIER_LINEAR
+ * ```
+ */
+export const BEZIER_LINEAR = cubicBezier(0, 0, 1, 1)
+
+/**
  * Preset cubic-bezier easing (CSS "ease").
  *
  * 既定の cubic-bezier（CSS の "ease"）。
