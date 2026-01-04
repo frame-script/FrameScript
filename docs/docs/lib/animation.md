@@ -51,6 +51,16 @@ const CircleScene = () => {
 
 In this example, `useVariable` creates position and opacity, while `useAnimation` drives a move and a fade at the same time. Use `variable.use()` in JSX styles to bind the current-frame value.
 
+Supported value types for `useVariable` are `number`, `Vec2`, `Vec3`, and hex colors (`ColorHex`):
+
+```tsx
+const opacity = useVariable(0)
+const pos2 = useVariable({ x: 0, y: 0 })
+const pos3 = useVariable({ x: 0, y: 0, z: 0 })
+const color = useVariable("#FFAA33CC")
+const colorRgb = useVariable("#FFAA33")
+```
+
 ![](./circle.gif)
 
 ## You can reorder awaits

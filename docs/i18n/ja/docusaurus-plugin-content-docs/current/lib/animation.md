@@ -51,6 +51,16 @@ const CircleScene = () => {
 
 上の例では、`useVariable` で位置と不透明度を作り、`useAnimation` で「移動」と「フェードイン」を同時に走らせています。`variable.use()` を JSX のスタイルに使うだけで、現在フレームの値が自動で反映されます。
 
+`useVariable` が受け取れる型は `number` / `Vec2` / `Vec3` / 16進カラー（`ColorHex`）です。
+
+```tsx
+const opacity = useVariable(0)
+const pos2 = useVariable({ x: 0, y: 0 })
+const pos3 = useVariable({ x: 0, y: 0, z: 0 })
+const color = useVariable("#FFAA33CC")
+const colorRgb = useVariable("#FFAA33")
+```
+
 ![](./circle.gif)
 
 ## async/await で順序を入れ替えられる
