@@ -65,6 +65,43 @@ export const PROJECT = () => (
 </ClipSequence>
 ```
 
+### Clip utilities
+
+#### `useClipStart()`
+現在のクリップの開始フレームを返します。
+
+```tsx
+const start = useClipStart()
+```
+
+#### `useClipRange()`
+現在のクリップの範囲を返します
+
+```tsx
+const range = useClipRange()
+const start = range.start
+const end   = range.end
+```
+
+#### `useClipId()`
+現在のクリップ ID を返します。
+
+```tsx
+const id = useClipId()
+```
+
+#### `useClipDepth()`
+現在のクリップのネスト深度を返します。
+```tsx
+const depth = useClipDepth()
+```
+
+#### `useClipActive()`
+現在のクリップがアクティブかつ表示中なら true を返します。
+```tsx
+const active = useClipActive()
+```
+
 ### `<ClipStatic>`
 
 表示する期間を明示できる静的クリップ。境界を厳密に制御したい場合に使います。
