@@ -16,9 +16,13 @@ export const PROJECT_SETTINGS: ProjectSettings = {
 
 const HelloScene = () => {
   const progress = useVariable(0)
+  const color = useVariable("#FFFFFF")
 
   useAnimation(async (context) => {
-    await context.move(progress).to(1, seconds(3), BEZIER_SMOOTH)
+    await context.parallel([
+      context.move(progress).to(1, seconds(3), BEZIER_SMOOTH),
+      context.move(color).to("#75a9bd", seconds(3), BEZIER_SMOOTH),
+    ])
     await context.sleep(seconds(1))
     await context.move(progress).to(0, seconds(3), BEZIER_SMOOTH)
   }, [])
@@ -30,6 +34,8 @@ const HelloScene = () => {
         fontUrl="assets/NotoSerifCJKJP-Medium.ttf"
         strokeWidth={2}
         progress={progress}
+        strokeColor={color.use()}
+        fillColor={color.use()}
       />
     </FillFrame>
   )

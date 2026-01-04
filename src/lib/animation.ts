@@ -27,6 +27,9 @@ export type Vec2 = { x: number; y: number }
  * ```
  */
 export type Vec3 = { x: number; y: number; z: number }
+
+
+export type ColorHex = `#${string}`
 /**
  * Supported variable value types for animation.
  *
@@ -37,9 +40,9 @@ export type Vec3 = { x: number; y: number; z: number }
  * const value: VariableType = { x: 0, y: 0 }
  * ```
  */
-export type VariableType = number | Vec2 | Vec3
+export type VariableType = number | Vec2 | Vec3 | ColorHex
 
-type VariableKind = "number" | "vec2" | "vec3"
+type VariableKind = "number" | "vec2" | "vec3" | "color"
 
 type Segment<T> = {
   start: number
@@ -171,8 +174,47 @@ const installAnimationApi = () => {
 const toFrames = (value: number) => Math.max(0, Math.round(value))
 const isDev = typeof import.meta !== "undefined" && Boolean((import.meta as any).env?.DEV)
 
+type ParsedColor = { r: number; g: number; b: number; a: number; hasAlpha: boolean }
+
+const clampChannel = (value: number) => Math.min(255, Math.max(0, value))
+
+const expandShortHex = (hex: string) => hex.split("").map((ch) => ch + ch).join("")
+
+const parseColorHex = (value: string): ParsedColor | null => {
+  if (!value.startsWith("#")) return null
+  let raw = value.slice(1)
+  let hasAlpha = false
+
+  if (raw.length === 3 || raw.length === 4) {
+    hasAlpha = raw.length === 4
+    raw = expandShortHex(raw)
+  }
+
+  if (raw.length === 8) {
+    hasAlpha = true
+  } else if (raw.length !== 6) {
+    return null
+  }
+
+  if (!/^[0-9a-fA-F]+$/.test(raw)) return null
+
+  const r = Number.parseInt(raw.slice(0, 2), 16)
+  const g = Number.parseInt(raw.slice(2, 4), 16)
+  const b = Number.parseInt(raw.slice(4, 6), 16)
+  const a = hasAlpha ? Number.parseInt(raw.slice(6, 8), 16) : 255
+  return { r, g, b, a, hasAlpha }
+}
+
+const formatColorHex = (r: number, g: number, b: number, a: number | null) => {
+  const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, "0").toUpperCase()
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}${a == null ? "" : toHex(a)}`
+}
+
 const getKind = (value: unknown): VariableKind | null => {
   if (typeof value === "number") return "number"
+  if (typeof value === "string") {
+    if (parseColorHex(value)) return "color"
+  }
   if (value && typeof value === "object") {
     const obj = value as Partial<Vec3>
     if (typeof obj.x === "number" && typeof obj.y === "number") {
@@ -193,6 +235,20 @@ const lerpVec3 = (from: Vec3, to: Vec3, t: number) => ({
   y: from.y + (to.y - from.y) * t,
   z: from.z + (to.z - from.z) * t,
 })
+const lerpColor = (from: ColorHex, to: ColorHex, t: number) => {
+  const fromColor = parseColorHex(from)
+  const toColor = parseColorHex(to)
+  if (!fromColor || !toColor) {
+    return to
+  }
+  const mix = (a: number, b: number) => a + (b - a) * t
+  const r = clampChannel(Math.round(mix(fromColor.r, toColor.r)))
+  const g = clampChannel(Math.round(mix(fromColor.g, toColor.g)))
+  const b = clampChannel(Math.round(mix(fromColor.b, toColor.b)))
+  const a = clampChannel(Math.round(mix(fromColor.a, toColor.a)))
+  const useAlpha = fromColor.hasAlpha || toColor.hasAlpha
+  return formatColorHex(r, g, b, useAlpha ? a : null)
+}
 
 const lerpForKind = (kind: VariableKind): Lerp<VariableType> => {
   switch (kind) {
@@ -202,6 +258,8 @@ const lerpForKind = (kind: VariableKind): Lerp<VariableType> => {
       return lerpVec2 as Lerp<VariableType>
     case "vec3":
       return lerpVec3 as Lerp<VariableType>
+    case "color":
+      return lerpColor as Lerp<VariableType>
   }
 }
 
@@ -286,6 +344,7 @@ export class AnimationHandle {
 export function useVariable(initial: number): Variable<number>
 export function useVariable(initial: Vec2): Variable<Vec2>
 export function useVariable(initial: Vec3): Variable<Vec3>
+export function useVariable(initial: ColorHex): Variable<ColorHex>
 export function useVariable<T extends VariableType>(initial: T): Variable<T> {
   const stateRef = useRef<VariableStateBase | null>(null)
   if (!stateRef.current) {
