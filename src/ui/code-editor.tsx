@@ -831,6 +831,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
 
   useEffect(() => {
     if (pendingJumpRef.current == null) return;
+    if (!editorRef.current || !monacoRef.current) return;
     const { line, column } = pendingJumpRef.current;
     pendingJumpRef.current = null;
     revealPosition(line, column);
@@ -987,8 +988,8 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
         `}</style>
 
         {/* Editor */}
-        <div style={{ flex: 1, minHeight: 0 }}>
-          {isLoading || !isVscodeReady ? (
+        <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+          {!isVscodeReady ? (
             <div
               style={{
                 display: "flex",
@@ -1001,29 +1002,47 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
               Loading editor...
             </div>
           ) : (
-            <Editor
-              height="100%"
-              language={languageId}
-              value={code}
-              onChange={(value) => {
-                setCode(value || "");
-                setIsDirty(true);
-              }}
-              beforeMount={configureMonaco}
-              onMount={handleEditorDidMount}
-              path={currentFile}
-              theme="vs-dark"
-              options={{
-                minimap: { enabled: true },
-                fontSize: 14,
-                lineNumbers: "on",
-                roundedSelection: false,
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                tabSize: 2,
-                wordWrap: "on",
-              }}
-            />
+            <>
+              <Editor
+                height="100%"
+                language={languageId}
+                value={code}
+                onChange={(value) => {
+                  setCode(value || "");
+                  setIsDirty(true);
+                }}
+                beforeMount={configureMonaco}
+                onMount={handleEditorDidMount}
+                path={currentFile}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: true },
+                  fontSize: 14,
+                  lineNumbers: "on",
+                  roundedSelection: false,
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                  wordWrap: "on",
+                }}
+              />
+              {isLoading && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#cccccc",
+                    background: "rgba(15, 23, 42, 0.55)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  Loading editor...
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
