@@ -3,6 +3,8 @@ import { PROJECT, PROJECT_SETTINGS } from "../project/project";
 import { WithCurrentFrame } from "./lib/frame"
 import { TimelineUI } from "./ui/timeline";
 import { ClipVisibilityPanel } from "./ui/clip-visibility";
+import { CodeEditor } from "./ui/code-editor";
+import { EditorProvider } from "./ui/editor-context";
 import { Store } from "./util/state";
 import { StudioStateContext } from "./lib/studio-state"
 
@@ -10,11 +12,14 @@ import { StudioStateContext } from "./lib/studio-state"
 export { StudioStateContext, useIsPlaying, useIsPlayingStore, useIsRender, useSetIsPlaying } from "./lib/studio-state"
 
 export const StudioApp = () => {
+  const rowRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [verticalRatio, setVerticalRatio] = useState(0.6); // top area height ratio
   const [horizontalRatio, setHorizontalRatio] = useState(0.3); // clips width ratio within top area
+  const [editorWidth, setEditorWidth] = useState(460);
+  const [isEditorVisible, setIsEditorVisible] = useState(true);
   const projectWidth = PROJECT_SETTINGS.width || 1920
   const projectHeight = PROJECT_SETTINGS.height || 1080
   const previewAspect = `${projectWidth} / ${projectHeight}`
@@ -22,6 +27,9 @@ export const StudioApp = () => {
   const previewMinWidth = 320;
   const previewMinHeight = previewMinWidth * previewAspectValue;
   const timelineMinHeight = 200;
+  const leftPanelMinWidth = previewMinWidth + 220 + 6 + 20;
+  const editorMinWidth = 320;
+  const rowGap = 10;
   const [previewViewport, setPreviewViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const hasPreviewViewport = previewViewport.width > 0 && previewViewport.height > 0;
 
@@ -132,108 +140,167 @@ export const StudioApp = () => {
     [isPlayingStore]
   );
 
+  const clampEditorWidth = useCallback(
+    (nextWidth: number) => {
+      const row = rowRef.current;
+      if (!row) {
+        setEditorWidth(Math.max(editorMinWidth, nextWidth));
+        return;
+      }
+      const maxWidth = Math.max(editorMinWidth, row.clientWidth - rowGap - leftPanelMinWidth);
+      const clamped = Math.min(Math.max(nextWidth, editorMinWidth), maxWidth);
+      setEditorWidth(clamped);
+    },
+    [editorMinWidth, leftPanelMinWidth, rowGap],
+  );
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const observer = new ResizeObserver(() => {
+      setEditorWidth((prev) => {
+        const maxWidth = Math.max(editorMinWidth, row.clientWidth - rowGap - leftPanelMinWidth);
+        return Math.min(prev, maxWidth);
+      });
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [editorMinWidth, leftPanelMinWidth, rowGap]);
+
   return (
-    <StudioStateContext value={{ isPlaying, setIsPlaying, isPlayingStore, isRender: false }}>
-      <WithCurrentFrame>
-        <div style={{ padding: 16, height: "100vh", boxSizing: "border-box", minHeight: 0 }}>
-          <div
-            ref={containerRef}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              width: "100%",
-              height: "100%",
-              boxSizing: "border-box",
-              minHeight: 0,
-            }}
-          >
-            <div
-              ref={topRef}
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "stretch",
-                width: "100%",
-                flexBasis: `${verticalRatio * 100}%`,
-                minHeight: 240,
-                maxHeight: "80%",
-                minWidth: 0,
-              }}
-            >
-              <div style={{ flexBasis: `${horizontalRatio * 100}%`, minWidth: 220 }}>
-                <ClipVisibilityPanel />
-              </div>
-              <div
-                onPointerDown={startHorizontalDrag}
-                style={{
-                  width: 6,
-                  cursor: "col-resize",
-                  background: "linear-gradient(180deg, #1f2937, #111827)",
-                  borderRadius: 4,
-                  flexShrink: 0,
-                }}
-              />
-              <div style={{ flex: 1, minWidth: 320, display: "flex", alignItems: "center", justifyContent: "center", minHeight: previewMinHeight, position: "relative" }}>
+    <EditorProvider>
+      <StudioStateContext value={{ isPlaying, setIsPlaying, isPlayingStore, isRender: false }}>
+        <WithCurrentFrame>
+          <div style={{ padding: 16, height: "100vh", boxSizing: "border-box", minHeight: 0 }}>
+            <div ref={rowRef} style={{ display: "flex", gap: 10, height: "100%", minHeight: 0 }}>
+              <div style={{ flex: 1, minWidth: leftPanelMinWidth, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditorVisible((prev) => !prev)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #1f2937",
+                      background: "#0f172a",
+                      color: "#cbd5e1",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {isEditorVisible ? "Hide Editor" : "Show Editor"}
+                  </button>
+                </div>
+
                 <div
-                  ref={previewRef}
+                  ref={containerRef}
                   style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
                     width: "100%",
                     height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
                     boxSizing: "border-box",
+                    minHeight: 0,
+                    flex: 1,
                   }}
                 >
                   <div
+                    ref={topRef}
                     style={{
-                      width: scaledWidth,
-                      height: scaledHeight,
-                      visibility: hasPreviewViewport ? "visible" : "hidden",
-                      aspectRatio: previewAspect,
-                      border: "1px solid #444",
-                      borderRadius: 1,
-                      overflow: "hidden",
-                      backgroundColor: "#000",
-                      boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-                      position: "relative",
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "stretch",
+                      width: "100%",
+                      flexBasis: `${verticalRatio * 100}%`,
+                      minHeight: 240,
+                      maxHeight: "80%",
+                      minWidth: 0,
                     }}
                   >
+                    <div style={{ flexBasis: `${horizontalRatio * 100}%`, minWidth: 220 }}>
+                      <ClipVisibilityPanel />
+                    </div>
                     <div
+                      onPointerDown={startHorizontalDrag}
                       style={{
-                        width: projectWidth,
-                        height: projectHeight,
-                        transform: `scale(${scale})`,
-                        transformOrigin: "top left",
+                        width: 6,
+                        cursor: "col-resize",
+                        background: "linear-gradient(180deg, #1f2937, #111827)",
+                        borderRadius: 4,
+                        flexShrink: 0,
                       }}
-                    >
-                      <PROJECT />
+                    />
+                    <div style={{ flex: 1, minWidth: 320, display: "flex", alignItems: "center", justifyContent: "center", minHeight: previewMinHeight, position: "relative" }}>
+                      <div
+                        ref={previewRef}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: scaledWidth,
+                            height: scaledHeight,
+                            visibility: hasPreviewViewport ? "visible" : "hidden",
+                            aspectRatio: previewAspect,
+                            border: "1px solid #444",
+                            borderRadius: 1,
+                            overflow: "hidden",
+                            backgroundColor: "#000",
+                            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+                            position: "relative",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: projectWidth,
+                              height: projectHeight,
+                              transform: `scale(${scale})`,
+                              transformOrigin: "top left",
+                            }}
+                          >
+                            <PROJECT />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    onPointerDown={startVerticalDrag}
+                    style={{
+                      height: 8,
+                      cursor: "row-resize",
+                      background: "linear-gradient(90deg, #1f2937, #111827)",
+                      borderRadius: 4,
+                      flexShrink: 0,
+                    }}
+                  />
+
+                  <div style={{ flex: 1, minHeight: 160, display: "flex", minWidth: 0 }}>
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                      <TimelineUI />
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div
-              onPointerDown={startVerticalDrag}
-              style={{
-                height: 8,
-                cursor: "row-resize",
-                background: "linear-gradient(90deg, #1f2937, #111827)",
-                borderRadius: 4,
-                flexShrink: 0,
-              }}
-            />
-
-            <div style={{ flex: 1, minHeight: 160, display: "flex", minWidth: 0 }}>
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <TimelineUI />
-              </div>
+              {isEditorVisible ? (
+                <div style={{ width: editorWidth, minWidth: editorMinWidth, height: "100%", minHeight: 0, display: "flex" }}>
+                  <CodeEditor width={editorWidth} onWidthChange={clampEditorWidth} />
+                </div>
+              ) : null}
             </div>
           </div>
-        </div>
-      </WithCurrentFrame>
-    </StudioStateContext>
+        </WithCurrentFrame>
+      </StudioStateContext>
+    </EditorProvider>
   );
 };
