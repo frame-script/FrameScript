@@ -84,7 +84,7 @@ export const ClipVisibilityPanel = () => {
       }
       if (matches.length === 1) {
         const match = matches[0]
-        openFile(match.filePath, match.line)
+        openFile(match.filePath, match.line, match.column)
         return
       }
       setMatchDialog({ label, matches })
@@ -239,10 +239,10 @@ export const ClipVisibilityPanel = () => {
                 <button
                   key={`${match.filePath}:${match.line}`}
                   type="button"
-                  onClick={() => {
-                    openFile(match.filePath, match.line)
-                    setMatchDialog(null)
-                  }}
+                    onClick={() => {
+                      openFile(match.filePath, match.line, match.column)
+                      setMatchDialog(null)
+                    }}
                   style={{
                     padding: "8px 10px",
                     borderRadius: 8,

@@ -1,13 +1,13 @@
 import { createContext, useContext, type ReactNode, useState, useCallback } from "react";
 
 type EditorApi = {
-  openFile: (filePath: string, line?: number) => void;
+  openFile: (filePath: string, line?: number, column?: number) => void;
   jumpToLine: (line: number) => void;
   jumpToMatch: (needle: string) => void;
 }
 
 interface EditorContextValue {
-  openFile: (filePath: string, line?: number) => void;
+  openFile: (filePath: string, line?: number, column?: number) => void;
   jumpToLine: (line: number) => void;
   jumpToMatch: (needle: string) => void;
   registerEditor: (api: EditorApi) => void;
@@ -18,8 +18,8 @@ const EditorContext = createContext<EditorContextValue | null>(null);
 export const EditorProvider = ({ children }: { children: ReactNode }) => {
   const [editorApi, setEditorApi] = useState<EditorApi | null>(null);
 
-  const openFile = useCallback((filePath: string, line?: number) => {
-    editorApi?.openFile(filePath, line);
+  const openFile = useCallback((filePath: string, line?: number, column?: number) => {
+    editorApi?.openFile(filePath, line, column);
   }, [editorApi]);
 
   const jumpToLine = useCallback((line: number) => {

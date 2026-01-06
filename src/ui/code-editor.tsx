@@ -39,6 +39,10 @@ interface CodeEditorProps {
 }
 
 type FileResource = URI;
+type JumpTarget = {
+  line: number;
+  column?: number;
+};
 
 const decodeEscaped = (input: string) => {
   let result = "";
@@ -174,6 +178,64 @@ const toResourcePath = (resource: FileResource) => {
   return resource.path ?? resource.toString();
 };
 
+const getLanguageId = (filePath: string) => {
+  const normalized = filePath.toLowerCase();
+  if (normalized.endsWith(".tsx")) return "typescriptreact";
+  if (normalized.endsWith(".ts")) return "typescript";
+  if (normalized.endsWith(".jsx")) return "javascriptreact";
+  if (normalized.endsWith(".js")) return "javascript";
+  return "typescript";
+};
+
+const normalizeLine = (line?: number) => {
+  if (line == null || Number.isNaN(line)) return undefined;
+  if (line <= 0) return line + 1;
+  return line;
+};
+
+const normalizeColumn = (column?: number) => {
+  if (column == null || Number.isNaN(column)) return undefined;
+  if (column <= 0) return column + 1;
+  return column;
+};
+
+const extractSelection = (options: unknown): JumpTarget | null => {
+  if (!options || typeof options !== "object") return null;
+  const candidate = options as {
+    selection?: unknown;
+    range?: unknown;
+  };
+  const selection = (candidate.selection ?? candidate.range) as
+    | {
+        startLineNumber?: number;
+        startColumn?: number;
+        start?: { line?: number; character?: number };
+      }
+    | undefined;
+  if (!selection) return null;
+  if (typeof selection.startLineNumber === "number") {
+    const line = normalizeLine(selection.startLineNumber);
+    if (line == null) return null;
+    const column = normalizeColumn(selection.startColumn);
+    return { line, column };
+  }
+  if (selection.start && typeof selection.start.line === "number") {
+    const line = normalizeLine(selection.start.line + 1);
+    if (line == null) return null;
+    const column = normalizeColumn((selection.start.character ?? 0) + 1);
+    return { line, column };
+  }
+  return null;
+};
+
+const logNavigationIssue = (message: string, detail?: unknown) => {
+  if (detail) {
+    console.warn(`[editor-nav] ${message}`, detail);
+  } else {
+    console.warn(`[editor-nav] ${message}`);
+  }
+};
+
 export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   const [code, setCode] = useState<string>("");
   const [currentFile, setCurrentFile] = useState<string>("project.tsx");
@@ -194,9 +256,14 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   const resizerRef = useRef<HTMLDivElement>(null);
   const { registerEditor } = useEditor();
   const loadIdRef = useRef(0);
-  const pendingJumpRef = useRef<number | null>(null);
+  const pendingJumpRef = useRef<JumpTarget | null>(null);
   const currentFileRef = useRef<string>(currentFile);
-  const openFileRef = useRef<((filePath: string, line?: number) => Promise<void>) | null>(null);
+  const openFileRef = useRef<
+    ((filePath: string, line?: number, column?: number) => Promise<void>) | null
+  >(null);
+  const openFileWithContentRef = useRef<
+    ((filePath: string, content: string, line?: number, column?: number) => Promise<void>) | null
+  >(null);
 
   useEffect(() => {
     currentFileRef.current = currentFile;
@@ -232,18 +299,37 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     return { path: filePath, content: extracted ?? text };
   }, []);
 
-  const loadFile = useCallback(async (filePath: string) => {
+  const loadFile = useCallback(async (filePath: string, contentOverride?: string) => {
     const loadId = loadIdRef.current + 1;
     loadIdRef.current = loadId;
     try {
       setIsLoading(true);
       setError(null);
-      const { content, path } = await readFile(filePath);
+      const payload =
+        contentOverride != null
+          ? { content: contentOverride, path: filePath }
+          : await readFile(filePath);
+      const { content, path } = payload;
       if (loadId !== loadIdRef.current) return;
       const fileUri = toFileUri(path);
       setCode(content);
       setCurrentFile(fileUri);
       setIsDirty(false);
+      const editor = editorRef.current;
+      const monacoApi = monacoRef.current;
+      if (editor && monacoApi) {
+        const uri = monacoApi.Uri.parse(fileUri);
+        let model = monacoApi.editor.getModel(uri);
+        const languageId = getLanguageId(fileUri);
+        if (!model) {
+          model = monacoApi.editor.createModel(content, languageId, uri);
+        } else if (model.getValue() !== content) {
+          model.setValue(content);
+        }
+        if (editor.getModel()?.uri.toString() !== uri.toString()) {
+          editor.setModel(model);
+        }
+      }
     } catch (err) {
       if (loadId !== loadIdRef.current) return;
       console.error("Failed to load project file:", err);
@@ -259,15 +345,17 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
     if (!editor || !monaco) return;
-    editor.revealLineInCenter(line, monaco.editor.ScrollType.Smooth);
-    editor.setPosition({ lineNumber: line, column: 1 });
+    const model = editor.getModel();
+    const clampedLine = model ? Math.max(1, Math.min(line, model.getLineCount())) : line;
+    editor.revealLineInCenter(clampedLine, monaco.editor.ScrollType.Smooth);
+    editor.setPosition({ lineNumber: clampedLine, column: 1 });
     editor.focus();
 
     const collection = highlightRef.current;
     if (!collection) return;
     collection.set([
       {
-        range: new monaco.Range(line, 1, line, 1),
+        range: new monaco.Range(clampedLine, 1, clampedLine, 1),
         options: {
           isWholeLine: true,
           className: "highlight-line",
@@ -284,7 +372,43 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     }, 2000);
   }, []);
 
-const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vscode-editor-api")) => {
+  const revealPosition = useCallback((line: number, column?: number) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    const clampedLine = model ? Math.max(1, Math.min(line, model.getLineCount())) : line;
+    const maxColumn = model ? model.getLineMaxColumn(clampedLine) : undefined;
+    let targetColumn = column && column > 0 ? column : 1;
+    if (maxColumn) {
+      targetColumn = Math.max(1, Math.min(targetColumn, maxColumn));
+    }
+    editor.revealLineInCenter(clampedLine, monaco.editor.ScrollType.Smooth);
+    editor.setPosition({ lineNumber: clampedLine, column: targetColumn });
+    editor.focus();
+
+    const collection = highlightRef.current;
+    if (!collection) return;
+    collection.set([
+      {
+        range: new monaco.Range(clampedLine, 1, clampedLine, 1),
+        options: {
+          isWholeLine: true,
+          className: "highlight-line",
+          glyphMarginClassName: "highlight-glyph",
+        },
+      },
+    ]);
+    if (highlightTimerRef.current != null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      collection.set([]);
+      highlightTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vscode-editor-api")) => {
   if (monacoConfiguredRef.current) return;
   monacoConfiguredRef.current = true;
 
@@ -448,13 +572,42 @@ const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vs
       viewsConfig: {
         $type: "EditorService",
         openEditorFunc: async (modelRef, options) => {
-          const target = modelRef?.object?.textEditorModel?.uri?.toString();
-          if (target) {
-            const selection = (options as { selection?: { startLineNumber?: number } } | undefined)
-              ?.selection;
-            const line = selection?.startLineNumber;
-            await openFileRef.current?.(target, line);
+          const model = modelRef?.object;
+          if (model && !model.isResolved()) {
+            try {
+              await model.resolve();
+            } catch (error) {
+              logNavigationIssue("Failed to resolve editor model", error);
+            }
           }
+          const textModel = model?.textEditorModel ?? null;
+          const target = textModel?.uri?.toString();
+          if (target) {
+            const selection = extractSelection(options);
+            if (!selection && options) {
+              logNavigationIssue("Missing selection for editor navigation", options);
+            }
+            if (textModel && editorRef.current) {
+              editorRef.current.setModel(textModel);
+              const content = textModel.getValue();
+              setCode(content);
+              setCurrentFile(target);
+              setIsDirty(false);
+              currentFileRef.current = target;
+              if (selection) {
+                revealPosition(selection.line, selection.column);
+              }
+              return editorRef.current;
+            }
+            const content = textModel?.getValue();
+            if (content != null) {
+              await openFileWithContentRef.current?.(target, content, selection?.line, selection?.column);
+            } else {
+              await openFileRef.current?.(target, selection?.line, selection?.column);
+            }
+            return editorRef.current ?? undefined;
+          }
+          logNavigationIssue("Missing target URI for editor navigation", { modelRef, options });
           return editorRef.current ?? undefined;
         },
       },
@@ -624,20 +777,35 @@ const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vs
     }
   }, [revealLine]);
 
-  const openFile = useCallback(async (filePath: string, line?: number) => {
+  const openFile = useCallback(async (filePath: string, line?: number, column?: number) => {
     if (!filePath) return;
     const fileUri = toFileUri(filePath);
     if (currentFileRef.current === fileUri) {
-      if (line != null) revealLine(line);
+      if (line != null) revealPosition(line, column);
       return;
     }
-    pendingJumpRef.current = line ?? null;
+    pendingJumpRef.current = line != null ? { line, column } : null;
     await loadFile(fileUri);
-  }, [loadFile, revealLine]);
+  }, [loadFile, revealPosition]);
+
+  const openFileWithContent = useCallback(
+    async (filePath: string, content: string, line?: number, column?: number) => {
+      if (!filePath) return;
+      const fileUri = toFileUri(filePath);
+      if (currentFileRef.current === fileUri) {
+        if (line != null) revealPosition(line, column);
+        return;
+      }
+      pendingJumpRef.current = line != null ? { line, column } : null;
+      await loadFile(fileUri, content);
+    },
+    [loadFile, revealPosition],
+  );
 
   useEffect(() => {
     openFileRef.current = openFile;
-  }, [openFile]);
+    openFileWithContentRef.current = openFileWithContent;
+  }, [openFile, openFileWithContent]);
 
   // Load project.tsx content
   useEffect(() => {
@@ -663,10 +831,10 @@ const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vs
 
   useEffect(() => {
     if (pendingJumpRef.current == null) return;
-    const line = pendingJumpRef.current;
+    const { line, column } = pendingJumpRef.current;
     pendingJumpRef.current = null;
-    revealLine(line);
-  }, [code, currentFile, revealLine]);
+    revealPosition(line, column);
+  }, [code, currentFile, revealPosition]);
 
   const handleSave = async () => {
     if (!code) return;
@@ -721,7 +889,7 @@ const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vs
   };
 
   const displayPath = resolveDisplayPath(currentFile);
-  const languageId = displayPath.endsWith(".tsx") ? "typescriptreact" : "typescript";
+  const languageId = getLanguageId(displayPath);
 
   return (
     <div
