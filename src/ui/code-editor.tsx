@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { loader } from "@monaco-editor/react";
-import * as monaco from "@codingame/monaco-vscode-editor-api";
-import type * as Monaco from "@codingame/monaco-vscode-editor-api";
+import * as monacoRuntime from "@codingame/monaco-vscode-editor-api";
+import type * as MonacoEditor from "monaco-editor";
 import { MonacoLanguageClient } from "monaco-languageclient";
 import { MonacoVscodeApiWrapper } from "monaco-languageclient/vscodeApiWrapper";
 import { configureDefaultWorkerFactory } from "monaco-languageclient/workerFactory";
@@ -29,6 +29,9 @@ import { toSocket, WebSocketMessageReader, WebSocketMessageWriter } from "vscode
 import EditorWorker from "@codingame/monaco-vscode-editor-api/esm/vs/editor/editor.worker?worker";
 import { useEditor } from "./editor-context";
 import "monaco-editor/min/vs/editor/editor.main.css";
+
+type MonacoApi = typeof import("monaco-editor");
+const monaco = monacoRuntime as unknown as MonacoApi;
 
 loader.config({ monaco });
 
@@ -243,9 +246,9 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   const [isVscodeReady, setIsVscodeReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
-  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<typeof import("@codingame/monaco-vscode-editor-api") | null>(null);
-  const highlightRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const highlightRef = useRef<MonacoEditor.editor.IEditorDecorationsCollection | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const monacoConfiguredRef = useRef(false);
   const vscodeApiRef = useRef<MonacoVscodeApiWrapper | null>(null);
@@ -408,7 +411,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     }, 2000);
   }, []);
 
-  const configureMonaco = useCallback((monaco: typeof import("@codingame/monaco-vscode-editor-api")) => {
+  const configureMonaco = useCallback((monaco: typeof import("monaco-editor")) => {
   if (monacoConfiguredRef.current) return;
   monacoConfiguredRef.current = true;
 
@@ -587,8 +590,9 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
             if (!selection && options) {
               logNavigationIssue("Missing selection for editor navigation", options);
             }
-            if (textModel && editorRef.current) {
-              editorRef.current.setModel(textModel);
+            const editor = editorRef.current;
+            if (textModel && editor) {
+              editor.setModel(textModel as unknown as MonacoEditor.editor.ITextModel);
               const content = textModel.getValue();
               setCode(content);
               setCurrentFile(target);
@@ -597,7 +601,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
               if (selection) {
                 revealPosition(selection.line, selection.column);
               }
-              return editorRef.current;
+              return editor as unknown as MonacoEditor.editor.ICodeEditor;
             }
             const content = textModel?.getValue();
             if (content != null) {
@@ -605,10 +609,16 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
             } else {
               await openFileRef.current?.(target, selection?.line, selection?.column);
             }
-            return editorRef.current ?? undefined;
+            const currentEditor = editorRef.current;
+            return currentEditor
+              ? (currentEditor as unknown as MonacoEditor.editor.ICodeEditor)
+              : undefined;
           }
           logNavigationIssue("Missing target URI for editor navigation", { modelRef, options });
-          return editorRef.current ?? undefined;
+          const currentEditor = editorRef.current;
+          return currentEditor
+            ? (currentEditor as unknown as MonacoEditor.editor.ICodeEditor)
+            : undefined;
         },
       },
       serviceOverrides: {
@@ -658,7 +668,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     };
   }, [ensureVscodeApi]);
 
-  const startLspClient = useCallback(async (monacoApi: typeof import("@codingame/monaco-vscode-editor-api")) => {
+  const startLspClient = useCallback(async () => {
     if (lspClientRef.current || lspStartingRef.current) return;
     if (!window.editorAPI?.getLspPort || !window.editorAPI?.getProjectRoot) {
       return;
@@ -813,13 +823,13 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   }, [loadFile]);
 
   const handleEditorDidMount = (
-    editor: Monaco.editor.IStandaloneCodeEditor,
-    monaco: typeof import("@codingame/monaco-vscode-editor-api"),
+    editor: MonacoEditor.editor.IStandaloneCodeEditor,
+    monaco: typeof import("monaco-editor"),
   ) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
     highlightRef.current = editor.createDecorationsCollection();
-    void startLspClient(monaco);
+    void startLspClient();
 
     // Add Ctrl+S keybinding
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
