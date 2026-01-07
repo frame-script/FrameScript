@@ -294,7 +294,7 @@ function getRenderBinaryInfo() {
   return { platformKey, binName, binPath, candidates };
 }
 
-const resolveProjectPath = (filePath: string) => {
+const normalizeInputPath = (filePath: string) => {
   let normalized = filePath;
   if (normalized.startsWith("file:")) {
     try {
@@ -303,36 +303,31 @@ const resolveProjectPath = (filePath: string) => {
       normalized = normalized.replace(/^file:(\/\/)?/, "");
     }
   }
-  const candidate = path.isAbsolute(normalized)
-    ? normalized
-    : path.join(PROJECT_ROOT, normalized);
-  const resolved = path.resolve(candidate);
-  const root = path.resolve(PROJECT_ROOT);
-  if (resolved === root || resolved.startsWith(`${root}${path.sep}`)) {
-    return resolved;
+  if (process.platform === "win32") {
+    normalized = normalized.replace(/^\/([a-zA-Z]:[\\/])/, "$1");
   }
-  throw new Error("Path is outside project root");
+  return normalized;
 };
 
-const resolveWorkspacePath = (filePath: string) => {
-  let normalized = filePath;
-  if (normalized.startsWith("file:")) {
-    try {
-      normalized = fileURLToPath(normalized);
-    } catch {
-      normalized = normalized.replace(/^file:(\/\/)?/, "");
-    }
-  }
+const resolvePathWithinRoot = (filePath: string, rootDir: string, errorMessage: string) => {
+  const normalized = normalizeInputPath(filePath);
   const candidate = path.isAbsolute(normalized)
     ? normalized
-    : path.join(WORKSPACE_ROOT, normalized);
+    : path.join(rootDir, normalized);
   const resolved = path.resolve(candidate);
-  const root = path.resolve(WORKSPACE_ROOT);
-  if (resolved === root || resolved.startsWith(`${root}${path.sep}`)) {
+  const root = path.resolve(rootDir);
+  const relative = path.relative(root, resolved);
+  if (!relative || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
     return resolved;
   }
-  throw new Error("Path is outside workspace root");
+  throw new Error(errorMessage);
 };
+
+const resolveProjectPath = (filePath: string) =>
+  resolvePathWithinRoot(filePath, PROJECT_ROOT, "Path is outside project root");
+
+const resolveWorkspacePath = (filePath: string) =>
+  resolvePathWithinRoot(filePath, WORKSPACE_ROOT, "Path is outside workspace root");
 
 const resolveTypescriptLanguageServerPath = () => {
   const binName = process.platform === "win32" ? "typescript-language-server.cmd" : "typescript-language-server";
@@ -341,6 +336,37 @@ const resolveTypescriptLanguageServerPath = () => {
     return localBin;
   }
   return binName;
+};
+
+const quoteCmdArg = (value: string) => {
+  if (!value || value.length === 0) return "\"\"";
+  if (/[\s"]/g.test(value)) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+  return value;
+};
+
+const spawnLanguageServer = (command: string, args: string[]) => {
+  const options = {
+    cwd: process.cwd(),
+    stdio: "pipe" as const,
+    env: {
+      ...process.env,
+    },
+  };
+
+  if (process.platform === "win32") {
+    const lower = command.toLowerCase();
+    if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
+      const cmd = [quoteCmdArg(command), ...args.map(quoteCmdArg)].join(" ");
+      return spawn("cmd.exe", ["/d", "/s", "/c", cmd], {
+        ...options,
+        windowsHide: true,
+      });
+    }
+  }
+
+  return spawn(command, args, options);
 };
 
 const startLspServer = async () => {
@@ -374,13 +400,7 @@ const startLspServer = async () => {
 
     console.log("[lsp] spawn:", command, args.join(" "));
 
-    const proc = spawn(command, args, {
-      cwd: process.cwd(),
-      stdio: "pipe",
-      env: {
-        ...process.env,
-      },
-    });
+    const proc = spawnLanguageServer(command, args);
 
     if (!proc.stdout || !proc.stdin) {
       console.error("[lsp] stdio unavailable for language server");
