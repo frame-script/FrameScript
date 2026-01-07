@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   Menu,
+  dialog,
   ipcMain,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -30,6 +31,8 @@ let lspPort: number | null = null;
 let projectWatchers: Map<string, fs.FSWatcher> | null = null;
 let projectWatchRefreshTimer: NodeJS.Timeout | null = null;
 let projectWatchInitPromise: Promise<void> | null = null;
+const unsavedChangesByWebContents = new Map<number, boolean>();
+let allowWindowClose = false;
 
 if (app.name !== APP_NAME) {
   app.setName(APP_NAME);
@@ -777,7 +780,31 @@ async function createWindow() {
     await mainWindow.loadFile(indexPath);
   }
 
+  allowWindowClose = false;
+  const webContentsId = mainWindow.webContents.id;
+  mainWindow.on("close", (event) => {
+    if (allowWindowClose) return;
+    const hasUnsaved = unsavedChangesByWebContents.get(webContentsId);
+    if (!hasUnsaved) return;
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow as BrowserWindow, {
+      type: "warning",
+      buttons: ["Cancel", "Discard Changes"],
+      defaultId: 0,
+      cancelId: 0,
+      title: "Unsaved Changes",
+      message: "You have unsaved changes. Discard them and close?",
+      detail: "Any unsaved edits will be lost.",
+    });
+    if (choice === 1) {
+      allowWindowClose = true;
+      unsavedChangesByWebContents.set(webContentsId, false);
+      mainWindow?.destroy();
+    }
+  });
+
   mainWindow.on("closed", () => {
+    unsavedChangesByWebContents.delete(webContentsId);
     mainWindow = null;
   });
 }
@@ -1012,6 +1039,10 @@ function setupEditorIpc() {
 
   ipcMain.handle("editor:getProjectRoot", () => {
     return WORKSPACE_ROOT;
+  });
+
+  ipcMain.on("editor:setUnsavedChanges", (event, hasUnsaved: boolean) => {
+    unsavedChangesByWebContents.set(event.sender.id, Boolean(hasUnsaved));
   });
 
   ipcMain.handle("editor:watchProject", async () => {

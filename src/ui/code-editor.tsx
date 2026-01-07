@@ -46,6 +46,10 @@ type JumpTarget = {
   line: number;
   column?: number;
 };
+type BufferEntry = {
+  content: string;
+  isDirty: boolean;
+};
 
 const toFilePath = (filePath: string) => {
   if (!filePath.startsWith("file:")) return filePath;
@@ -160,10 +164,12 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   const lspClientRef = useRef<MonacoLanguageClient | null>(null);
   const lspStartingRef = useRef(false);
   const resizerRef = useRef<HTMLDivElement>(null);
-  const { registerEditor } = useEditor();
+  const { registerEditor, setCurrentFile: setCurrentFileContext } = useEditor();
   const loadIdRef = useRef(0);
   const pendingJumpRef = useRef<JumpTarget | null>(null);
   const currentFileRef = useRef<string>(currentFile);
+  const bufferCacheRef = useRef<Map<string, BufferEntry>>(new Map());
+  const isApplyingRef = useRef(false);
   const openFileRef = useRef<
     ((filePath: string, line?: number, column?: number) => Promise<void>) | null
   >(null);
@@ -174,6 +180,39 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
   useEffect(() => {
     currentFileRef.current = currentFile;
   }, [currentFile]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const hasDirty = Array.from(bufferCacheRef.current.values()).some((entry) => entry.isDirty);
+      if (!hasDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
+  const notifyUnsavedChanges = useCallback(() => {
+    if (!window.editorAPI?.setUnsavedChanges) return;
+    const hasDirty = Array.from(bufferCacheRef.current.values()).some((entry) => entry.isDirty);
+    window.editorAPI.setUnsavedChanges(hasDirty);
+  }, []);
+
+  const applyBuffer = useCallback((fileUri: string, content: string, dirty: boolean) => {
+    isApplyingRef.current = true;
+    setCode(content);
+    setCurrentFile(fileUri);
+    setIsDirty(dirty);
+    currentFileRef.current = fileUri;
+    bufferCacheRef.current.set(fileUri, { content, isDirty: dirty });
+    notifyUnsavedChanges();
+    setCurrentFileContext(fileUri);
+    queueMicrotask(() => {
+      isApplyingRef.current = false;
+    });
+  }, [notifyUnsavedChanges, setCurrentFileContext]);
 
   const readFile = useCallback(async (filePath: string) => {
     const rawPath = toFilePath(filePath);
@@ -217,9 +256,11 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
       const { content, path } = payload;
       if (loadId !== loadIdRef.current) return;
       const fileUri = toFileUri(path);
-      setCode(content);
-      setCurrentFile(fileUri);
-      setIsDirty(false);
+      const cached = bufferCacheRef.current.get(fileUri);
+      const shouldUseCache = cached?.isDirty === true;
+      const nextContent = shouldUseCache && cached ? cached.content : content;
+      const nextDirty = shouldUseCache;
+      applyBuffer(fileUri, nextContent, nextDirty);
       const editor = editorRef.current;
       const monacoApi = monacoRef.current;
       if (editor && monacoApi) {
@@ -227,9 +268,9 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
         let model = monacoApi.editor.getModel(uri);
         const languageId = getLanguageId(fileUri);
         if (!model) {
-          model = monacoApi.editor.createModel(content, languageId, uri);
-        } else if (model.getValue() !== content) {
-          model.setValue(content);
+          model = monacoApi.editor.createModel(nextContent, languageId, uri);
+        } else if (model.getValue() !== nextContent) {
+          model.setValue(nextContent);
         }
         if (editor.getModel()?.uri.toString() !== uri.toString()) {
           editor.setModel(model);
@@ -244,7 +285,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
         setIsLoading(false);
       }
     }
-  }, [readFile]);
+  }, [applyBuffer, readFile]);
 
   const revealLine = useCallback((line: number) => {
     const editor = editorRef.current;
@@ -488,24 +529,32 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
           const textModel = model?.textEditorModel ?? null;
           const target = textModel?.uri?.toString();
           if (target) {
+            const cached = bufferCacheRef.current.get(target);
+            const cachedDirty = cached?.isDirty === true;
+            const cachedContent = cached?.content;
             const selection = extractSelection(options);
             if (!selection && options) {
               logNavigationIssue("Missing selection for editor navigation", options);
             }
             const editor = editorRef.current;
             if (textModel && editor) {
-              editor.setModel(textModel as unknown as MonacoEditor.editor.ITextModel);
-              const content = textModel.getValue();
-              setCode(content);
-              setCurrentFile(target);
-              setIsDirty(false);
-              currentFileRef.current = target;
+              if (cachedDirty && cachedContent != null) {
+                applyBuffer(target, cachedContent, true);
+                editor.setModel(textModel as unknown as MonacoEditor.editor.ITextModel);
+                if (textModel.getValue() !== cachedContent) {
+                  textModel.setValue(cachedContent);
+                }
+              } else {
+                const content = textModel.getValue();
+                applyBuffer(target, content, false);
+                editor.setModel(textModel as unknown as MonacoEditor.editor.ITextModel);
+              }
               if (selection) {
                 revealPosition(selection.line, selection.column);
               }
               return editor as unknown as MonacoEditor.editor.ICodeEditor;
             }
-            const content = textModel?.getValue();
+            const content = cachedDirty && cachedContent != null ? cachedContent : textModel?.getValue();
             if (content != null) {
               await openFileWithContentRef.current?.(target, content, selection?.line, selection?.column);
             } else {
@@ -546,7 +595,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
       throw error;
     });
     return vscodeInitRef.current;
-  }, [ensureFileSystemProvider]);
+  }, [applyBuffer, ensureFileSystemProvider, revealPosition]);
 
   useEffect(() => {
     let cancelled = false;
@@ -770,6 +819,10 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
         }
       }
       setIsDirty(false);
+      if (currentFileRef.current) {
+        bufferCacheRef.current.set(currentFileRef.current, { content: code, isDirty: false });
+      }
+      notifyUnsavedChanges();
 
       // Trigger hot reload
       if (import.meta.hot) {
@@ -920,8 +973,14 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
                 language={languageId}
                 value={code}
                 onChange={(value) => {
-                  setCode(value || "");
+                  if (isApplyingRef.current) return;
+                  const nextValue = value || "";
+                  setCode(nextValue);
                   setIsDirty(true);
+                  if (currentFileRef.current) {
+                    bufferCacheRef.current.set(currentFileRef.current, { content: nextValue, isDirty: true });
+                  }
+                  notifyUnsavedChanges();
                 }}
                 beforeMount={configureMonaco}
                 onMount={handleEditorDidMount}

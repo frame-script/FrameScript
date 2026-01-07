@@ -18,7 +18,7 @@ export const LeftPanelTabs = () => {
           padding: "6px 10px",
           borderRadius: 6,
           border: "1px solid #1f2a3c",
-          background: isActive ? "linear-gradient(180deg, #1f2937, #111827)" : "#0f172a",
+          background: isActive ? "#1f2937" : "#0f172a",
           color: isActive ? "#e2e8f0" : "#94a3b8",
           cursor: "pointer",
           fontSize: 12,
@@ -54,11 +54,27 @@ export const LeftPanelTabs = () => {
         {tabButton("explorer", "Explorer")}
         {tabButton("clips", "Clips")}
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <div style={{ display: activeTab === "explorer" ? "flex" : "none", height: "100%" }}>
+      <div style={{ flex: 1, minHeight: 0, width: "100%", minWidth: 0 }}>
+        <div
+          style={{
+            display: activeTab === "explorer" ? "flex" : "none",
+            height: "100%",
+            width: "100%",
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
           <FileExplorerPanel />
         </div>
-        <div style={{ display: activeTab === "clips" ? "flex" : "none", height: "100%" }}>
+        <div
+          style={{
+            display: activeTab === "clips" ? "flex" : "none",
+            height: "100%",
+            width: "100%",
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
           <ClipVisibilityContent />
         </div>
       </div>

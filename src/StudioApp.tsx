@@ -304,11 +304,17 @@ export const StudioApp = () => {
                 </div>
               </div>
 
-              {isEditorVisible ? (
-                <div style={{ width: editorWidth, minWidth: editorMinWidth, height: "100%", minHeight: 0, display: "flex" }}>
-                  <CodeEditor width={editorWidth} onWidthChange={clampEditorWidth} />
-                </div>
-              ) : null}
+              <div
+                style={{
+                  width: editorWidth,
+                  minWidth: editorMinWidth,
+                  height: "100%",
+                  minHeight: 0,
+                  display: isEditorVisible ? "flex" : "none",
+                }}
+              >
+                <CodeEditor width={editorWidth} onWidthChange={clampEditorWidth} />
+              </div>
             </div>
           </div>
         </WithCurrentFrame>

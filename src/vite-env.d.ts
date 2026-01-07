@@ -49,6 +49,7 @@ interface Window {
     findClipLabel: (label: string) => Promise<EditorClipMatch[]>;
     getLspPort: () => Promise<number>;
     getProjectRoot: () => Promise<string>;
+    setUnsavedChanges: (hasUnsaved: boolean) => void;
     watchProject: () => Promise<void>;
     unwatchProject: () => Promise<void>;
     onProjectFilesChanged: (handler: (payload: { type: string; path: string }) => void) => () => void;

@@ -11,12 +11,15 @@ interface EditorContextValue {
   jumpToLine: (line: number) => void;
   jumpToMatch: (needle: string) => void;
   registerEditor: (api: EditorApi) => void;
+  currentFile: string | null;
+  setCurrentFile: (filePath: string | null) => void;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
 
 export const EditorProvider = ({ children }: { children: ReactNode }) => {
   const [editorApi, setEditorApi] = useState<EditorApi | null>(null);
+  const [currentFile, setCurrentFile] = useState<string | null>(null);
 
   const openFile = useCallback((filePath: string, line?: number, column?: number) => {
     editorApi?.openFile(filePath, line, column);
@@ -35,7 +38,7 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <EditorContext.Provider value={{ openFile, jumpToLine, jumpToMatch, registerEditor }}>
+    <EditorContext.Provider value={{ openFile, jumpToLine, jumpToMatch, registerEditor, currentFile, setCurrentFile }}>
       {children}
     </EditorContext.Provider>
   );

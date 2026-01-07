@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("editorAPI", {
   findClipLabel: (label: string) => ipcRenderer.invoke("editor:findClipLabel", label),
   getLspPort: () => ipcRenderer.invoke("editor:getLspPort"),
   getProjectRoot: () => ipcRenderer.invoke("editor:getProjectRoot"),
+  setUnsavedChanges: (hasUnsaved: boolean) => ipcRenderer.send("editor:setUnsavedChanges", hasUnsaved),
   watchProject: () => ipcRenderer.invoke("editor:watchProject"),
   unwatchProject: () => ipcRenderer.invoke("editor:unwatchProject"),
   onProjectFilesChanged: (handler: (payload: { type: string; path: string }) => void) => {

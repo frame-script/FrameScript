@@ -23,6 +23,16 @@ type DialogState = {
 
 const normalizePath = (input: string) => input.replace(/\\/g, "/").replace(/\/+$/, "");
 
+const toFilePath = (filePath: string) => {
+  if (!filePath.startsWith("file:")) return filePath;
+  try {
+    const url = new URL(filePath);
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return filePath.replace(/^file:(\/\/)?/, "");
+  }
+};
+
 const joinPath = (base: string, name: string) => {
   const normalizedBase = normalizePath(base);
   const normalizedName = name.replace(/^[\\/]+/, "");
@@ -77,7 +87,7 @@ const buildChildren = (parentPath: string, entries: { name: string; type: "file"
 };
 
 export const FileExplorerPanel = () => {
-  const { openFile } = useEditor();
+  const { openFile, currentFile } = useEditor();
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [tree, setTree] = useState<FileNode | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -324,6 +334,9 @@ export const FileExplorerPanel = () => {
       const icon = node.type === "directory"
         ? (isExpanded ? "📂" : "📁")
         : "📄";
+      const isActive = node.type === "file" &&
+        currentFile &&
+        normalizePath(toFilePath(currentFile)) === normalizePath(node.path);
       return (
         <div key={node.path}>
           <div
@@ -341,18 +354,15 @@ export const FileExplorerPanel = () => {
               alignItems: "center",
               gap: 6,
               padding: "4px 8px",
+              paddingLeft: 8 + depth * 12,
               borderRadius: 6,
               cursor: "pointer",
-              marginLeft: depth * 12,
               color: node.type === "directory" ? "#e2e8f0" : "#cbd5f5",
-              background: "transparent",
+              width: "100%",
+              boxSizing: "border-box",
+              userSelect: "none",
             }}
-            onMouseEnter={(event) => {
-              event.currentTarget.style.background = "#0f172a";
-            }}
-            onMouseLeave={(event) => {
-              event.currentTarget.style.background = "transparent";
-            }}
+            className={`fs-explorer-row${isActive ? " is-active" : ""}`}
           >
             <span style={{ width: 14, textAlign: "center", color: "#94a3b8" }}>
               {isLoading ? "*" : marker}
@@ -385,7 +395,10 @@ export const FileExplorerPanel = () => {
         gap: 8,
         height: "100%",
         minHeight: 0,
+        width: "100%",
+        minWidth: 0,
         color: "#e5e7eb",
+        userSelect: "none",
       }}
     >
       <style>{`
@@ -406,6 +419,15 @@ export const FileExplorerPanel = () => {
         }
         .fs-scroll::-webkit-scrollbar-thumb:hover {
           background: linear-gradient(180deg, #2b384c, #4b5563);
+        }
+        .fs-explorer-row {
+          background: transparent;
+        }
+        .fs-explorer-row:hover {
+          background: #0f172a;
+        }
+        .fs-explorer-row.is-active {
+          background: #1f2937;
         }
       `}</style>
       {error ? (
@@ -429,6 +451,8 @@ export const FileExplorerPanel = () => {
           minHeight: 0,
           overflow: "auto",
           paddingRight: 2,
+          width: "100%",
+          minWidth: 0,
         }}
       >
         {!rootReady ? (

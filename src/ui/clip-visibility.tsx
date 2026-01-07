@@ -102,6 +102,8 @@ export const ClipVisibilityContent = () => {
         gap: 8,
         height: "100%",
         minHeight: 0,
+        width: "100%",
+        minWidth: 0,
         color: "#e5e7eb",
       }}
     >
@@ -172,9 +174,11 @@ export const ClipVisibilityContent = () => {
                 }}
                 style={{
                   flex: "1 1 auto",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  minWidth: 0,
                   background: "transparent",
                   border: "none",
                   padding: 0,
@@ -185,7 +189,26 @@ export const ClipVisibilityContent = () => {
                   fontSize: "inherit",
                 }}
               >
-                {label}
+                <span
+                  style={{
+                    flex: "1 1 auto",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {label}
+                </span>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    color: canJump ? "#94a3b8" : "#475569",
+                    fontSize: 12,
+                    paddingRight: 6,
+                  }}
+                >
+                  {canJump ? ">" : ""}
+                </span>
               </button>
             </label>
           )
