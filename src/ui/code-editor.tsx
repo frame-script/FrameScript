@@ -47,103 +47,6 @@ type JumpTarget = {
   column?: number;
 };
 
-const decodeEscaped = (input: string) => {
-  let result = "";
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-    if (ch !== "\\") {
-      result += ch;
-      continue;
-    }
-    const next = input[i + 1];
-    if (next == null) break;
-    i += 1;
-    switch (next) {
-      case "n":
-        result += "\n";
-        break;
-      case "r":
-        result += "\r";
-        break;
-      case "t":
-        result += "\t";
-        break;
-      case "b":
-        result += "\b";
-        break;
-      case "f":
-        result += "\f";
-        break;
-      case "v":
-        result += "\v";
-        break;
-      case "0":
-        result += "\0";
-        break;
-      case "\\":
-        result += "\\";
-        break;
-      case "'":
-        result += "'";
-        break;
-      case "\"":
-        result += "\"";
-        break;
-      case "u": {
-        const hex = input.slice(i + 1, i + 5);
-        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
-          result += String.fromCharCode(Number.parseInt(hex, 16));
-          i += 4;
-        } else {
-          result += "u";
-        }
-        break;
-      }
-      case "x": {
-        const hex = input.slice(i + 1, i + 3);
-        if (/^[0-9a-fA-F]{2}$/.test(hex)) {
-          result += String.fromCharCode(Number.parseInt(hex, 16));
-          i += 2;
-        } else {
-          result += "x";
-        }
-        break;
-      }
-      default:
-        result += next;
-        break;
-    }
-  }
-  return result;
-};
-
-const extractExportDefaultString = (payload: string) => {
-  const trimmed = payload.trimStart();
-  if (!trimmed.startsWith("export default")) return null;
-  let i = "export default".length;
-  while (i < trimmed.length && /\s/.test(trimmed[i])) i += 1;
-  const quote = trimmed[i];
-  if (quote !== "'" && quote !== "\"") return null;
-  i += 1;
-  let raw = "";
-  for (; i < trimmed.length; i += 1) {
-    const ch = trimmed[i];
-    if (ch === "\\") {
-      raw += ch;
-      if (i + 1 < trimmed.length) {
-        raw += trimmed[i + 1];
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === quote) {
-      return decodeEscaped(raw);
-    }
-    raw += ch;
-  }
-  return null;
-};
-
 const toFilePath = (filePath: string) => {
   if (!filePath.startsWith("file:")) return filePath;
   try {
@@ -298,8 +201,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
     } catch (_error) {
       text = await fetchText(`/project/${rawPath}`);
     }
-    const extracted = extractExportDefaultString(text);
-    return { path: filePath, content: extracted ?? text };
+    return { path: filePath, content: text };
   }, []);
 
   const loadFile = useCallback(async (filePath: string, contentOverride?: string) => {
@@ -1033,7 +935,7 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
                   tabSize: 2,
-                  wordWrap: "on",
+                  wordWrap: "off",
                 }}
               />
               {isLoading && (

@@ -27,6 +27,9 @@ const PROJECT_ROOT = path.join(process.cwd(), "project");
 const WORKSPACE_ROOT = process.cwd();
 let lspServer: WebSocketServer | null = null;
 let lspPort: number | null = null;
+let projectWatchers: Map<string, fs.FSWatcher> | null = null;
+let projectWatchRefreshTimer: NodeJS.Timeout | null = null;
+let projectWatchInitPromise: Promise<void> | null = null;
 
 if (app.name !== APP_NAME) {
   app.setName(APP_NAME);
@@ -497,6 +500,91 @@ const collectProjectFiles = async (dir: string, output: string[]) => {
   }
 };
 
+const collectProjectDirectories = async (dir: string, output: string[]) => {
+  output.push(dir);
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    if (!entry.isDirectory()) continue;
+    await collectProjectDirectories(path.join(dir, entry.name), output);
+  }
+};
+
+const broadcastProjectChange = (payload: { type: string; path: string }) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("editor:projectFilesChanged", payload);
+  }
+};
+
+const scheduleProjectWatchRefresh = () => {
+  if (projectWatchRefreshTimer) return;
+  projectWatchRefreshTimer = setTimeout(() => {
+    projectWatchRefreshTimer = null;
+    void refreshProjectWatchers();
+  }, 300);
+};
+
+const refreshProjectWatchers = async () => {
+  if (!projectWatchers) projectWatchers = new Map();
+  const directories: string[] = [];
+  try {
+    await collectProjectDirectories(PROJECT_ROOT, directories);
+  } catch (error) {
+    console.warn("[watcher] failed to scan project directories", error);
+    return;
+  }
+  const desired = new Set(directories);
+
+  for (const dirPath of desired) {
+    if (projectWatchers.has(dirPath)) continue;
+    try {
+      const watcher = fs.watch(dirPath, (eventType, filename: string | Buffer | null) => {
+        const name = typeof filename === "string" ? filename : filename?.toString();
+        const changedPath = name ? path.join(dirPath, name) : dirPath;
+        broadcastProjectChange({ type: eventType, path: changedPath });
+        scheduleProjectWatchRefresh();
+      });
+      watcher.on("error", (error) => {
+        console.warn("[watcher] error", error);
+        scheduleProjectWatchRefresh();
+      });
+      projectWatchers.set(dirPath, watcher);
+    } catch (error) {
+      console.warn("[watcher] failed to watch directory", dirPath, error);
+    }
+  }
+
+  for (const [dirPath, watcher] of projectWatchers) {
+    if (desired.has(dirPath)) continue;
+    watcher.close();
+    projectWatchers.delete(dirPath);
+  }
+};
+
+const startProjectWatchers = async () => {
+  if (projectWatchInitPromise) return projectWatchInitPromise;
+  projectWatchInitPromise = refreshProjectWatchers().catch((error) => {
+    projectWatchInitPromise = null;
+    throw error;
+  });
+  return projectWatchInitPromise;
+};
+
+const stopProjectWatchers = () => {
+  if (projectWatchRefreshTimer) {
+    clearTimeout(projectWatchRefreshTimer);
+    projectWatchRefreshTimer = null;
+  }
+  if (projectWatchers) {
+    for (const watcher of projectWatchers.values()) {
+      watcher.close();
+    }
+    projectWatchers.clear();
+  }
+  projectWatchers = null;
+  projectWatchInitPromise = null;
+};
+
 const getJsxAttributeName = (name: ts.JsxAttributeName) => {
   if (ts.isIdentifier(name)) return name.text;
   if (ts.isJsxNamespacedName(name)) {
@@ -925,6 +1013,14 @@ function setupEditorIpc() {
   ipcMain.handle("editor:getProjectRoot", () => {
     return WORKSPACE_ROOT;
   });
+
+  ipcMain.handle("editor:watchProject", async () => {
+    await startProjectWatchers();
+  });
+
+  ipcMain.handle("editor:unwatchProject", () => {
+    stopProjectWatchers();
+  });
 }
 
 function setupMenu() {
@@ -1031,6 +1127,7 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   stopBackend();
   stopLspServer();
+  stopProjectWatchers();
   if (renderChild && !renderChild.killed) {
     renderChild.kill();
   }

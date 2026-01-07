@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PROJECT, PROJECT_SETTINGS } from "../project/project";
 import { WithCurrentFrame } from "./lib/frame"
 import { TimelineUI } from "./ui/timeline";
-import { ClipVisibilityPanel } from "./ui/clip-visibility";
+import { LeftPanelTabs } from "./ui/left-panel-tabs";
 import { CodeEditor } from "./ui/code-editor";
 import { EditorProvider } from "./ui/editor-context";
 import { Store } from "./util/state";
@@ -18,7 +18,10 @@ export const StudioApp = () => {
   const previewRef = useRef<HTMLDivElement>(null);
   const [verticalRatio, setVerticalRatio] = useState(0.6); // top area height ratio
   const [horizontalRatio, setHorizontalRatio] = useState(0.3); // clips width ratio within top area
-  const [editorWidth, setEditorWidth] = useState(460);
+  const [editorWidth, setEditorWidth] = useState(() => {
+    if (typeof window === "undefined") return 460;
+    return Math.round(window.innerWidth / 2);
+  });
   const [isEditorVisible, setIsEditorVisible] = useState(true);
   const projectWidth = PROJECT_SETTINGS.width || 1920
   const projectHeight = PROJECT_SETTINGS.height || 1080
@@ -32,6 +35,7 @@ export const StudioApp = () => {
   const rowGap = 10;
   const [previewViewport, setPreviewViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const hasPreviewViewport = previewViewport.width > 0 && previewViewport.height > 0;
+  const editorWidthInitializedRef = useRef(false);
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -167,6 +171,14 @@ export const StudioApp = () => {
     return () => observer.disconnect();
   }, [editorMinWidth, leftPanelMinWidth, rowGap]);
 
+  useEffect(() => {
+    if (editorWidthInitializedRef.current) return;
+    const row = rowRef.current;
+    const baseWidth = row?.clientWidth ?? window.innerWidth;
+    editorWidthInitializedRef.current = true;
+    clampEditorWidth(Math.round(baseWidth / 2));
+  }, [clampEditorWidth]);
+
   return (
     <EditorProvider>
       <StudioStateContext value={{ isPlaying, setIsPlaying, isPlayingStore, isRender: false }}>
@@ -220,7 +232,7 @@ export const StudioApp = () => {
                     }}
                   >
                     <div style={{ flexBasis: `${horizontalRatio * 100}%`, minWidth: 220 }}>
-                      <ClipVisibilityPanel />
+                      <LeftPanelTabs />
                     </div>
                     <div
                       onPointerDown={startHorizontalDrag}

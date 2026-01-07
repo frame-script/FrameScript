@@ -8,7 +8,7 @@ type ClipMatch = {
   column?: number
 }
 
-export const ClipVisibilityPanel = () => {
+export const ClipVisibilityContent = () => {
   const clips = useTimelineClips()
   const { hiddenMap, setClipVisibility } = useClipVisibilityState()
   const { openFile } = useEditor()
@@ -97,25 +97,15 @@ export const ClipVisibilityPanel = () => {
   return (
     <div
       style={{
-        width: "100%",
-        minWidth: 0,
-        height: "100%",
-        padding: 12,
-        borderRadius: 8,
-        border: "1px solid #1f2a3c",
-        background: "#0b1221",
-        color: "#e5e7eb",
-        boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        boxSizing: "border-box",
+        height: "100%",
         minHeight: 0,
-        position: "relative",
+        color: "#e5e7eb",
       }}
     >
       <style>{scrollbarStyles}</style>
-      <div style={{ fontWeight: 600, fontSize: 13, color: "#cbd5e1" }}>Clips</div>
       {jumpError ? (
         <div
           style={{
@@ -281,3 +271,28 @@ export const ClipVisibilityPanel = () => {
     </div>
   )
 }
+
+export const ClipVisibilityPanel = () => (
+  <div
+    style={{
+      width: "100%",
+      minWidth: 0,
+      height: "100%",
+      padding: 12,
+      borderRadius: 8,
+      border: "1px solid #1f2a3c",
+      background: "#0b1221",
+      color: "#e5e7eb",
+      boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
+      boxSizing: "border-box",
+      minHeight: 0,
+      position: "relative",
+    }}
+  >
+    <div style={{ fontWeight: 600, fontSize: 13, color: "#cbd5e1" }}>Clips</div>
+    <ClipVisibilityContent />
+  </div>
+)
