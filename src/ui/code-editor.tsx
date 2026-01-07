@@ -186,7 +186,8 @@ export const CodeEditor = ({ width = 400, onWidthChange }: CodeEditorProps) => {
       const hasDirty = Array.from(bufferCacheRef.current.values()).some((entry) => entry.isDirty);
       if (!hasDirty) return;
       event.preventDefault();
-      event.returnValue = "";
+      // Avoid deprecated property access while still triggering the prompt in browsers.
+      Reflect.set(event, "returnValue", "");
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {

@@ -405,18 +405,18 @@ const startLspServer = async () => {
         if (contentLength === 0) {
           const headerEnd = buffer.indexOf("\r\n\r\n");
           if (headerEnd === -1) return;
-          const header = buffer.slice(0, headerEnd).toString("utf8");
+          const header = buffer.subarray(0, headerEnd).toString("utf8");
           const match = /Content-Length:\s*(\d+)/i.exec(header);
           if (!match) {
-            buffer = buffer.slice(headerEnd + 4);
+            buffer = buffer.subarray(headerEnd + 4);
             continue;
           }
           contentLength = Number.parseInt(match[1], 10);
-          buffer = buffer.slice(headerEnd + 4);
+          buffer = buffer.subarray(headerEnd + 4);
         }
         if (buffer.length < contentLength) return;
-        const message = buffer.slice(0, contentLength);
-        buffer = buffer.slice(contentLength);
+        const message = buffer.subarray(0, contentLength);
+        buffer = buffer.subarray(contentLength);
         contentLength = 0;
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(message.toString("utf8"));
