@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   Menu,
-  dialog,
   ipcMain,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -11,10 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
-import ts from "typescript";
-import { WebSocket, WebSocketServer } from "ws";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import ffprobeInstaller from "@ffprobe-installer/ffprobe";
+import * as ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import * as ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import puppeteer from "puppeteer";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,15 +21,6 @@ const useDevServer = process.env.VITE_DEV_SERVER_URL !== undefined;
 const runMode = process.env.FRAMESCRIPT_RUN_MODE ?? (useDevServer ? "dev" : "bin");
 const useBinaries = runMode !== "dev";
 const APP_NAME = "FrameScript";
-const PROJECT_ROOT = path.join(process.cwd(), "project");
-const WORKSPACE_ROOT = process.cwd();
-let lspServer: WebSocketServer | null = null;
-let lspPort: number | null = null;
-let projectWatchers: Map<string, fs.FSWatcher> | null = null;
-let projectWatchRefreshTimer: NodeJS.Timeout | null = null;
-let projectWatchInitPromise: Promise<void> | null = null;
-const unsavedChangesByWebContents = new Map<number, boolean>();
-let allowWindowClose = false;
 
 if (app.name !== APP_NAME) {
   app.setName(APP_NAME);
@@ -264,23 +252,6 @@ function resolveRenderPreloadPath() {
   return found;
 }
 
-function resolveMainPreloadPath() {
-  const candidates = [
-    path.join(__dirname, "preload.cjs"),
-    path.join(__dirname, "preload.js"),
-    path.join(process.cwd(), "dist-electron", "preload.cjs"),
-    path.join(process.cwd(), "dist-electron", "preload.js"),
-    path.join(process.cwd(), "preload.cjs"),
-    path.join(process.cwd(), "preload.js"),
-  ];
-  const found = candidates.find((p) => fs.existsSync(p));
-  if (!found) {
-    console.warn("[main preload] file not found. Tried:", candidates);
-    return candidates[0];
-  }
-  return found;
-}
-
 function getRenderBinaryInfo() {
   const platformKey = getPlatformKey();
   const binName = process.platform === "win32" ? "render.exe" : "render";
@@ -293,415 +264,6 @@ function getRenderBinaryInfo() {
   const binPath = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
   return { platformKey, binName, binPath, candidates };
 }
-
-const normalizeInputPath = (filePath: string) => {
-  let normalized = filePath;
-  if (normalized.startsWith("file:")) {
-    try {
-      normalized = fileURLToPath(normalized);
-    } catch {
-      normalized = normalized.replace(/^file:(\/\/)?/, "");
-    }
-  }
-  if (process.platform === "win32") {
-    normalized = normalized.replace(/^\/([a-zA-Z]:[\\/])/, "$1");
-  }
-  return normalized;
-};
-
-const resolvePathWithinRoot = (filePath: string, rootDir: string, errorMessage: string) => {
-  const normalized = normalizeInputPath(filePath);
-  const candidate = path.isAbsolute(normalized)
-    ? normalized
-    : path.join(rootDir, normalized);
-  const resolved = path.resolve(candidate);
-  const root = path.resolve(rootDir);
-  const relative = path.relative(root, resolved);
-  if (!relative || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
-    return resolved;
-  }
-  throw new Error(errorMessage);
-};
-
-const resolveProjectPath = (filePath: string) =>
-  resolvePathWithinRoot(filePath, PROJECT_ROOT, "Path is outside project root");
-
-const resolveWorkspacePath = (filePath: string) =>
-  resolvePathWithinRoot(filePath, WORKSPACE_ROOT, "Path is outside workspace root");
-
-const resolveTypescriptLanguageServerPath = () => {
-  const binName = process.platform === "win32" ? "typescript-language-server.cmd" : "typescript-language-server";
-  const localBin = path.join(process.cwd(), "node_modules", ".bin", binName);
-  if (fs.existsSync(localBin)) {
-    return localBin;
-  }
-  return binName;
-};
-
-const quoteCmdArg = (value: string) => {
-  if (!value || value.length === 0) return "\"\"";
-  if (/[\s"]/g.test(value)) {
-    return `"${value.replace(/"/g, "\"\"")}"`;
-  }
-  return value;
-};
-
-const spawnLanguageServer = (command: string, args: string[]) => {
-  const options = {
-    cwd: process.cwd(),
-    stdio: "pipe" as const,
-    env: {
-      ...process.env,
-    },
-  };
-
-  if (process.platform === "win32") {
-    const lower = command.toLowerCase();
-    if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
-      const cmd = [quoteCmdArg(command), ...args.map(quoteCmdArg)].join(" ");
-      return spawn("cmd.exe", ["/d", "/s", "/c", cmd], {
-        ...options,
-        windowsHide: true,
-      });
-    }
-  }
-
-  return spawn(command, args, options);
-};
-
-const startLspServer = async () => {
-  if (lspServer && lspPort) return lspPort;
-
-  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-  await new Promise<void>((resolve, reject) => {
-    const handleError = (error: Error) => {
-      server.off("listening", handleListening);
-      reject(error);
-    };
-    const handleListening = () => {
-      server.off("error", handleError);
-      resolve();
-    };
-    server.once("error", handleError);
-    server.once("listening", handleListening);
-  });
-
-  const address = server.address();
-  if (typeof address === "object" && address) {
-    lspPort = address.port;
-  } else {
-    server.close();
-    throw new Error("Failed to start LSP server");
-  }
-
-  server.on("connection", (socket) => {
-    const command = resolveTypescriptLanguageServerPath();
-    const args = ["--stdio"];
-
-    console.log("[lsp] spawn:", command, args.join(" "));
-
-    const proc = spawnLanguageServer(command, args);
-
-    if (!proc.stdout || !proc.stdin) {
-      console.error("[lsp] stdio unavailable for language server");
-      socket.close();
-      return;
-    }
-
-    if (proc.stderr) {
-      proc.stderr.on("data", (data: Buffer) => {
-        const text = data.toString();
-        if (text.trim().length > 0) {
-          console.error("[lsp stderr]", text.trim());
-        }
-      });
-    }
-
-    let buffer = Buffer.alloc(0);
-    let contentLength = 0;
-
-    const tryParse = () => {
-      while (true) {
-        if (contentLength === 0) {
-          const headerEnd = buffer.indexOf("\r\n\r\n");
-          if (headerEnd === -1) return;
-          const header = buffer.subarray(0, headerEnd).toString("utf8");
-          const match = /Content-Length:\s*(\d+)/i.exec(header);
-          if (!match) {
-            buffer = buffer.subarray(headerEnd + 4);
-            continue;
-          }
-          contentLength = Number.parseInt(match[1], 10);
-          buffer = buffer.subarray(headerEnd + 4);
-        }
-        if (buffer.length < contentLength) return;
-        const message = buffer.subarray(0, contentLength);
-        buffer = buffer.subarray(contentLength);
-        contentLength = 0;
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(message.toString("utf8"));
-        }
-      }
-    };
-
-    proc.stdout.on("data", (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      tryParse();
-    });
-
-    const handleSocketMessage = (data: ArrayBuffer | Buffer | string) => {
-      try {
-        const payload =
-          typeof data === "string"
-            ? data
-            : Buffer.isBuffer(data)
-            ? data.toString("utf8")
-            : Buffer.from(data).toString("utf8");
-        if (!payload) return;
-        const message = `Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`;
-        proc.stdin.write(message, "utf8");
-      } catch (error) {
-        console.error("[lsp] failed to send message", error);
-      }
-    };
-
-    socket.on("message", handleSocketMessage);
-
-    const cleanup = () => {
-      try {
-        socket.removeAllListeners();
-      } catch {
-        // ignore
-      }
-      try {
-        proc.kill();
-      } catch {
-        // ignore
-      }
-    };
-
-    socket.on("close", cleanup);
-    socket.on("error", cleanup);
-    proc.on("exit", (code, signal) => {
-      console.log(`[lsp] server exited code=${code ?? "null"} signal=${signal ?? "null"}`);
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close();
-      }
-    });
-    proc.on("error", (error) => {
-      console.error("[lsp] server process error", error);
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close();
-      }
-    });
-  });
-
-  lspServer = server;
-  return lspPort;
-};
-
-const stopLspServer = () => {
-  if (lspServer) {
-    lspServer.close();
-    lspServer = null;
-  }
-  lspPort = null;
-};
-
-const collectProjectFiles = async (dir: string, output: string[]) => {
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await collectProjectFiles(fullPath, output);
-    } else if (entry.isFile()) {
-      if (fullPath.endsWith(".tsx") || fullPath.endsWith(".ts")) {
-        output.push(fullPath);
-      }
-    }
-  }
-};
-
-const collectProjectDirectories = async (dir: string, output: string[]) => {
-  output.push(dir);
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    if (!entry.isDirectory()) continue;
-    await collectProjectDirectories(path.join(dir, entry.name), output);
-  }
-};
-
-const broadcastProjectChange = (payload: { type: string; path: string }) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("editor:projectFilesChanged", payload);
-  }
-};
-
-const scheduleProjectWatchRefresh = () => {
-  if (projectWatchRefreshTimer) return;
-  projectWatchRefreshTimer = setTimeout(() => {
-    projectWatchRefreshTimer = null;
-    void refreshProjectWatchers();
-  }, 300);
-};
-
-const refreshProjectWatchers = async () => {
-  if (!projectWatchers) projectWatchers = new Map();
-  const directories: string[] = [];
-  try {
-    await collectProjectDirectories(PROJECT_ROOT, directories);
-  } catch (error) {
-    console.warn("[watcher] failed to scan project directories", error);
-    return;
-  }
-  const desired = new Set(directories);
-
-  for (const dirPath of desired) {
-    if (projectWatchers.has(dirPath)) continue;
-    try {
-      const watcher = fs.watch(dirPath, (eventType, filename: string | Buffer | null) => {
-        const name = typeof filename === "string" ? filename : filename?.toString();
-        const changedPath = name ? path.join(dirPath, name) : dirPath;
-        broadcastProjectChange({ type: eventType, path: changedPath });
-        scheduleProjectWatchRefresh();
-      });
-      watcher.on("error", (error) => {
-        console.warn("[watcher] error", error);
-        scheduleProjectWatchRefresh();
-      });
-      projectWatchers.set(dirPath, watcher);
-    } catch (error) {
-      console.warn("[watcher] failed to watch directory", dirPath, error);
-    }
-  }
-
-  for (const [dirPath, watcher] of projectWatchers) {
-    if (desired.has(dirPath)) continue;
-    watcher.close();
-    projectWatchers.delete(dirPath);
-  }
-};
-
-const startProjectWatchers = async () => {
-  if (projectWatchInitPromise) return projectWatchInitPromise;
-  projectWatchInitPromise = refreshProjectWatchers().catch((error) => {
-    projectWatchInitPromise = null;
-    throw error;
-  });
-  return projectWatchInitPromise;
-};
-
-const stopProjectWatchers = () => {
-  if (projectWatchRefreshTimer) {
-    clearTimeout(projectWatchRefreshTimer);
-    projectWatchRefreshTimer = null;
-  }
-  if (projectWatchers) {
-    for (const watcher of projectWatchers.values()) {
-      watcher.close();
-    }
-    projectWatchers.clear();
-  }
-  projectWatchers = null;
-  projectWatchInitPromise = null;
-};
-
-const getJsxAttributeName = (name: ts.JsxAttributeName) => {
-  if (ts.isIdentifier(name)) return name.text;
-  if (ts.isJsxNamespacedName(name)) {
-    return `${name.namespace.text}:${name.name.text}`;
-  }
-  return null;
-};
-
-const extractClipLabel = (attr: ts.JsxAttribute) => {
-  if (getJsxAttributeName(attr.name) !== "label") return null;
-  const init = attr.initializer;
-  if (!init) return null;
-  if (ts.isStringLiteral(init)) return init.text;
-  if (ts.isJsxExpression(init) && init.expression) {
-    const expr = init.expression;
-    if (ts.isStringLiteral(expr)) return expr.text;
-    if (ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
-    if (ts.isTemplateExpression(expr) && expr.templateSpans.length === 0) {
-      return expr.head.text;
-    }
-  }
-  return null;
-};
-
-const isClipTag = (tag: ts.JsxTagNameExpression) => {
-  if (ts.isIdentifier(tag)) return tag.text === "Clip";
-  if (ts.isPropertyAccessExpression(tag)) return tag.name.text === "Clip";
-  return false;
-};
-
-const findClipLabelInSource = (source: ts.SourceFile, label: string) => {
-  const matches: Array<{ filePath: string; line: number; column: number }> = [];
-  const visit = (node: ts.Node) => {
-    if (ts.isJsxElement(node)) {
-      const opening = node.openingElement;
-      if (isClipTag(opening.tagName)) {
-        for (const prop of opening.attributes.properties) {
-          if (!ts.isJsxAttribute(prop)) continue;
-          const value = extractClipLabel(prop);
-          if (value === label) {
-            const pos = prop.getStart(source);
-            const { line, character } = source.getLineAndCharacterOfPosition(pos);
-            matches.push({
-              filePath: source.fileName,
-              line: line + 1,
-              column: character + 1,
-            });
-          }
-        }
-      }
-    } else if (ts.isJsxSelfClosingElement(node)) {
-      if (isClipTag(node.tagName)) {
-        for (const prop of node.attributes.properties) {
-          if (!ts.isJsxAttribute(prop)) continue;
-          const value = extractClipLabel(prop);
-          if (value === label) {
-            const pos = prop.getStart(source);
-            const { line, character } = source.getLineAndCharacterOfPosition(pos);
-            matches.push({
-              filePath: source.fileName,
-              line: line + 1,
-              column: character + 1,
-            });
-          }
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return matches;
-};
-
-const findClipLabelInProject = async (label: string) => {
-  if (!label) return [];
-  const files: string[] = [];
-  await collectProjectFiles(PROJECT_ROOT, files);
-  const matches: Array<{ filePath: string; line: number; column: number }> = [];
-  for (const filePath of files) {
-    const content = await fs.promises.readFile(filePath, "utf8");
-    const source = ts.createSourceFile(
-      filePath,
-      content,
-      ts.ScriptTarget.Latest,
-      true,
-      filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    );
-    matches.push(...findClipLabelInSource(source, label));
-  }
-  return matches.sort((a, b) => {
-    if (a.filePath !== b.filePath) return a.filePath.localeCompare(b.filePath);
-    return a.line - b.line;
-  });
-};
 
 function startRenderProcess(payload: RenderStartPayload) {
   const argsString = `${payload.width}:${payload.height}:${payload.fps}:${payload.totalFrames}:${payload.workers}:${payload.encode}:${payload.preset}`;
@@ -786,7 +348,7 @@ async function createWindow() {
     height: 720,
     backgroundColor: "#0b1221",
     webPreferences: {
-      preload: resolveMainPreloadPath(),
+      // preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -800,31 +362,7 @@ async function createWindow() {
     await mainWindow.loadFile(indexPath);
   }
 
-  allowWindowClose = false;
-  const webContentsId = mainWindow.webContents.id;
-  mainWindow.on("close", (event) => {
-    if (allowWindowClose) return;
-    const hasUnsaved = unsavedChangesByWebContents.get(webContentsId);
-    if (!hasUnsaved) return;
-    event.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow as BrowserWindow, {
-      type: "warning",
-      buttons: ["Cancel", "Discard Changes"],
-      defaultId: 0,
-      cancelId: 0,
-      title: "Unsaved Changes",
-      message: "You have unsaved changes. Discard them and close?",
-      detail: "Any unsaved edits will be lost.",
-    });
-    if (choice === 1) {
-      allowWindowClose = true;
-      unsavedChangesByWebContents.set(webContentsId, false);
-      mainWindow?.destroy();
-    }
-  });
-
   mainWindow.on("closed", () => {
-    unsavedChangesByWebContents.delete(webContentsId);
     mainWindow = null;
   });
 }
@@ -954,126 +492,6 @@ function setupRenderIpc() {
   });
 }
 
-function setupEditorIpc() {
-  ipcMain.handle("editor:readFile", async (_event, filePath: string) => {
-    const resolved = resolveProjectPath(filePath);
-    const content = await fs.promises.readFile(resolved, "utf8");
-    return { path: resolved, content };
-  });
-
-  ipcMain.handle("editor:readFileOptional", async (_event, filePath: string) => {
-    const resolved = resolveWorkspacePath(filePath);
-    try {
-      const content = await fs.promises.readFile(resolved, "utf8");
-      return { path: resolved, content };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
-  });
-
-  ipcMain.handle("editor:writeFile", async (_event, payload: { filePath: string; content: string }) => {
-    const resolved = resolveProjectPath(payload.filePath);
-    await fs.promises.writeFile(resolved, payload.content, "utf8");
-  });
-
-  ipcMain.handle("editor:stat", async (_event, filePath: string) => {
-    const resolved = resolveProjectPath(filePath);
-    const stats = await fs.promises.stat(resolved);
-    return {
-      type: stats.isDirectory() ? "directory" : "file",
-      ctime: stats.ctimeMs,
-      mtime: stats.mtimeMs,
-      size: stats.size,
-    };
-  });
-
-  ipcMain.handle("editor:statOptional", async (_event, filePath: string) => {
-    const resolved = resolveWorkspacePath(filePath);
-    try {
-      const stats = await fs.promises.stat(resolved);
-      return {
-        type: stats.isDirectory() ? "directory" : "file",
-        ctime: stats.ctimeMs,
-        mtime: stats.mtimeMs,
-        size: stats.size,
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
-  });
-
-  ipcMain.handle("editor:readdir", async (_event, filePath: string) => {
-    const resolved = resolveProjectPath(filePath);
-    const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
-    return entries.map((entry) => ({
-      name: entry.name,
-      type: entry.isDirectory() ? "directory" : "file",
-    }));
-  });
-
-  ipcMain.handle("editor:readdirOptional", async (_event, filePath: string) => {
-    const resolved = resolveWorkspacePath(filePath);
-    try {
-      const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
-      return entries.map((entry) => ({
-        name: entry.name,
-        type: entry.isDirectory() ? "directory" : "file",
-      }));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
-  });
-
-  ipcMain.handle("editor:mkdir", async (_event, filePath: string) => {
-    const resolved = resolveProjectPath(filePath);
-    await fs.promises.mkdir(resolved, { recursive: true });
-  });
-
-  ipcMain.handle("editor:delete", async (_event, filePath: string) => {
-    const resolved = resolveProjectPath(filePath);
-    await fs.promises.rm(resolved, { recursive: true, force: true });
-  });
-
-  ipcMain.handle("editor:rename", async (_event, payload: { from: string; to: string }) => {
-    const fromPath = resolveProjectPath(payload.from);
-    const toPath = resolveProjectPath(payload.to);
-    await fs.promises.rename(fromPath, toPath);
-  });
-
-  ipcMain.handle("editor:findClipLabel", async (_event, label: string) => {
-    return findClipLabelInProject(label);
-  });
-
-  ipcMain.handle("editor:getLspPort", async () => {
-    return startLspServer();
-  });
-
-  ipcMain.handle("editor:getProjectRoot", () => {
-    return WORKSPACE_ROOT;
-  });
-
-  ipcMain.on("editor:setUnsavedChanges", (event, hasUnsaved: boolean) => {
-    unsavedChangesByWebContents.set(event.sender.id, Boolean(hasUnsaved));
-  });
-
-  ipcMain.handle("editor:watchProject", async () => {
-    await startProjectWatchers();
-  });
-
-  ipcMain.handle("editor:unwatchProject", () => {
-    stopProjectWatchers();
-  });
-}
-
 function setupMenu() {
   const template: MenuItemConstructorOptions[] = [];
 
@@ -1163,9 +581,8 @@ if (process.platform === "linux") {
 app.whenReady().then(async () => {
   await startBackend();
   await waitForHealthz();
-  setupRenderIpc();
-  setupEditorIpc();
   await createWindow();
+  setupRenderIpc();
   setupMenu();
 
   app.on("activate", () => {
@@ -1177,8 +594,6 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   stopBackend();
-  stopLspServer();
-  stopProjectWatchers();
   if (renderChild && !renderChild.killed) {
     renderChild.kill();
   }
