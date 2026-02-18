@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
-use tempfile::TempDir;
 
 use crate::ffmpeg::{AudioPlanResolved, SegmentWriter, mux_audio_plan_into_mp4};
 
@@ -30,6 +29,7 @@ struct CancelResponse {
 }
 
 static CHROMIUM_EXECUTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
+const FRAME_DIRECTORY: &str = "frames";
 
 fn parse_bool_token(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -60,13 +60,12 @@ fn resolve_chromium_executable() -> Option<PathBuf> {
 }
 
 async fn spawn_browser_instance(
-    profile_id: usize,
+    profile_dir: PathBuf,
     width: u32,
     height: u32,
 ) -> Result<(Browser, Handler), Box<dyn std::error::Error>> {
-    // 一時ディレクトリをブラウザプロファイルとして使う
-    let tmp = TempDir::new()?; // ライフタイム管理は適宜
-    let user_data_dir: PathBuf = tmp.path().join(format!("profile-{}", profile_id));
+    // Keep profile dir alive for the whole worker lifetime.
+    std::fs::create_dir_all(&profile_dir)?;
 
     let mut builder = BrowserConfig::builder()
         .new_headless_mode()
@@ -79,8 +78,10 @@ async fn spawn_browser_instance(
             has_touch: false,
         })
         //.arg("--use-angle=swiftshader")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
         .request_timeout(Duration::from_hours(24))
-        .user_data_dir(user_data_dir); // ★ インスタンスごとに別のディレクトリ
+        .user_data_dir(profile_dir);
 
     if let Some(path) = resolve_chromium_executable() {
         builder = builder.chrome_executable(path);
@@ -298,14 +299,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "http://localhost:5174/render".to_string());
 
     let mut tasks = FuturesUnordered::new();
+    let mut launched_worker_ids = Vec::new();
 
-    static DIRECTORY: &'static str = "frames";
     let output_path =
         std::env::var("RENDER_OUTPUT_PATH").unwrap_or_else(|_| "output.mp4".to_string());
     let output_path = PathBuf::from(output_path);
 
-    tokio::fs::remove_dir_all(DIRECTORY).await.ok();
-    tokio::fs::create_dir(DIRECTORY).await?;
+    tokio::fs::remove_dir_all(FRAME_DIRECTORY).await.ok();
+    tokio::fs::create_dir(FRAME_DIRECTORY).await?;
 
     let start = Instant::now();
 
@@ -326,6 +327,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for (worker_id, (start, end)) in ranges.into_iter().enumerate() {
+        launched_worker_ids.push(worker_id);
         let encode_clone = encode.clone();
         let preset_clone = preset.clone();
         let ffmpeg_threads_clone = ffmpeg_threads;
@@ -335,13 +337,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let completed_clone = completed.clone();
         let is_canceled_clone = is_canceled.clone();
         tasks.push(tokio::spawn(async move {
-            let (mut browser, mut handler) = spawn_browser_instance(worker_id, width, height)
+            let profile_dir =
+                PathBuf::from(format!("{}/profiles/profile-{:03}", FRAME_DIRECTORY, worker_id));
+
+            let (mut browser, mut handler) = spawn_browser_instance(profile_dir, width, height)
                 .await
-                .unwrap();
+                .map_err(|error| format!("failed to launch browser worker {worker_id}: {error}"))?;
 
             tokio::spawn(async move { while handler.next().await.is_some() {} });
 
-            let out = format!("{}/segment-{worker_id:03}.mp4", DIRECTORY);
+            let out = format!("{}/segment-{worker_id:03}.mp4", FRAME_DIRECTORY);
 
             let mut writer = SegmentWriter::new(
                 &out,
@@ -356,10 +361,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffmpeg_low_memory_clone,
             )
             .await
-            .unwrap();
+            .map_err(|error| format!("worker {worker_id}: failed to create ffmpeg writer: {error}"))?;
 
-            let page = browser.new_page(page_url).await.unwrap();
-            page.wait_for_navigation().await.unwrap();
+            let page = browser
+                .new_page(page_url)
+                .await
+                .map_err(|error| format!("worker {worker_id}: failed to open page: {error}"))?;
+            page.wait_for_navigation()
+                .await
+                .map_err(|error| format!("worker {worker_id}: navigation failed: {error}"))?;
             wait_for_frame_api(&page).await;
             wait_for_animation_ready(&page).await;
             wait_for_draw_text_ready(&page).await;
@@ -379,7 +389,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "#,
                     frame
                 );
-                page.evaluate(js).await.unwrap();
+                page.evaluate(js)
+                    .await
+                    .map_err(|error| format!("worker {worker_id}: setFrame eval failed: {error}"))?;
 
                 wait_for_next_frame(&page).await;
 
@@ -398,7 +410,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "#,
                     frame
                 );
-                page.evaluate(script).await.unwrap();
+                page.evaluate(script)
+                    .await
+                    .map_err(|error| format!("worker {worker_id}: waitCanvasFrame eval failed: {error}"))?;
 
                 wait_for_images_ready(&page).await;
                 wait_for_webgl_frame(&page, frame).await;
@@ -411,9 +425,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .build(),
                     )
                     .await
-                    .unwrap();
+                    .map_err(|error| format!("worker {worker_id}: screenshot failed: {error}"))?;
 
-                writer.write_png_frame(&bytes).await.unwrap();
+                writer
+                    .write_png_frame(&bytes)
+                    .await
+                    .map_err(|error| format!("worker {worker_id}: ffmpeg write failed: {error}"))?;
 
                 completed_clone.fetch_add(1, Ordering::Relaxed);
 
@@ -422,18 +439,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            writer.finish().await.unwrap();
+            writer
+                .finish()
+                .await
+                .map_err(|error| format!("worker {worker_id}: ffmpeg finalize failed: {error}"))?;
 
-            browser.close().await.unwrap();
+            browser
+                .close()
+                .await
+                .map_err(|error| format!("worker {worker_id}: browser close failed: {error}"))?;
+
+            Ok::<(), String>(())
         }));
     }
 
-    while let Some(_) = tasks.next().await {}
+    while let Some(task_result) = tasks.next().await {
+        match task_result {
+            Ok(Ok(())) => {}
+            Ok(Err(worker_error)) => return Err(Box::<dyn std::error::Error>::from(worker_error)),
+            Err(join_error) => {
+                return Err(Box::<dyn std::error::Error>::from(format!(
+                    "render worker panicked: {join_error}"
+                )));
+            }
+        }
+    }
 
     let mut segs = Vec::new();
 
-    for worker_id in 0..worker_count + if remainder > 0 { 1 } else { 0 } {
-        let path = PathBuf::from(format!("{}/segment-{worker_id:03}.mp4", DIRECTORY));
+    for worker_id in launched_worker_ids {
+        let path = PathBuf::from(format!("{}/segment-{worker_id:03}.mp4", FRAME_DIRECTORY));
         if tokio::fs::metadata(&path).await.is_ok() {
             segs.push(path);
         }
