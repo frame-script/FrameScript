@@ -66,6 +66,7 @@ type GlyphPath = {
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 const DEFAULT_LAG_RATIO = 0.6
+const STROKE_VISIBLE_EPSILON = 1e-4
 
 const resolveTimelineValue = (
   source: number | Variable<number> | undefined,
@@ -374,6 +375,8 @@ const renderGlyphSvg = (params: {
           outTiming.duration > 0 ? clamp01((frame - outTiming.start) / outTiming.duration) : 0
         const progress = outProgress > 0 ? inProgress * (1 - outProgress) : inProgress
         const dashOffset = length > 0 ? length * (1 - progress) : 0
+        // Workaround for Chromium/Skia: stroke-dash can leak a 1px cap at progress=0 on Windows.
+        const strokeVisible = length > 0 && progress > STROKE_VISIBLE_EPSILON
         const fillStart = timing.start + timing.duration + fillDelayFrames
         const fillProgress =
           resolvedFillColor === "transparent"
@@ -396,6 +399,7 @@ const renderGlyphSvg = (params: {
             strokeLinejoin="round"
             strokeDasharray={length || 1}
             strokeDashoffset={dashOffset}
+            strokeOpacity={strokeVisible ? 1 : 0}
             style={{ opacity: length > 0 ? 1 : 0 }}
           />
         )
