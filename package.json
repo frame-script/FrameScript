@@ -1,7 +1,7 @@
 {
     "name": "frame-script",
     "private": true,
-    "version": "0.0.8",
+    "version": "0.0.9",
     "type": "module",
     "scripts": {
         "dev:vite": "vite --config vite.studio.config.ts",
