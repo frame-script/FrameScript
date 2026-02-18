@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState, type DependencyList } from "react"
-import { useProvideClipDuration } from "./clip"
+import { useLayoutEffect, useMemo, useRef, useState, type DependencyList } from "react"
+import { useClipId, useClipStart, useProvideClipDuration } from "./clip"
 import { useCurrentFrame } from "./frame"
 import type { Easing } from "./animation/functions"
+import { useTimelineClips, type TimelineClip } from "./timeline"
 
 type Lerp<T> = (from: T, to: T, t: number) => T
 
@@ -84,6 +85,7 @@ type MoveController<T> = {
 type AnimationContext = {
   sleep: (frames: number) => AnimationHandle
   waitUntil: (frame: number) => AnimationHandle
+  waitUntilClip: (label: string) => AnimationHandle
   move: <T extends VariableType>(variable: Variable<T>) => MoveController<T>
   parallel: (handles: AnimationHandle[]) => AnimationHandle
 }
@@ -405,6 +407,66 @@ export const useAnimation = (
   const runIdRef = useRef(0)
   const ownerIdRef = useRef(0)
   const variablesRef = useRef<Set<Variable<unknown>>>(new Set())
+  const clips = useTimelineClips()
+  const clipId = useClipId()
+  const clipStartContext = useClipStart()
+  const clipStart = useMemo(() => {
+    if (!clipId) return clipStartContext ?? 0
+    const currentClip = clips.find((clip) => clip.id === clipId)
+    if (currentClip) return currentClip.start
+    return clipStartContext ?? 0
+  }, [clipId, clipStartContext, clips])
+  const clipLabelMap = useMemo(() => {
+    const map = new Map<string, TimelineClip>()
+    const clipById = new Map<string, TimelineClip>()
+    for (const clip of clips) {
+      clipById.set(clip.id, clip)
+    }
+    const isDescendantOf = (clip: TimelineClip, ancestorId: string) => {
+      let current: TimelineClip | undefined = clip
+      let guard = 0
+      while (current && guard < clips.length + 1) {
+        if (current.id === ancestorId) return true
+        if (!current.parentId) return false
+        current = clipById.get(current.parentId)
+        guard += 1
+      }
+      return false
+    }
+    const isInScope = (clip: TimelineClip) => {
+      if (!clipId) return true
+      return isDescendantOf(clip, clipId)
+    }
+    for (const clip of clips) {
+      if (!clip.label) continue
+      const existing = map.get(clip.label)
+      if (!existing) {
+        map.set(clip.label, clip)
+        continue
+      }
+      const nextInScope = isInScope(clip)
+      const existingInScope = isInScope(existing)
+      if (nextInScope && !existingInScope) {
+        map.set(clip.label, clip)
+        continue
+      }
+      if (nextInScope === existingInScope) {
+        if (clip.start < existing.start) {
+          map.set(clip.label, clip)
+          continue
+        }
+        if (clip.start === existing.start) {
+          const clipDepth = clip.depth ?? 0
+          const existingDepth = existing.depth ?? 0
+          if (clipDepth < existingDepth) {
+            map.set(clip.label, clip)
+          }
+        }
+      }
+    }
+    return map
+  }, [clips, clipId])
+  const effectDeps = useMemo(() => [...deps, clipLabelMap, clipStart], [deps, clipLabelMap, clipStart])
 
   useProvideClipDuration(durationFrames)
 
@@ -433,7 +495,6 @@ export const useAnimation = (
       }
     }
     variablesRef.current.clear()
-    setDurationFrames(1)
     setReady(false)
 
     const internal: InternalContext = {
@@ -453,6 +514,15 @@ export const useAnimation = (
       },
       waitUntil: (frame: number) => {
         const target = Math.max(internal.now, toFrames(frame))
+        return new AnimationHandle(internal, target)
+      },
+      waitUntilClip: (label: string) => {
+        const clip = clipLabelMap.get(label)
+        if (!clip) {
+          return new AnimationHandle(internal, internal.now)
+        }
+        const targetFrame = clip.start - clipStart
+        const target = Math.max(internal.now, toFrames(targetFrame))
         return new AnimationHandle(internal, target)
       },
       move: (variable) => {
@@ -518,7 +588,7 @@ export const useAnimation = (
       }
       finalize()
     }
-  }, deps)
+  }, effectDeps)
 
   return { durationFrames, ready }
 }

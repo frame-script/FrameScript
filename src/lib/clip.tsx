@@ -1,8 +1,9 @@
 import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { WithClipStart, useCurrentFrame, useGlobalCurrentFrame } from "./frame"
+import { WithClipStart, WithFrameUpdates, useCurrentFrame, useGlobalFrameSelector } from "./frame"
 import { useClipVisibility, useTimelineRegistration } from "./timeline"
 import { registerClipGlobal, unregisterClipGlobal } from "./timeline"
 import { PROJECT_SETTINGS } from "../../project/project"
+import { logPerfSpike } from "./perf-debug"
 
 type ClipStaticProps = {
   start: number
@@ -66,7 +67,6 @@ export const useProvideClipDuration = (frames: number | null | undefined) => {
  * ```
  */
 export const ClipStatic = ({ start, end, label, children, laneId }: ClipStaticProps) => {
-  const currentFrame = useGlobalCurrentFrame()
   const timeline = useTimelineRegistration()
   const registerClip = timeline?.registerClip
   const unregisterClip = timeline?.unregisterClip
@@ -85,7 +85,10 @@ export const ClipStatic = ({ start, end, label, children, laneId }: ClipStaticPr
   const clampedEnd = Math.min(absoluteEnd, parentEnd)
   const hasSpan = clampedEnd >= clampedStart
   const depth = parentDepth + 1
-  const isActive = hasSpan && currentFrame >= clampedStart && currentFrame <= clampedEnd && isVisible
+  const isInFrameRange = useGlobalFrameSelector(
+    (frame) => hasSpan && frame >= clampedStart && frame <= clampedEnd,
+  )
+  const isActive = isInFrameRange && isVisible
 
   useEffect(() => {
     if (!hasSpan) return
@@ -104,9 +107,11 @@ export const ClipStatic = ({ start, end, label, children, laneId }: ClipStaticPr
   return (
     <ClipContext.Provider value={{ id, baseStart: clampedStart, baseEnd: clampedEnd, depth, active: isActive }}>
       <WithClipStart start={clampedStart}>
-        <div style={{ display: isActive ? "contents" : "none" }}>
-          {children}
-        </div>
+        <WithFrameUpdates enabled={isActive}>
+          <div style={{ display: isActive ? "contents" : "none" }}>
+            {children}
+          </div>
+        </WithFrameUpdates>
       </WithClipStart>
     </ClipContext.Provider>
   )
@@ -207,17 +212,17 @@ const ClipAnimationSync = ({ children }: { children: React.ReactNode }) => {
   const localFrame = useCurrentFrame()
   const active = useClipActive()
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const animationsRef = useRef<Animation[]>([])
+  const dirtyRef = useRef(true)
 
-  useLayoutEffect(() => {
-    if (!active) return
-
+  const collectAnimations = useCallback(() => {
+    const startMs = performance.now()
     const root = rootRef.current
-    if (!root) return
-
-    const fps = PROJECT_SETTINGS.fps
-    if (fps <= 0) return
-
-    const timeMs = (localFrame / fps) * 1000
+    if (!root) {
+      animationsRef.current = []
+      dirtyRef.current = false
+      return
+    }
 
     const animations: Animation[] = []
     // Collect animations under this clip, but don't trample nested clips that have their own clock.
@@ -233,16 +238,69 @@ const ClipAnimationSync = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
-    for (const anim of animations) {
+    animationsRef.current = animations
+    dirtyRef.current = false
+    logPerfSpike("clip.collectAnimations", performance.now() - startMs, {
+      animations: animations.length,
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!active) {
+      animationsRef.current = []
+      dirtyRef.current = true
+      return
+    }
+
+    const root = rootRef.current
+    if (!root) return
+
+    dirtyRef.current = true
+    const observer = new MutationObserver(() => {
+      dirtyRef.current = true
+    })
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    })
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [active])
+
+  useLayoutEffect(() => {
+    if (!active) return
+
+    const startMs = performance.now()
+    const fps = PROJECT_SETTINGS.fps
+    if (fps <= 0) return
+
+    const timeMs = (localFrame / fps) * 1000
+
+    if (dirtyRef.current) {
+      collectAnimations()
+    }
+
+    const nextAnimations: Animation[] = []
+    for (const anim of animationsRef.current) {
       try {
         // Drive CSS animations by timeline scrubbing rather than wall-clock time.
         if (anim.playState !== "paused") anim.pause()
         anim.currentTime = timeMs
+        nextAnimations.push(anim)
       } catch {
-        // Ignore read-only / detached animations.
+        // Ignore detached animations and drop them from cache.
       }
     }
-  }, [active, localFrame])
+    animationsRef.current = nextAnimations
+    logPerfSpike("clip.syncAnimations", performance.now() - startMs, {
+      animations: nextAnimations.length,
+      localFrame,
+    })
+  }, [active, collectAnimations, localFrame])
 
   return (
     <div ref={rootRef} style={{ display: "contents" }} data-framescript-clip-root="1">

@@ -1,6 +1,6 @@
 use std::{
-    error::Error,
     collections::BTreeMap,
+    error::Error,
     io,
     path::{Path, PathBuf},
     process::Stdio,
@@ -69,6 +69,8 @@ impl SegmentWriter {
         encode: &str,
         preset: Option<&str>,
         gop: Option<u32>,
+        ffmpeg_threads: Option<u32>,
+        low_memory: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let vcodec = match encode {
             "H264" => "libx264",
@@ -106,6 +108,25 @@ impl SegmentWriter {
             .arg("yuv420p")
             .arg("-movflags")
             .arg("+faststart");
+
+        if let Some(threads) = ffmpeg_threads {
+            cmd.arg("-threads").arg(threads.max(1).to_string());
+        }
+
+        if low_memory {
+            cmd.arg("-tune").arg("zerolatency").arg("-bf").arg("0");
+            match vcodec {
+                "libx264" => {
+                    cmd.arg("-x264-params")
+                        .arg("bframes=0:rc-lookahead=0:sync-lookahead=0:ref=1");
+                }
+                "libx265" => {
+                    cmd.arg("-x265-params")
+                        .arg("bframes=0:rc-lookahead=0:ref=1");
+                }
+                _ => {}
+            }
+        }
 
         if let Some(g) = gop {
             cmd.arg("-g")
@@ -189,8 +210,7 @@ pub async fn concat_segments_mp4(
 
     let mut lines = String::new();
     for seg in segments {
-        let abs_path = tokio::task::spawn_blocking(move || std::fs::canonicalize(seg))
-            .await??;
+        let abs_path = tokio::task::spawn_blocking(move || std::fs::canonicalize(seg)).await??;
         let rel_path = match abs_path.strip_prefix(&list_dir_abs) {
             Ok(rel) => rel.to_path_buf(),
             Err(_) => abs_path,
@@ -283,8 +303,16 @@ pub async fn mux_audio_plan_into_mp4(
         return Ok(());
     }
 
-    let fps = if fps.is_finite() && fps > 0.0 { fps } else { plan.fps };
-    let fps = if fps.is_finite() && fps > 0.0 { fps } else { 60.0 };
+    let fps = if fps.is_finite() && fps > 0.0 {
+        fps
+    } else {
+        plan.fps
+    };
+    let fps = if fps.is_finite() && fps > 0.0 {
+        fps
+    } else {
+        60.0
+    };
     let duration_sec = (total_frames as f64) / fps;
 
     let mut sources: BTreeMap<String, usize> = BTreeMap::new();

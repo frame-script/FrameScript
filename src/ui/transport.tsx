@@ -3,6 +3,7 @@ import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
 import { PROJECT_SETTINGS } from "../../project/project"
 import { useTimelineClips } from "../lib/timeline"
 import { useIsPlaying, useSetIsPlaying } from "../lib/studio-state"
+import { logPerfSpike } from "../lib/perf-debug"
 
 const iconStyle: React.CSSProperties = {
   fontSize: 14,
@@ -110,10 +111,14 @@ export const TransportControls = () => {
     }
   }, [currentFrame])
 
+  const maxClipEndExclusive = useMemo(
+    () => clips.reduce((max, clip) => Math.max(max, clip.end + 1), 0),
+    [clips],
+  )
+
   const durationFrames = useMemo(() => {
-    const maxClipEnd = clips.reduce((max, clip) => Math.max(max, clip.end + 1), 0)
-    return Math.max(1, maxClipEnd, currentFrame + 1)
-  }, [clips, fps, currentFrame])
+    return Math.max(1, maxClipEndExclusive, currentFrame + 1)
+  }, [currentFrame, maxClipEndExclusive])
 
   const stopPlayback = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -126,8 +131,15 @@ export const TransportControls = () => {
 
   const scheduleFrameCommit = useCallback(
     (nextFrame: number) => {
+      const startMs = performance.now()
       queuedFrameRef.current = nextFrame
       if (renderedFrameRef.current !== lastSetFrameRef.current) {
+        logPerfSpike("transport.scheduleFrameCommit", performance.now() - startMs, {
+          reason: "waiting_render",
+          nextFrame,
+          rendered: renderedFrameRef.current,
+          lastSet: lastSetFrameRef.current,
+        })
         return
       }
       const queued = queuedFrameRef.current
@@ -138,11 +150,23 @@ export const TransportControls = () => {
         lastSetFrameRef.current = queued
         setCurrentFrame(queued)
       }
+      logPerfSpike("transport.scheduleFrameCommit", performance.now() - startMs, {
+        reason: "commit",
+        nextFrame: queued,
+      })
     },
     [setCurrentFrame],
   )
 
   const tick = useCallback((timestamp: number) => {
+    const startMs = performance.now()
+    const finish = (reason: string) => {
+      logPerfSpike("transport.tick", performance.now() - startMs, {
+        reason,
+        frame: frameRef.current,
+        durationFrames,
+      })
+    }
     if (!playingRef.current) return
     if (playbackStartTimeRef.current == null) {
       playbackStartTimeRef.current = timestamp
@@ -163,6 +187,7 @@ export const TransportControls = () => {
         scheduleFrameCommit(endFrame)
         stopPlayback()
       }
+      finish("boundary")
       return
     }
 
@@ -171,6 +196,7 @@ export const TransportControls = () => {
       scheduleFrameCommit(nextInt)
     }
     rafRef.current = requestAnimationFrame(tick)
+    finish("normal")
   }, [durationFrames, fps, loop, scheduleFrameCommit, stopPlayback])
 
   const togglePlay = useCallback(() => {

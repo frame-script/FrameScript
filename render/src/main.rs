@@ -31,6 +31,14 @@ struct CancelResponse {
 
 static CHROMIUM_EXECUTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+fn parse_bool_token(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 fn resolve_chromium_executable() -> Option<PathBuf> {
     CHROMIUM_EXECUTABLE
         .get_or_init(|| {
@@ -195,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let splited = args[1].split(":").collect::<Vec<_>>();
 
-    if splited.len() != 7 {
+    if splited.len() != 7 && splited.len() != 9 {
         return Err("Invalid command(split).".into());
     }
 
@@ -206,6 +214,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workers = splited[4].parse::<usize>()?;
     let encode = splited[5].to_string();
     let preset = splited[6].to_string();
+    let ffmpeg_threads = splited
+        .get(7)
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .map(|value| value.max(1))
+        .or(Some(1));
+    let ffmpeg_low_memory = splited
+        .get(8)
+        .and_then(|raw| parse_bool_token(raw))
+        .unwrap_or(true);
 
     let worker_count = workers.max(1);
     let base_chunk = total_frames / worker_count;
@@ -311,6 +328,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (worker_id, (start, end)) in ranges.into_iter().enumerate() {
         let encode_clone = encode.clone();
         let preset_clone = preset.clone();
+        let ffmpeg_threads_clone = ffmpeg_threads;
+        let ffmpeg_low_memory_clone = ffmpeg_low_memory;
 
         let page_url = url.clone();
         let completed_clone = completed.clone();
@@ -333,6 +352,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &encode_clone,
                 Some(&preset_clone),
                 Some(fps as u32),
+                ffmpeg_threads_clone,
+                ffmpeg_low_memory_clone,
             )
             .await
             .unwrap();

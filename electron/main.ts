@@ -10,8 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
-import * as ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import * as ffprobeInstaller from "@ffprobe-installer/ffprobe";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import puppeteer from "puppeteer";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,6 +82,8 @@ type RenderStartPayload = {
   workers: number;
   encode: "H264" | "H265";
   preset: string;
+  ffmpegThreads: number;
+  ffmpegLowMemory: boolean;
 };
 
 function getPlatformKey() {
@@ -150,7 +152,7 @@ function startBackend(): Promise<void> {
     if (!fs.existsSync(info.path)) {
       throw new Error(
         `Backend binary not found for platform "${info.platformKey}". Tried:\n` +
-          info.candidates.map((p) => `- ${p}`).join("\n"),
+        info.candidates.map((p) => `- ${p}`).join("\n"),
       );
     }
 
@@ -266,7 +268,8 @@ function getRenderBinaryInfo() {
 }
 
 function startRenderProcess(payload: RenderStartPayload) {
-  const argsString = `${payload.width}:${payload.height}:${payload.fps}:${payload.totalFrames}:${payload.workers}:${payload.encode}:${payload.preset}`;
+  const lowMemoryFlag = payload.ffmpegLowMemory ? 1 : 0;
+  const argsString = `${payload.width}:${payload.height}:${payload.fps}:${payload.totalFrames}:${payload.workers}:${payload.encode}:${payload.preset}:${payload.ffmpegThreads}:${lowMemoryFlag}`;
 
   if (renderChild && !renderChild.killed) {
     console.log("[render] terminating previous render process");
@@ -307,7 +310,7 @@ function startRenderProcess(payload: RenderStartPayload) {
       const info = getRenderBinaryInfo();
       throw new Error(
         `Render binary not found for platform "${platformKey}". Tried:\n` +
-          info.candidates.map((p) => `- ${p}`).join("\n"),
+        info.candidates.map((p) => `- ${p}`).join("\n"),
       );
     }
 
@@ -375,7 +378,7 @@ function createRenderSettingsWindow() {
 
   renderSettingsWindow = new BrowserWindow({
     width: 640,
-    height: 750,
+    height: 800,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -475,6 +478,8 @@ function setupRenderIpc() {
     const workers = Math.max(1, Number(payload.workers) || 1);
     const encode = payload.encode === "H265" ? "H265" : "H264";
     const preset = payload.preset || "medium";
+    const ffmpegThreads = Math.max(1, Number(payload.ffmpegThreads) || 1);
+    const ffmpegLowMemory = Boolean(payload.ffmpegLowMemory);
 
     if (width <= 0 || height <= 0 || fps <= 0 || totalFrames <= 0) {
       throw new Error("Invalid render payload");
@@ -488,6 +493,8 @@ function setupRenderIpc() {
       workers,
       encode,
       preset,
+      ffmpegThreads,
+      ffmpegLowMemory,
     });
   });
 }

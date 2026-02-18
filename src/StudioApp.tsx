@@ -24,6 +24,8 @@ export const StudioApp = () => {
   const timelineMinHeight = 200;
   const [previewViewport, setPreviewViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const hasPreviewViewport = previewViewport.width > 0 && previewViewport.height > 0;
+  const [mountUiPanels, setMountUiPanels] = useState(false);
+  const [mountProjectPreview, setMountProjectPreview] = useState(false);
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -73,6 +75,21 @@ export const StudioApp = () => {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   }, [onHorizontalDrag]);
+
+  useEffect(() => {
+    let raf1: number | null = null;
+    let raf2: number | null = null;
+    raf1 = requestAnimationFrame(() => {
+      setMountUiPanels(true);
+      raf2 = requestAnimationFrame(() => {
+        setMountProjectPreview(true);
+      });
+    });
+    return () => {
+      if (raf1 != null) cancelAnimationFrame(raf1);
+      if (raf2 != null) cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   useEffect(() => {
     const target = previewRef.current;
@@ -161,8 +178,12 @@ export const StudioApp = () => {
                 minWidth: 0,
               }}
             >
-              <div style={{ flexBasis: `${horizontalRatio * 100}%`, minWidth: 220 }}>
-                <ClipVisibilityPanel />
+              <div style={{ flexBasis: `${horizontalRatio * 100}%`, minWidth: 220, minHeight: 0 }}>
+                {mountUiPanels ? (
+                  <ClipVisibilityPanel />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", borderRadius: 8, background: "#0f172a", border: "1px solid #1f2937" }} />
+                )}
               </div>
               <div
                 onPointerDown={startHorizontalDrag}
@@ -208,7 +229,23 @@ export const StudioApp = () => {
                         transformOrigin: "top left",
                       }}
                     >
-                      <PROJECT />
+                      {mountProjectPreview ? (
+                        <PROJECT />
+                      ) : (
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "grid",
+                            placeItems: "center",
+                            color: "#94a3b8",
+                            fontSize: 13,
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                          }}
+                        >
+                          Loading preview...
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -228,7 +265,11 @@ export const StudioApp = () => {
 
             <div style={{ flex: 1, minHeight: 160, display: "flex", minWidth: 0 }}>
               <div style={{ flex: 1, minHeight: 0 }}>
-                <TimelineUI />
+                {mountUiPanels ? (
+                  <TimelineUI />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", borderRadius: 8, background: "#0f172a", border: "1px solid #1f2937" }} />
+                )}
               </div>
             </div>
           </div>

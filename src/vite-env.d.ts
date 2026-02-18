@@ -8,6 +8,8 @@ type RenderStartPayload = {
   workers: number;
   encode: "H264" | "H265";
   preset: string;
+  ffmpegThreads: number;
+  ffmpegLowMemory: boolean;
 };
 
 interface Window {

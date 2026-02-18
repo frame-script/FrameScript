@@ -69,8 +69,10 @@ export const RenderSettingsPage = () => {
   });
   const [encode, setEncode] = useState<"H264" | "H265">("H264");
   const [preset, setPreset] = useState("medium");
+  const [ffmpegThreads, setFfmpegThreads] = useState(1);
+  const [ffmpegLowMemory, setFfmpegLowMemory] = useState(true);
   const [loudness, setLoudness] = useState<"off" | "youtube">("off");
-  const [cacheGiB, setCacheGiB] = useState(4);
+  const [cacheGiB, setCacheGiB] = useState(1);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [platformLabel, setPlatformLabel] = useState("(detecting)");
@@ -79,8 +81,8 @@ export const RenderSettingsPage = () => {
   const audioSegments = useAudioSegments();
 
   const commandPreview = useMemo(() => {
-    return `${width}:${height}:${fps}:${frames}:${workers}:${encode}:${preset}`;
-  }, [width, height, fps, frames, workers, encode, preset]);
+    return `${width}:${height}:${fps}:${frames}:${workers}:${encode}:${preset}:${ffmpegThreads}:${ffmpegLowMemory ? 1 : 0}`;
+  }, [width, height, fps, frames, workers, encode, preset, ffmpegThreads, ffmpegLowMemory]);
 
   const commandLineText = useMemo(() => {
     if (isDevMode) {
@@ -186,6 +188,8 @@ export const RenderSettingsPage = () => {
         workers: Number(workers),
         encode,
         preset,
+        ffmpegThreads: Math.max(1, Number(ffmpegThreads) || 1),
+        ffmpegLowMemory,
       });
       void window.renderAPI?.openProgress();
       window.close();
@@ -282,6 +286,16 @@ export const RenderSettingsPage = () => {
             style={inputStyle}
           />
         </div>
+        <div style={fieldStyle}>
+          <label style={{ fontSize: 12, color: "#cbd5e1" }}>FFmpeg threads</label>
+          <input
+            type="number"
+            min={1}
+            value={ffmpegThreads}
+            onChange={(e) => setFfmpegThreads(Number(e.target.value))}
+            style={inputStyle}
+          />
+        </div>
       </div>
 
       <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -314,6 +328,28 @@ export const RenderSettingsPage = () => {
               </label>
             ))}
           </div>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #1f2a3c",
+              background: "#0f172a",
+              cursor: "pointer",
+              userSelect: "none",
+              width: "fit-content",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={ffmpegLowMemory}
+              onChange={(e) => setFfmpegLowMemory(e.target.checked)}
+              style={{ accentColor: "#5bd5ff" }}
+            />
+            Low memory mode (FFmpeg)
+          </label>
         </div>
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Audio</div>

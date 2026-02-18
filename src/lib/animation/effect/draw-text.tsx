@@ -721,14 +721,14 @@ export const DrawText = ({
   text,
   fontUrl,
   fontSize = 96,
-  strokeWidth = 4,
+  strokeWidth = 1,
   strokeColor = "#ffffff",
   fillColor,
   durationFrames = 180,
   delayFrames = 0,
   frame: frameOverride,
   progress: progressOverride,
-  lagRatio = 0.5,
+  lagRatio = 0.2,
   fillDurationFrames = 18,
   fillDelayFrames = 0,
   outStartFrames,
@@ -775,7 +775,8 @@ export const DrawText = ({
       resolvedFillColor,
     ],
   )
-  useProvideClipDuration(totalDuration)
+  const shouldReportDuration = progressOverride == null
+  useProvideClipDuration(shouldReportDuration ? totalDuration : null)
   const progressValue = resolveTimelineValue(progressOverride, baseFrame)
   const frameValue = resolveTimelineValue(frameOverride, baseFrame)
   const resolvedFrame = useMemo(() => {
@@ -983,7 +984,8 @@ export const DrawTex = ({
       resolvedFillColor,
     ],
   )
-  useProvideClipDuration(totalDuration)
+  const shouldReportDuration = progressOverride == null
+  useProvideClipDuration(shouldReportDuration ? totalDuration : null)
   const progressValue = resolveTimelineValue(progressOverride, baseFrame)
   const frameValue = resolveTimelineValue(frameOverride, baseFrame)
   const resolvedFrame = useMemo(() => {

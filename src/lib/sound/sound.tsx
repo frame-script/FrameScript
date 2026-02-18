@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { PROJECT_SETTINGS } from "../../../project/project"
 import { useGlobalCurrentFrame } from "../frame"
 import { useClipActive, useClipId, useClipRange, useProvideClipDuration } from "../clip"
@@ -63,6 +63,7 @@ const buildMetaUrl = (sound: Sound) => {
 }
 
 const soundLengthCache = new Map<string, number>()
+const soundLengthPending = new Map<string, Promise<number>>()
 const MAX_REASONABLE_DURATION_MS = 1000 * 60 * 60 * 24 * 7 // 7 days
 
 /**
@@ -108,6 +109,75 @@ export const sound_length = (sound: Sound | string): number => {
   return 0
 }
 
+const fetchSoundLengthAsync = async (sound: Sound): Promise<number> => {
+  const cached = soundLengthCache.get(sound.path)
+  if (cached != null) return cached
+
+  const pending = soundLengthPending.get(sound.path)
+  if (pending) return pending
+
+  const next = (async () => {
+    try {
+      const res = await fetch(buildMetaUrl(sound))
+      if (!res.ok) {
+        soundLengthCache.set(sound.path, 0)
+        return 0
+      }
+      const payload = (await res.json()) as { duration_ms?: number }
+      const rawMs = typeof payload.duration_ms === "number" ? payload.duration_ms : 0
+      if (!Number.isFinite(rawMs) || rawMs <= 0 || rawMs > MAX_REASONABLE_DURATION_MS) {
+        soundLengthCache.set(sound.path, 0)
+        return 0
+      }
+      const seconds = rawMs / 1000
+      const frames = Math.round(seconds * PROJECT_SETTINGS.fps)
+      const resolvedFrames = frames > 0 ? frames : 0
+      soundLengthCache.set(sound.path, resolvedFrames)
+      return resolvedFrames
+    } catch (error) {
+      console.error("fetchSoundLengthAsync(): failed to fetch metadata", error)
+      soundLengthCache.set(sound.path, 0)
+      return 0
+    } finally {
+      soundLengthPending.delete(sound.path)
+    }
+  })()
+
+  soundLengthPending.set(sound.path, next)
+  return next
+}
+
+const useSoundLengthFrames = (sound: Sound, syncMode: boolean) => {
+  const [frames, setFrames] = useState<number>(() => {
+    const cached = soundLengthCache.get(sound.path)
+    if (cached != null) return cached
+    if (syncMode) return sound_length(sound)
+    return 0
+  })
+
+  useEffect(() => {
+    if (syncMode) {
+      setFrames(sound_length(sound))
+      return
+    }
+    const cached = soundLengthCache.get(sound.path)
+    if (cached != null) {
+      setFrames(cached)
+      return
+    }
+
+    let cancelled = false
+    void fetchSoundLengthAsync(sound).then((next) => {
+      if (!cancelled) setFrames(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sound, sound.path, syncMode])
+
+  return frames
+}
+
 /**
  * Places an audio track on the timeline.
  *
@@ -134,10 +204,7 @@ export const Sound = ({
   const isRender = useIsRender()
   const globalFrame = useGlobalCurrentFrame()
   const resolvedSound = useMemo(() => normalizeSound(sound), [sound])
-  const rawDurationFrames = useMemo(
-    () => sound_length(resolvedSound),
-    [resolvedSound],
-  )
+  const rawDurationFrames = useSoundLengthFrames(resolvedSound, isRender)
   const { trimStartFrames, trimEndFrames } = useMemo(
     () =>
       resolveTrimFrames({

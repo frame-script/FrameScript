@@ -5,8 +5,13 @@ import { StudioApp } from "./StudioApp";
 import { RenderSettingsPage } from "./ui/render-settings";
 import { RenderProgressPage } from "./ui/render-progress";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
+const AppShell = () => {
+  React.useEffect(() => {
+    const splash = document.getElementById("boot-splash");
+    if (splash) splash.remove();
+  }, []);
+
+  return (
     <HashRouter>
       <Routes>
         <Route path="/" element={<StudioApp />} />
@@ -14,5 +19,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         <Route path="/render-progress" element={<RenderProgressPage />} />
       </Routes>
     </HashRouter>
-  </React.StrictMode>,
+  );
+};
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <AppShell />,
 );

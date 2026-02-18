@@ -226,12 +226,20 @@ export const useClipVisibilityState = () => {
 export const useClipVisibility = (id: string) => {
   const { hiddenMap } = useClipVisibilityState()
   const clips = useTimelineClips()
-  const getParentId = (clipId: string) => clips.find((c) => c.id === clipId)?.parentId ?? null
+  const parentMap = useMemo(() => {
+    const map = new Map<string, string | null>()
+    for (const clip of clips) {
+      map.set(clip.id, clip.parentId ?? null)
+    }
+    return map
+  }, [clips])
 
-  let cursor: string | null = id
-  while (cursor) {
-    if (hiddenMap[cursor]) return false
-    cursor = getParentId(cursor)
-  }
-  return true
+  return useMemo(() => {
+    let cursor: string | null = id
+    while (cursor) {
+      if (hiddenMap[cursor]) return false
+      cursor = parentMap.get(cursor) ?? null
+    }
+    return true
+  }, [hiddenMap, id, parentMap])
 }
