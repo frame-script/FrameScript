@@ -4,7 +4,14 @@ import { PROJECT_SETTINGS } from "../../../project/project";
 import { useCurrentFrame } from "../frame";
 import { useClipActive, useClipStart, useProvideClipDuration } from "../clip";
 import { createManualPromise, type ManualPromise } from "../../util/promise";
-import { normalizeVideo, video_fps, video_length, type Video, type VideoResolvedTrimProps } from "./video";
+import {
+  normalizeVideo,
+  video_fps,
+  video_frame_count,
+  video_length,
+  type Video,
+  type VideoResolvedTrimProps,
+} from "./video";
 
 // Track pending frame draws so headless callers can await completion.
 const pendingFramePromises = new Set<Promise<void>>();
@@ -60,6 +67,7 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
   const reconnectTimerRef = useRef<number | null>(null);
   const resolved = useMemo(() => normalizeVideo(video), [video]);
   const fps = useMemo(() => video_fps(resolved), [resolved]);
+  const sourceFrameCount = useMemo(() => video_frame_count(resolved), [resolved]);
   const rawDurationFrames = useMemo(() => video_length(resolved), [resolved]);
   const durationFrames = Math.max(0, rawDurationFrames - trimStartFrames - trimEndFrames);
   useProvideClipDuration(durationFrames);
@@ -81,6 +89,10 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        // Hidden clips report 0x0; keep previous size to avoid requesting 1x1 frames.
+        return;
+      }
       const dpr = window.devicePixelRatio || 1;
       const nextWidth = Math.max(1, Math.round(rect.width * dpr));
       const nextHeight = Math.max(1, Math.round(rect.height * dpr));
@@ -139,8 +151,8 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
     const req = {
       video: resolved.path,
-      width: canvasSizeRef.current.width,
-      height: canvasSizeRef.current.height,
+      width: canvasSizeRef.current.width > 1 ? canvasSizeRef.current.width : PROJECT_SETTINGS.width,
+      height: canvasSizeRef.current.height > 1 ? canvasSizeRef.current.height : PROJECT_SETTINGS.height,
       frame: playbackFrame,
     };
 
@@ -154,15 +166,27 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       const clampedFrame =
         maxFrame !== undefined ? Math.min(Math.max(frame, 0), maxFrame) : Math.max(frame, 0);
 
-      const sourceStart = trimStartFrames;
-      const sourceEnd = Math.max(sourceStart, rawDurationFrames - trimEndFrames - 1);
+      const sourceStart =
+        fps > 0
+          ? Math.floor((trimStartFrames * fps) / PROJECT_SETTINGS.fps)
+          : trimStartFrames;
+      const sourceTrimEnd =
+        fps > 0
+          ? Math.floor((trimEndFrames * fps) / PROJECT_SETTINGS.fps)
+          : trimEndFrames;
+      const estimatedSourceFrames =
+        fps > 0
+          ? Math.max(0, Math.round((rawDurationFrames * fps) / PROJECT_SETTINGS.fps))
+          : rawDurationFrames;
+      const sourceTotalFrames = sourceFrameCount > 0 ? sourceFrameCount : estimatedSourceFrames;
+      const sourceEnd = Math.max(sourceStart, sourceTotalFrames - sourceTrimEnd - 1);
 
       requestedFrameRef.current = clampedFrame;
 
       const playbackFrameRaw =
         fps > 0
-          ? Math.round(((clampedFrame + sourceStart) * fps) / PROJECT_SETTINGS.fps)
-          : clampedFrame + sourceStart;
+          ? Math.floor(((clampedFrame + trimStartFrames) * fps) / PROJECT_SETTINGS.fps)
+          : clampedFrame + trimStartFrames;
       const playbackFrame = Math.min(Math.max(playbackFrameRaw, sourceStart), sourceEnd);
 
       const alreadyDrawn =
@@ -182,7 +206,15 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
 
       sendPlaybackFrameRequest(playbackFrame);
     },
-    [durationFrames, fps, rawDurationFrames, sendPlaybackFrameRequest, trimEndFrames, trimStartFrames],
+    [
+      durationFrames,
+      fps,
+      rawDurationFrames,
+      sendPlaybackFrameRequest,
+      sourceFrameCount,
+      trimEndFrames,
+      trimStartFrames,
+    ],
   );
 
   useEffect(() => {
@@ -271,10 +303,8 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
           pending?.projectFrame ??
           Math.max(
             0,
-            Math.round(
-              ((frameIndex - trimStartFrames) * PROJECT_SETTINGS.fps) /
-              Math.max(1, fps || PROJECT_SETTINGS.fps),
-            ),
+            Math.round((frameIndex * PROJECT_SETTINGS.fps) / Math.max(1, fps || PROJECT_SETTINGS.fps)) -
+              trimStartFrames,
           );
 
         if (pending) {
@@ -311,6 +341,13 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
   }, [rejectPendingRequests, resolveWaiters, sendFrameRequest, sendPlaybackFrameRequest, visible]);
 
   useEffect(() => {
+    if (visible) return;
+    // Re-entering a clip must not reuse stale last-drawn markers.
+    lastDrawnFrameRef.current = null;
+    requestedFrameRef.current = null;
+  }, [visible]);
+
+  useEffect(() => {
     if (!visible) return;
     sendFrameRequest(currentFrame);
   }, [currentFrame, sendFrameRequest, visible]);
@@ -323,11 +360,15 @@ export const VideoCanvasRender = ({ video, style, trimStartFrames = 0, trimEndFr
       }
       const startOffset = clipStart ?? 0
       const relativeFrame = frame - startOffset
-      if (relativeFrame < 0 || durationFrames <= 0) return
+      if (relativeFrame < 0 || durationFrames <= 0) {
+        return
+      }
       const maxFrame = Math.max(0, durationFrames - 1)
       const clampedFrame = Math.min(Math.max(relativeFrame, 0), maxFrame)
       const lastDrawn = lastDrawnFrameRef.current
-      if (lastDrawn != null && lastDrawn >= clampedFrame) return
+      if (lastDrawn != null && lastDrawn >= clampedFrame) {
+        return
+      }
       await createOrGetFramePromise(clampedFrame).promise
     }
 

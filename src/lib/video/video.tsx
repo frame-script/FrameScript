@@ -70,6 +70,7 @@ const buildMetaUrl = (video: Video) => {
 type VideoMeta = {
   duration_ms: number
   fps: number
+  frame_count: number
   width: number
   height: number
 }
@@ -81,7 +82,7 @@ const fetchVideoMetaSync = (video: Video): VideoMeta => {
     return videoMetaCache.get(video.path)!
   }
 
-  const fallback: VideoMeta = { duration_ms: 0, fps: 0, width: 0, height: 0 }
+  const fallback: VideoMeta = { duration_ms: 0, fps: 0, frame_count: 0, width: 0, height: 0 }
 
   try {
     const xhr = new XMLHttpRequest()
@@ -93,6 +94,8 @@ const fetchVideoMetaSync = (video: Video): VideoMeta => {
       const meta: VideoMeta = {
         duration_ms: typeof payload.duration_ms === "number" ? Math.max(0, payload.duration_ms) : 0,
         fps: typeof payload.fps === "number" ? payload.fps : 0,
+        frame_count:
+          typeof payload.frame_count === "number" ? Math.max(0, Math.round(payload.frame_count)) : 0,
         width: typeof payload.width === "number" ? Math.max(0, Math.round(payload.width)) : 0,
         height: typeof payload.height === "number" ? Math.max(0, Math.round(payload.height)) : 0,
       }
@@ -120,6 +123,9 @@ const fetchVideoMetaSync = (video: Video): VideoMeta => {
 export const video_length = (video: Video | string): number => {
   const resolved = normalizeVideo(video)
   const meta = fetchVideoMetaSync(resolved)
+  if (meta.frame_count > 0 && meta.fps > 0) {
+    return Math.round((meta.frame_count * PROJECT_SETTINGS.fps) / meta.fps)
+  }
   const seconds = meta.duration_ms > 0 ? meta.duration_ms / 1000 : 0
   return Math.round(seconds * PROJECT_SETTINGS.fps)
 }
@@ -138,6 +144,12 @@ export const video_fps = (video: Video | string): number => {
   const resolved = normalizeVideo(video)
   const meta = fetchVideoMetaSync(resolved)
   return meta.fps
+}
+
+export const video_frame_count = (video: Video | string): number => {
+  const resolved = normalizeVideo(video)
+  const meta = fetchVideoMetaSync(resolved)
+  return meta.frame_count
 }
 
 export type VideoDimensions = {

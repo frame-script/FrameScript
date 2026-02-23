@@ -16,6 +16,7 @@ struct FfprobeStream {
     duration: Option<String>,
     avg_frame_rate: Option<String>,
     r_frame_rate: Option<String>,
+    nb_read_frames: Option<String>,
     nb_frames: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
@@ -27,7 +28,12 @@ struct FfprobeOutput {
     streams: Option<Vec<FfprobeStream>>,
 }
 
-fn run_ffprobe(path: &str, select_streams: Option<&str>, entries: &str) -> Result<FfprobeOutput, String> {
+fn run_ffprobe(
+    path: &str,
+    select_streams: Option<&str>,
+    entries: &str,
+    count_frames: bool,
+) -> Result<FfprobeOutput, String> {
     let ffprobe = bin::ffprobe_path()?;
     let mut cmd = Command::new(ffprobe);
     cmd.arg("-v")
@@ -36,6 +42,9 @@ fn run_ffprobe(path: &str, select_streams: Option<&str>, entries: &str) -> Resul
         .arg("json")
         .arg("-show_entries")
         .arg(entries);
+    if count_frames {
+        cmd.arg("-count_frames");
+    }
     if let Some(select_streams) = select_streams {
         cmd.arg("-select_streams").arg(select_streams);
     }
@@ -95,7 +104,7 @@ fn parse_ratio(value: Option<&str>) -> Option<f64> {
 
 /// Return video duration in milliseconds using ffprobe metadata.
 pub fn probe_video_duration_ms(path: &str) -> Result<u64, String> {
-    let output = run_ffprobe(path, Some("v:0"), "format=duration:stream=duration")?;
+    let output = run_ffprobe(path, Some("v:0"), "format=duration:stream=duration", false)?;
     let stream_duration = output
         .streams
         .as_ref()
@@ -111,12 +120,27 @@ pub fn probe_video_duration_ms(path: &str) -> Result<u64, String> {
 }
 
 pub fn probe_video_frames(path: &str) -> Result<u64, String> {
-    let output = run_ffprobe(path, Some("v:0"), "stream=nb_frames,duration,avg_frame_rate")?;
+    let output = run_ffprobe(
+        path,
+        Some("v:0"),
+        "stream=nb_read_frames,nb_frames,duration,avg_frame_rate",
+        true,
+    )?;
     let stream = output
         .streams
         .as_ref()
         .and_then(|streams| streams.first())
         .ok_or_else(|| "failed to read frames".to_string())?;
+
+    if let Some(frames) = stream
+        .nb_read_frames
+        .as_deref()
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        if frames > 0 {
+            return Ok(frames);
+        }
+    }
 
     if let Some(frames) = stream.nb_frames.as_deref().and_then(|value| value.parse::<u64>().ok()) {
         if frames > 0 {
@@ -134,7 +158,7 @@ pub fn probe_video_frames(path: &str) -> Result<u64, String> {
 }
 
 pub fn probe_video_fps(path: &str) -> Result<f64, String> {
-    let output = run_ffprobe(path, Some("v:0"), "stream=avg_frame_rate,r_frame_rate")?;
+    let output = run_ffprobe(path, Some("v:0"), "stream=avg_frame_rate,r_frame_rate", false)?;
     let stream = output
         .streams
         .as_ref()
@@ -149,7 +173,7 @@ pub fn probe_video_fps(path: &str) -> Result<f64, String> {
 }
 
 pub fn probe_video_dimensions(path: &str) -> Result<(u32, u32), String> {
-    let output = run_ffprobe(path, Some("v:0"), "stream=width,height")?;
+    let output = run_ffprobe(path, Some("v:0"), "stream=width,height", false)?;
     let stream = output
         .streams
         .as_ref()
@@ -170,7 +194,7 @@ pub fn probe_audio_duration_ms(path: &str) -> Result<u64, String> {
     // Some containers report bogus global duration; prefer audio stream duration when available.
     const MAX_REASONABLE_DURATION_MS: u64 = 1000 * 60 * 60 * 24 * 7; // 7 days
 
-    let output = run_ffprobe(path, Some("a:0"), "format=duration:stream=duration")?;
+    let output = run_ffprobe(path, Some("a:0"), "format=duration:stream=duration", false)?;
     let stream_duration = output
         .streams
         .as_ref()

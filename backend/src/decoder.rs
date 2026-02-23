@@ -622,6 +622,28 @@ async fn complete_pending_with_fallback(inner: Arc<Inner>) {
                 continue;
             }
 
+            let previous_frame = {
+                let frames = inner.frames.read().unwrap();
+                let mut probe = frame_index;
+                let mut found: Option<(u32, Arc<Vec<u8>>)> = None;
+                while let Some(prev) = probe.checked_sub(1) {
+                    probe = prev;
+                    let Some(prev_future) = frames.get(&probe) else {
+                        continue;
+                    };
+                    if let Some(prev_frame) = prev_future.get_now() {
+                        found = Some((probe, prev_frame));
+                        break;
+                    }
+                }
+                found
+            };
+            if let Some((_, previous_frame)) = previous_frame {
+                ENTIRE_CACHE_SIZE.fetch_add(previous_frame.len(), Ordering::Relaxed);
+                future.complete(previous_frame).await;
+                continue;
+            }
+
             let frame = hw_decoder::extract_frame_hw_rgba(
                 &inner.path,
                 frame_index as _,

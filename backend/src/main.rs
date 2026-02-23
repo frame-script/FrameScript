@@ -3,7 +3,12 @@ pub mod ffmpeg;
 pub mod future;
 pub mod util;
 
-use std::{net::SocketAddr, ops::Bound, sync::atomic::AtomicBool, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    net::SocketAddr,
+    ops::Bound,
+    sync::atomic::AtomicBool,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use axum::{
     Router,
@@ -28,7 +33,10 @@ use tracing::{error, info};
 
 use crate::{
     decoder::{DECODER, DecoderKey, set_max_cache_size},
-    ffmpeg::{probe_audio_duration_ms, probe_video_dimensions, probe_video_duration_ms, probe_video_fps},
+    ffmpeg::{
+        probe_audio_duration_ms, probe_video_dimensions, probe_video_duration_ms, probe_video_fps,
+        probe_video_frames,
+    },
     util::resolve_path_to_string,
 };
 
@@ -463,6 +471,7 @@ async fn healthz_handler() -> impl IntoResponse {
 struct VideoMetadataResponse {
     duration_ms: u64,
     fps: f64,
+    frame_count: u64,
     width: u32,
     height: u32,
 }
@@ -476,10 +485,18 @@ async fn video_meta_handler(
         probe_video_duration_ms(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let fps = probe_video_fps(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let frame_count = probe_video_frames(&resolved_path).unwrap_or(0);
     let (width, height) =
         probe_video_dimensions(&resolved_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let mut resp = Json(VideoMetadataResponse { duration_ms, fps, width, height }).into_response();
+    let mut resp = Json(VideoMetadataResponse {
+        duration_ms,
+        fps,
+        frame_count,
+        width,
+        height,
+    })
+    .into_response();
     apply_cors(resp.headers_mut());
     Ok(resp)
 }
