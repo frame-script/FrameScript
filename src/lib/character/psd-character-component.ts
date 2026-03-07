@@ -15,13 +15,13 @@ export const Block = defineDSL<{
   children: React.ReactNode
 }>("Block")
 
-export const Animation = defineDSL<{
+export const DeclareAnimation = defineDSL<{
   f: (ctx: any, variable: Record<string, Variable<any>>) => Promise<void>
   children?: React.ReactNode
-}>("Animation")
+}>("DeclareAnimation")
 
 export const Voice = defineDSL<{
-  src: string
+  voice: string
   volume?: number
   children?: React.ReactNode
 }>("Voice")
