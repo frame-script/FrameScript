@@ -48,7 +48,7 @@ export interface DeclareVariableNode {
   type: "DeclareVariable"
   variableName: string
   initValue: any
-  children: DeclareVariableChild[]
+  children: DeclareVariableChild
 }
 
 export interface BlockNode {
