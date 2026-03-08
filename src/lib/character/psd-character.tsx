@@ -414,7 +414,7 @@ const DeclareAnimationRuntime = ({
 
   const frame = useCurrentFrame()
   useEffect(() => {
-    update(options)
+    update(options.current)
   }, [frame])
 
   return (
