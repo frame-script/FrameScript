@@ -33,6 +33,7 @@ export const PsdCharacter = ({
   const [myPsd, setPsd] = useState<Psd | undefined>(undefined)
   const [ast, setAst] = useState<CharacterNode | undefined>(undefined)
 
+  // オプションをレイヤーごとに管理する
   const registry = useRef(new Map<string, PsdOptions>())
   const order = useRef<string[]>([])
 
@@ -155,6 +156,7 @@ const MotionSequenceRuntime = ({
       return () => unregister()
   }, [])
 
+  // 直列のため同じregisterを使う
   const curRegister: OptionRegister = useCallback(() => {
     return {update, getter, unregister: () => {}}
   }, [])

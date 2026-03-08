@@ -48,6 +48,7 @@ export type LipSyncProps = {
   data: LipSyncData
 }
 
+// psdに対応する辞書を用いてあいうえお口パクするコンポーネントを返す
 export const createLipSync = (mouthOptions: MouthOptions) => {
   return ({ data }: LipSyncProps) => {
     return <Motion motion={(_v, frames) => {
@@ -112,13 +113,14 @@ const lipSyncValueToMouthShape = (value: string): MouthShape => {
 }
 
 // blink --------------------------------
-//
+
 export type BlinkData = HasKey<"blinkCues", {start: number, end: number, value: string}[]>
 
 export type BlinkProps = {
   data: BlinkData
 }
 
+// psdに対応する辞書を用いて目パチするコンポーネントを返す
 export const createBlink = (eyeOptions: EyeOptions) => {
   return ({ data }: BlinkProps) => {
     return <Motion motion={(_v, frames) => {
