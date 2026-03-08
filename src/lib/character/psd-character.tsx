@@ -60,8 +60,8 @@ const normalizePsdPath = (psd: PsdPath | string): PsdPath => {
   return psd
 }
 
-const buildPsdUrl = (path: PsdPath) => {
+const buildPsdUrl = (pad: PsdPath) => {
   const url = new URL("http://localhost:3000/file")
-  url.searchParams.set("path", path)
+  url.searchParams.set("path", pad.path)
   return url.toString()
 }
