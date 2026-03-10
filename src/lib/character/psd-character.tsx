@@ -44,7 +44,7 @@ export const PsdCharacter = ({
   useEffect(() => {
     fetchPsd(normalizePsdPath(psd)).then(p => setPsd(p))
     setAst(parsePsdCharacter(children))
-  }, [])
+  }, [psd])
 
   // 毎フレーム実行
   const frame = useCurrentFrame()
@@ -149,7 +149,10 @@ const MotionSequenceRuntime = ({
   variables,
   register
 }: MotionSequenceRuntimeProps) => {
-  const reg = useRef(register())
+  const reg = useRef<ReturnType<OptionRegister>>(undefined)
+  if (!reg.current) {
+      reg.current = register()
+  }
   const {update, getter, unregister} = reg.current
 
   useEffect(() => {
@@ -245,7 +248,10 @@ const BlockRuntime = ({
   variables,
   register
 }: BlockRuntimeProps) => {
-  const reg = useRef(register())
+  const reg = useRef<ReturnType<OptionRegister>>(undefined)
+  if (!reg.current) {
+      reg.current = register()
+  }
   const {update, getter: superGetter, unregister} = reg.current
 
   useEffect(() => {
@@ -363,7 +369,10 @@ const DeclareAnimationRuntime = ({
 
   const curVariables = {...variables, ...initializingVariables}
 
-  const reg = useRef(register())
+  const reg = useRef<ReturnType<OptionRegister>>(undefined)
+  if (!reg.current) {
+      reg.current = register()
+  }
   const {update, getter: superGetter, unregister} = reg.current
 
   useEffect(() => {
@@ -499,7 +508,10 @@ const MotionRuntime = ({
   variables,
   register
 }: MotionRuntimeProps) => {
-  const reg = useRef(register())
+  const reg = useRef<ReturnType<OptionRegister>>(undefined)
+  if (!reg.current) {
+      reg.current = register()
+  }
   const { update, getter, unregister } = reg.current
 
   useEffect(() => {
@@ -511,7 +523,7 @@ const MotionRuntime = ({
 
   useEffect(() => {
     update(ast.motion(variables, [localTime, globalTime]))
-  }, [localTime, globalTime])
+  }, [localTime])
 
   return null
 }
