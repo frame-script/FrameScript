@@ -1,4 +1,5 @@
 import type { Variable } from "../animation"
+import type { Trim } from "../trim"
 import { defineDSL } from "./defineDSL"
 import { PsdCharacterElement } from "./ast"
 
@@ -28,7 +29,11 @@ export const DeclareAnimation = defineDSL<{
 // 音声を配置する（ファイルのみ）
 export const Voice = defineDSL<{
   voice: string
+  trim?: Trim
+  fadeInFrames?: number
+  fadeOutFrames?: number
   volume?: number
+  showWaveform?: boolean
   children?: React.ReactNode
 }>(PsdCharacterElement.Voice)
 

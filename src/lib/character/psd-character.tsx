@@ -494,7 +494,11 @@ const VoiceRuntime = ({
   return (
     <Sound
       sound={ast.voice}
+      trim={ast.trim}
+      fadeInFrames={ast.fadeInFrames}
+      fadeOutFrames={ast.fadeOutFrames}
       volume={volume}
+      showWaveform={ast.showWaveform}
     />
   )
 }

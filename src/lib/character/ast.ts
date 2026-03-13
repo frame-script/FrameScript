@@ -1,4 +1,5 @@
 import type { Variable } from "../animation"
+import type { Trim } from "../trim"
 
 export const PsdCharacterElement = {
     Character: "Character",
@@ -76,7 +77,11 @@ export interface DeclareAnimationNode {
 export interface VoiceNode {
   type: typeof PsdCharacterElement.Voice
   voice: string
+  trim?: Trim
+  fadeInFrames?: number
+  fadeOutFrames?: number
   volume: undefined | number | ((variables: Record<string, Variable<any>>, frames: number[]) => number)
+  showWaveform?: boolean
   children: VoiceChild[]
 }
 
