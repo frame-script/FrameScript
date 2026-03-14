@@ -4,10 +4,10 @@ import { PsdCharacterElement as PsdElm, type BlockNode, type CharacterNode, type
 import { readPsd, type Psd } from "ag-psd"
 import { parsePsdCharacter } from "./parser"
 import { renderPsd } from "ag-psd-psdtool"
-import { useAnimation, useVariable, type Variable } from "../animation"
-import { useCurrentFrame, useGlobalCurrentFrame } from "../frame"
-import { Sound } from "../sound/sound"
-import { Clip, ClipSequence } from "../clip"
+import { useAnimation, useVariable, type Variable } from "../../animation"
+import { useCurrentFrame, useGlobalCurrentFrame } from "../../frame"
+import { Sound } from "../../sound/sound"
+import { Clip, ClipSequence } from "../../clip"
 
 type PsdCharacterProps = {
   psd: string

@@ -1,6 +1,6 @@
-import type { Variable } from "../animation"
-import type { Trim } from "../trim"
-import { defineDSL } from "./defineDSL"
+import type { Variable } from "../../animation"
+import type { Trim } from "../../trim"
+import { defineDSL } from "../utils/defineDSL"
 import { PsdCharacterElement } from "./ast"
 
 // 要素を直列化する

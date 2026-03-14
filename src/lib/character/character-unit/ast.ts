@@ -1,5 +1,5 @@
-import type { Variable } from "../animation"
-import type { Trim } from "../trim"
+import type { Variable } from "../../animation"
+import type { Trim } from "../../trim"
 
 export const PsdCharacterElement = {
     Character: "Character",
