@@ -1,12 +1,16 @@
+import type { ReactElement } from "react"
 import { defineDSL } from "../utils/defineDSL"
 import { CharacterManagerElement } from "./ast"
+import type { OneOrMany } from "../utils/util-types"
+
+type ChildrenOf<T> = OneOrMany<ReactElement<T>>
 
 export const DeclareCharacters = defineDSL<{
-  children: React.ReactNode
+  children: ChildrenOf<typeof DeclareCharacter>
 }>(CharacterManagerElement.DeclareCharacters)
 
 export const Senario = defineDSL<{
-  children: React.ReactNode
+  children: ChildrenOf<typeof Chapter>
 }>(CharacterManagerElement.Senario)
 
 export const DeclareCharacter = defineDSL<{

@@ -1,11 +1,13 @@
-import type { ReactNode } from "react"
+import type { ReactElement, ReactNode } from "react"
 import { parseCharacterManager } from "./parser"
 import { PsdCharacter } from "../character-unit"
+import { DeclareCharacters, Senario } from "./character-manager-component"
 import { Clip, ClipSequence } from "../../clip"
+import type { OneOrMany } from "../utils/util-types"
 
 
 type DialogueSenarioProps = {
-  children: ReactNode
+  children: OneOrMany<ReactElement<typeof DeclareCharacters> | ReactElement<typeof Senario>>
 }
 export const DialogueSenario = ({
   children
@@ -29,23 +31,25 @@ export const DialogueSenario = ({
     const speakerMap = new Map(
       chapter.children.map(s => [s.name, s])
     )
-    return characters.map(character => {
-      const speaker = speakerMap.get(character.name)
-      if (speaker) {
-        return (
-          <PsdCharacter key={speaker.name} className={speaker.className} psd={character.psd}>
-            {speaker.children}
-          </PsdCharacter>
-        )
-      } else {
-        return character.waitingState
-      }
-    })
+    return <Clip>
+      {characters.map(character => {
+        const speaker = speakerMap.get(character.name)
+        if (speaker) {
+          return (
+            <PsdCharacter className={speaker.className} psd={character.psd}>
+              {speaker.children}
+            </PsdCharacter>
+          )
+        } else {
+          return character.waitingState
+        }
+      })}
+    </Clip>
   })
 
   return (
     <ClipSequence>
-      {senario.map(chapter => <Clip> {chapter} </Clip>)}
+      {senario}
     </ClipSequence>
   )
 }
