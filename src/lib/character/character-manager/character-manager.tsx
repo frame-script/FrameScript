@@ -5,12 +5,15 @@ import { DeclareCharacters, Senario } from "./character-manager-component"
 import { Clip, ClipSequence } from "../../clip"
 import type { OneOrMany } from "../utils/util-types"
 
+export type ImplicitCharacterPlacement = "front" | "back"
 
 type DialogueSenarioProps = {
+  implicitPlacement: ImplicitCharacterPlacement
   children: OneOrMany<ReactElement<typeof DeclareCharacters> | ReactElement<typeof Senario>>
 }
 
 export const DialogueSenario = ({
+  implicitPlacement = "back",
   children
 }: DialogueSenarioProps) => {
   const ast = parseCharacterManager(children)
@@ -34,20 +37,23 @@ export const DialogueSenario = ({
   const senario = ast.senario.children.map(chapter => {
     const explicitSpeakers = chapter.children.filter(child => child.kind == "speaker").map(s => s.node.name)
     const implicitCharacters = Array.from(characters.entries()).filter(([key, _]) => !explicitSpeakers.includes(key))
-    return <Clip>
-      {chapter.children.map(elm => {
-        if (elm.kind == "speaker") {
-          return (
-            <PsdCharacter key={elm.node.name} className={elm.node.className} psd={characters.get(elm.node.name)?.psd!}>
-              {elm.node.children}
-            </PsdCharacter>
-          )
-        } else {
-          return elm.node
-        }
-      })}
-      {implicitCharacters.map(([_, character]) => character.waitingState)}
-    </Clip>
+
+    const explicits = chapter.children.map(elm => {
+      if (elm.kind == "speaker") {
+        return (
+          <PsdCharacter key={elm.node.name} className={elm.node.className} psd={characters.get(elm.node.name)?.psd!}>
+            {elm.node.children}
+          </PsdCharacter>
+        )
+      } else {
+        return elm.node
+      }
+    })
+    const implicits = implicitCharacters.map(([_, character]) => character.waitingState)
+
+    const merged = mergeImplicitCharacters(implicitPlacement, explicits, implicits)
+
+    return <Clip> {merged} </Clip>
   })
 
   return (
@@ -55,4 +61,15 @@ export const DialogueSenario = ({
       {senario}
     </ClipSequence>
   )
+}
+
+const mergeImplicitCharacters = (implicitPlacement: ImplicitCharacterPlacement, explicits: ReactNode[], implicits: ReactNode[]) => {
+  switch (implicitPlacement) {
+    case "front":
+      return [...explicits, ...implicits]
+    case "back":
+      return [...implicits, ...explicits]
+    default:
+      throw `unknown merge option: {implicitPlacement}`
+  }
 }
