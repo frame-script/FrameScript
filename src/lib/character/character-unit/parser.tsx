@@ -18,7 +18,6 @@ export const parsePsdCharacter = (
 const parsePsdCharacterChildren = (
   children: ReactNode,
 ): CharacterChild[] => {
-  console.log(children)
   const result: CharacterChild[] = []
 
   React.Children.forEach(children, (child) => {

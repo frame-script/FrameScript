@@ -34,7 +34,6 @@ export const PsdCharacter = ({
 }: PsdCharacterProps) => {
   const [myPsd, setPsd] = useState<Psd | undefined>(undefined)
   const [ast, setAst] = useState<CharacterNode | undefined>(undefined)
-  console.log("ast", ast)
 
   // オプションをレイヤーごとに管理する
   const registry = useRef(new Map<string, PsdOptions>())

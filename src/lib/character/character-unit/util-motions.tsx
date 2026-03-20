@@ -1,4 +1,3 @@
-import type { warn } from "console"
 import { framesToSeconds } from "../../audio"
 import { useCurrentFrame } from "../../frame"
 import { Motion } from "./psd-character-component"
