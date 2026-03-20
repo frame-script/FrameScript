@@ -8,7 +8,7 @@ import type { OneOrMany } from "../utils/util-types"
 export type ImplicitCharacterPlacement = "front" | "back"
 
 type DialogueSenarioProps = {
-  implicitPlacement: ImplicitCharacterPlacement
+  implicitPlacement?: ImplicitCharacterPlacement
   children: OneOrMany<ReactElement<typeof DeclareCharacters> | ReactElement<typeof Senario>>
 }
 
