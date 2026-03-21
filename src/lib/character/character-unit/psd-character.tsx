@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 
 import { PsdCharacterElement as PsdElm, type BlockNode, type CharacterNode, type DeclareAnimationNode, type DeclareVariableNode, type MotionNode, type MotionSequenceNode, type VoiceNode } from "./ast"
 import { readPsd, type Psd } from "ag-psd"
@@ -366,7 +366,7 @@ const DeclareAnimationRuntime = ({
 }: DeclareAnimationRuntimeProps) => {
 
   useAnimation(async (ctx) => {
-    ast.f(ctx, initializingVariables)
+    await ast.f(ctx, initializingVariables)
   }, [])
 
   const curVariables = {...variables, ...initializingVariables}

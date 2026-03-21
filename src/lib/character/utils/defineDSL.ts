@@ -5,7 +5,7 @@ export type DslComponent<P = {}> = {
   __dslType: string
 }
 
-export function defineDSL<P>(type: string): DslComponent<P> {
+export const defineDSL = <P>(type: string): DslComponent<P> => {
   const C = ((_: P) => null) as DslComponent<P>
   C.__dslType = type
   return C
