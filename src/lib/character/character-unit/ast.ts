@@ -70,7 +70,7 @@ export interface BlockNode {
 
 export interface DeclareAnimationNode {
   type: typeof PsdCharacterElement.DeclareAnimation
-  f: (ctx: AnimationContext, variable: Record<string, Variable<VariableType>>) => Promise<void>
+  animation: (ctx: AnimationContext, variable: Record<string, Variable<VariableType>>) => Promise<void>
   children: DeclareAnimationChild[]
 }
 

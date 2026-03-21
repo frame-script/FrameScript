@@ -27,7 +27,7 @@ export const Block = defineDSL<{
 
 // 宣言されたVariableをアニメーションとして登録する
 type DeclareAnimationProps<T extends string> = {
-  f: (ctx: AnimationContext, variable: Record<T, Variable<VariableType>>) => Promise<void>
+  animation: (ctx: AnimationContext, variable: Record<T, Variable<VariableType>>) => Promise<void>
   children: React.ReactNode
 }
 export const DeclareAnimation = <T extends string = string>(_: DeclareAnimationProps<T>) => null
@@ -87,7 +87,7 @@ type DeclareVariablesProps<T extends Record<string, VariableType>> = {
 
 export const DeclareVariables = <T extends Record<string, VariableType> = any>(props: DeclareVariablesProps<T>) => {
   let result =
-    <DeclareAnimation f={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
+    <DeclareAnimation animation={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
         {props.children}
     </DeclareAnimation>
 
@@ -111,7 +111,7 @@ type MotionWithVarsProps<S extends Record<string, VariableType>, T extends Recor
 
 export const MotionWithVars = <S extends Record<string, VariableType> = {}, T extends Record<string, VariableType> = Record<string, any>>(props: MotionWithVarsProps<S, T>) => {
   let result =
-    <DeclareAnimation f={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
+    <DeclareAnimation animation={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
       <Motion motion={(variables, frames) => props.motion(typeVariables<S & T>(variables), frames)} />
     </DeclareAnimation>
 

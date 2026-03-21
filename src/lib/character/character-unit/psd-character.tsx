@@ -366,7 +366,7 @@ const DeclareAnimationRuntime = ({
 }: DeclareAnimationRuntimeProps) => {
 
   useAnimation(async (ctx) => {
-    await ast.f(ctx, initializingVariables)
+    await ast.animation(ctx, initializingVariables)
   }, [])
 
   const curVariables = {...variables, ...initializingVariables}

@@ -206,11 +206,11 @@ const parseBlockChildren = (
 const parseDeclareAnimation = (
   self: AnyElement,
 ): DeclareAnimationNode => {
-  const { f, children } = self.props
+  const { animation, children } = self.props
   const body = parseDeclareAnimationChildren(children)
   return {
     type: PsdElm.DeclareAnimation,
-    f,
+    animation: animation,
     children: body,
   }
 }
