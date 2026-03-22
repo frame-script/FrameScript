@@ -24,7 +24,7 @@ export const Senario = defineDSL<{
  * @param idleClassName 非話者であるときのPsdCharacterに付与されるclassName
  * @param speakingClassName 話者であるときのPsdCharacterに付与されるclassName
  * @param name Senario内で使用するキャラクター名
- * @param children 非話者時のキャラクターの状態を定義するPsdCharacterのchildrenと同様
+ * @param children 非話者時のキャラクターの状態を定義する。PsdCharacterのchildrenと同様
  */
 export const DeclareCharacter = defineDSL<{
   idleClassName?: string

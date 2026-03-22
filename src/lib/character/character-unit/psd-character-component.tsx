@@ -3,10 +3,12 @@ import type { Variable, VariableType, AnimationContext } from "../../animation"
 import type { Trim } from "../../trim"
 import { defineDSL } from "../utils/defineDSL"
 import { PsdCharacterElement } from "./ast"
+import type { AudioSegment } from "../../audio-plan"
+import type { WaveformData } from "../../audio-waveform"
 
 /**
- * 子要素を直列化します。
- * Sequenceと同等のはたらきをします。
+ * 子要素を直列化する。
+ * Sequenceと同等のはたらきをする。
  */
 export const MotionSequence = defineDSL<{
   children: React.ReactNode
@@ -55,6 +57,7 @@ DeclareAnimation.__dslType = PsdCharacterElement.DeclareAnimation
  */
 export const Voice = defineDSL<{
   voice: string
+  voiceMotion?: (segment: AudioSegment, waveform: WaveformData, variables: Record<string, Variable<VariableType>>, frames: number[]) => Record<string, any>
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number

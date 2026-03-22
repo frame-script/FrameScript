@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { PsdCharacterElement as PsdElm, type MotionClipNode, type CharacterNode, type DeclareAnimationNode, type DeclareVariableNode, type MotionNode, type MotionSequenceNode, type VoiceNode } from "./ast"
 import { readPsd, type Psd } from "ag-psd"
@@ -8,6 +8,8 @@ import { useAnimation, useVariable, type Variable } from "../../animation"
 import { useCurrentFrame, useGlobalCurrentFrame } from "../../frame"
 import { Sound } from "../../sound/sound"
 import { Clip, ClipSequence } from "../../clip"
+import { useAudioSegments } from "../../audio-plan"
+import { useWaveformBank } from "../../sound/character"
 
 type PsdCharacterProps = {
   psd: string
@@ -493,9 +495,30 @@ const VoiceRuntime = ({
   variables,
   register
 }: VoiceRuntimeProps) => {
-  const local_frame = useCurrentFrame()
-  const global_frame = useGlobalCurrentFrame()
-  const frames = [local_frame, global_frame]
+  const reg = useRef<ReturnType<OptionRegister>>(undefined)
+  if (!reg.current) {
+      reg.current = register()
+  }
+  const { update, getter, unregister } = reg.current
+
+  useEffect(() => {
+    return () => unregister()
+  }, [])
+
+  const localFrame = useCurrentFrame()
+  const globalFrame = useGlobalCurrentFrame()
+  const frames = [localFrame, globalFrame]
+  const audioSegments = useAudioSegments()
+  const audioSegment = useMemo(() => {
+    return audioSegments.filter(seg => seg.source.path == ast.voice).at(0)
+  }, [ast, audioSegments])
+  const waveformData = useWaveformBank([ast.voice])
+
+  useEffect(() => {
+    if (audioSegment && ast.voiceMotion) {
+      update(ast.voiceMotion(audioSegment, waveformData.get(ast.voice) ?? null, variables, frames))
+    }
+  }, [localFrame, audioSegment, waveformData])
   
   const volume =
     typeof ast.volume === "function"

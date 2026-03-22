@@ -1,4 +1,6 @@
 import type { AnimationContext, Variable, VariableType } from "../../animation"
+import type { AudioSegment } from "../../audio-plan"
+import type { WaveformData } from "../../audio-waveform"
 import type { Trim } from "../../trim"
 
 export const PsdCharacterElement = {
@@ -40,9 +42,6 @@ export type DeclareAnimationChild =
   | VoiceNode
   | MotionNode
 
-export type VoiceChild =
-  | MotionNode
-
 
 
 
@@ -77,12 +76,12 @@ export interface DeclareAnimationNode {
 export interface VoiceNode {
   type: typeof PsdCharacterElement.Voice
   voice: string
+  voiceMotion?: (segment: AudioSegment, waveform: WaveformData | null, variables: Record<string, Variable<VariableType>>, frames: number[]) => Record<string, any>
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
   volume: undefined | number | ((variables: Record<string, Variable<VariableType>>, frames: number[]) => number)
   showWaveform?: boolean
-  children: VoiceChild[]
 }
 
 export interface MotionNode {

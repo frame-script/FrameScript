@@ -1,5 +1,5 @@
 import React, { isValidElement, type ReactElement, type ReactNode } from "react"
-import type { MotionClipChild, MotionClipNode, CharacterChild, CharacterNode, DeclareAnimationChild, DeclareAnimationNode, DeclareVariableChild, DeclareVariableNode, MotionNode, MotionSequenceChild, MotionSequenceNode, VoiceChild, VoiceNode } from "./ast"
+import type { MotionClipChild, MotionClipNode, CharacterChild, CharacterNode, DeclareAnimationChild, DeclareAnimationNode, DeclareVariableChild, DeclareVariableNode, MotionNode, MotionSequenceChild, MotionSequenceNode, VoiceNode } from "./ast"
 import { PsdCharacterElement as PsdElm } from "./ast"
 
 type AnyElement = ReactElement<any, any>
@@ -257,46 +257,17 @@ const parseDeclareAnimationChildren = (
 const parseVoice = (
   self: AnyElement,
 ): VoiceNode => {
-  const { voice, trim, fadeInFrames, fadeOutFrames, volume, showWaveform, children } = self.props
-  const body = parseVoiceChildren(children)
+  const { voice, voiceMotion, trim, fadeInFrames, fadeOutFrames, volume, showWaveform } = self.props
   return {
     type: PsdElm.Voice,
     voice,
+    voiceMotion,
     trim,
     fadeInFrames,
     fadeOutFrames,
     volume: volume ?? undefined,
     showWaveform,
-    children: body,
   }
-}
-
-const parseVoiceChildren = (
-  children: ReactNode,
-): VoiceChild[] => {
-  const result: VoiceChild[] = []
-
-  React.Children.forEach(children, (child) => {
-    if (!isValidElement(child)) return
-
-    const type = getDslType(child)
-
-    switch (type) {
-      case PsdElm.Motion:
-        result.push(parseMotion(child))
-        break
-      case "function":
-        const expanded = child.type(child.props)
-        const expandedAst = parseVoiceChildren(expanded)
-        result.push(...expandedAst)
-        break
-
-      default:
-        throw new Error(`Invalid DSL type in ${PsdElm.Voice}: ${type}`)
-    }
-  })
-
-  return result
 }
 
 const parseMotion = (
