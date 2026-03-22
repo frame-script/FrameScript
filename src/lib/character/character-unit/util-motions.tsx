@@ -118,7 +118,7 @@ export const createLipSync = (mouthOptions: MouthOptions) => {
         return {}
       }
 
-      return applyMouthOption(mouthOptions, shape)
+      return applyOption(mouthOptions, shape)
     }} />
   }
 }
@@ -150,6 +150,25 @@ const lipSyncValueToMouthShape = (value: string): MouthShapeVowel => {
 
 // simple lipsync --------------
 
+/**
+ * Psdに対応した音量依存の口パク用のコンポーネントを返す。
+ * @example
+ * const LipSync = createSimpleLipSync({
+ *   kind: "enum" as const,
+ *   options: {
+ *     Mouth: "目・口/口", 
+ *     Default: "あ",
+ *     Open: "あ", 
+ *     Closed: "閉じ", 
+ *   }
+ * })
+ * 
+ * // 略 --------------------
+ *
+ * <PsdCharacter psd={psd}>
+ *   <LipSync voice={voice}/>
+ * </PsdCharacter>
+ */
 type SimpleLipSyncProps = {
   voice: string,
   threshold?: number
@@ -174,7 +193,7 @@ export const createSimpleLipSync = (mouthOptions: SimpleMouthOptions) => {
       voice={voice}
       voiceMotion={(audioSegment, waveform, _, frames) => {
         const amp = resolveSegmentAmplitude(audioSegment, waveform, frames[0], PROJECT_SETTINGS.fps)
-        return amp > threshold ? applyMouthOption(mouthOptions, "Open") : applyMouthOption(mouthOptions, "Closed")
+        return amp > threshold ? applyOption(mouthOptions, "Open") : applyOption(mouthOptions, "Closed")
       }}
       trim={trim}
       fadeInFrames={fadeInFrames}
@@ -185,29 +204,6 @@ export const createSimpleLipSync = (mouthOptions: SimpleMouthOptions) => {
   }
 }
 
-function applyMouthOption(mouthOptions: MouthOptions, option: MouthShapeVowel): Record<string, any>;
-function applyMouthOption(mouthOptions: SimpleMouthOptions, option: MouthShape2): Record<string, any>;
-function applyMouthOption(mouthOptions: MouthOptions | SimpleMouthOptions, option: MouthShapeVowel | MouthShape2): Record<string, any> {
-  if (!(option in mouthOptions.options)) return {}
-  const opt = option as keyof typeof mouthOptions.options
-  if (mouthOptions.kind == "enum") {
-    return {
-      [mouthOptions.options.Mouth]: mouthOptions.options[opt]
-    }
-  }
-
-  if (option == mouthOptions.options.Default) {
-    return {
-      [mouthOptions.options.Default]: true
-    }
-  } else {
-    return {
-      [mouthOptions.options.Default]: false,
-      [mouthOptions.options[opt]]: true
-    }
-  }
-
-}
 
 
 // blink --------------------------------
@@ -283,24 +279,7 @@ export const createBlink = (eyeOptions: EyeOptions4) => {
         return {}
       }
 
-
-      if (eyeOptions.kind === "enum") {
-        return {
-          [eyeOptions.options.Eye]: eyeOptions.options[shape]
-        }
-      } else if (eyeOptions.options[shape] == eyeOptions.options.Default) {
-        return {
-          [eyeOptions.options.Default]: true
-        }
-      } else {
-        const opt = {
-          [eyeOptions.options.Default]: false,
-          [eyeOptions.options[shape]]: true
-        }
-
-        return opt
-      }
-
+      return applyOption(eyeOptions, shape)
     }} />
   }
 }
@@ -318,4 +297,41 @@ const BlinkValueToEyeShape = (value: string): EyeShape4 => {
     default:
       return "Open"
   }
+}
+
+
+
+
+function applyOption(optionDict: EyeOptions4, option: EyeShape4): Record<string, any>;
+function applyOption(optionDict: MouthOptions, option: MouthShapeVowel): Record<string, any>;
+function applyOption(optionDict: SimpleMouthOptions, option: MouthShape2): Record<string, any>;
+function applyOption(optionDict: EyeOptions4 | MouthOptions | SimpleMouthOptions, option: EyeShape4 | MouthShapeVowel | MouthShape2): Record<string, any> {
+  if (!(option in optionDict.options)) return {}
+  const opt = option as keyof typeof optionDict.options
+  if (optionDict.kind == "enum") {
+    if ("Mouth" in optionDict.options) {
+      return {
+        [optionDict.options.Mouth]: optionDict.options[opt]
+      }
+    }
+    if ("Eye" in optionDict.options) {
+      return {
+        [optionDict.options.Eye]: optionDict.options[opt]
+      }
+    }
+
+    throw "unknown type dict"
+  }
+
+  if (option == optionDict.options.Default) {
+    return {
+      [optionDict.options.Default]: true
+    }
+  } else {
+    return {
+      [optionDict.options.Default]: false,
+      [optionDict.options[opt]]: true
+    }
+  }
+
 }
