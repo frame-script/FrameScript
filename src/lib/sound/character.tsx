@@ -20,12 +20,12 @@ export type CharacterProps = {
   alt?: string
 }
 
-const DEFAULT_THRESHOLD = 0.1
+export const DEFAULT_THRESHOLD = 0.1
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value))
 
-const useWaveformBank = (paths: string[]) => {
+export const useWaveformBank = (paths: string[]) => {
   const [bank, setBank] = useState<Map<string, WaveformData | null>>(new Map())
 
   const { key, list } = useMemo(() => {
@@ -54,7 +54,7 @@ const useWaveformBank = (paths: string[]) => {
   return bank
 }
 
-const resolveSegmentAmplitude = (
+export const resolveSegmentAmplitude = (
   segment: AudioSegment,
   waveform: WaveformData | null,
   currentFrame: number,
