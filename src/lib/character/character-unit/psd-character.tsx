@@ -22,6 +22,16 @@ type PsdPath = {
 }
 
 type PsdOptions = Record<string, any>
+
+/**
+ * Option register system for PSD rendering.
+ * Each runtime node registers its own partial options,
+ * which are later merged into a single PSD option object.
+ *
+ * PSD描画のためのオプション登録システム。
+ * 各ノードが部分的なオプションを登録し、
+ * 最終的にそれらをマージして1つのオプションにする。
+ */
 type OptionRegister = () => {
   update: (opt: Record<string, any>) => void
   getter: () => Record<string, any>
@@ -30,11 +40,24 @@ type OptionRegister = () => {
 
 
 /**
- * 音声と同期したPsdを利用するアニメーションを作成する。
- * canvas上にpsdを表示する。
- * @param psd 利用するpsdのパス
- * @param className 返すcanvasに登録するclassName
- * @param children 専用コンポーネントを配置し、アニメーションを作成する。内部でフックは使えない。
+ * Create an animation system using PSD synchronized with audio.
+ * Renders the PSD onto a canvas.
+ *
+ * Important:
+ * Hooks cannot be used inside DSL children.
+ *
+ * 音声と同期したPSDアニメーションを構築するコンポーネント。
+ * canvas上にPSDを描画する。
+ *
+ * 注意:
+ * DSL内部ではReactフックは使用不可
+ *
+ * @example
+ * ```typescript 
+ * <PsdCharacter psd="../assets/character.psd" className="character">
+ *   <Voice voice="voice.wav"/>
+ * </PsdCharacter>
+ * ```
  */
 export const PsdCharacter = ({
   psd,
@@ -44,20 +67,45 @@ export const PsdCharacter = ({
   const [myPsd, setPsd] = useState<Psd | undefined>(undefined)
   const [ast, setAst] = useState<CharacterNode | undefined>(undefined)
 
-  // オプションをレイヤーごとに管理する
+  /**
+   * Registry storing per-node options.
+   * Key = node id, Value = partial PSD options.
+   *
+   * ノードごとのオプションを保持するレジストリ
+   */
   const registry = useRef(new Map<string, PsdOptions>())
+
+  /**
+   * Order of registration (important for layering / precedence).
+   *
+   * 登録順序（レイヤー優先度に影響）
+   */
   const order = useRef<string[]>([])
 
+  /**
+   * Final merged options used for rendering.
+   *
+   * 描画に使われる最終的なオプション
+   */
   const options = useRef<PsdOptions>({})
 
   const canvas = useRef<HTMLCanvasElement>(null)
 
+  /**
+   * Load PSD and parse DSL into AST.
+   *
+   * PSDのロードとDSLのAST変換
+   */
   useEffect(() => {
     fetchPsd(normalizePsdPath(psd)).then(p => setPsd(p))
     setAst(parsePsdCharacter(children))
   }, [psd])
 
-  // 毎フレーム実行
+  /**
+   * Render PSD every frame.
+   *
+   * 毎フレームPSDを描画
+   */
   const frame = useCurrentFrame()
   useEffect(() => {
     if (typeof myPsd !== "undefined" && canvas.current) {
@@ -65,13 +113,22 @@ export const PsdCharacter = ({
     }
   }, [frame, myPsd])
 
-  // registryをmergeしてoptionsを変更
+  /**
+   * Merge all registered options.
+   *
+   * 登録されたオプションをマージ
+   */
   const recompute = useCallback(() => {
     const merged = Object.assign({}, ...registry.current.values())
     options.current = merged
   }, [])
 
-  // registerを分配し、registryに記録
+  /**
+   * Create a new option registration slot.
+   * Each node uses this to contribute rendering options.
+   *
+   * 各ノードがオプションを登録するためのスロットを作成
+   */
   const register = useCallback(() => {
     const id = crypto.randomUUID()
 
@@ -89,13 +146,16 @@ export const PsdCharacter = ({
       recompute()
     }
 
+    /**
+     * Get accumulated options before this node.
+     * Used for layered evaluation.
+     *
+     * 自分より前に登録されたオプションを取得
+     */
     const getter = () => {
       const index = order.current.indexOf(id)
-
       const prevIds = order.current.slice(0, index)
-
       const prevOptions = prevIds.map(i => registry.current.get(i) ?? {})
-
       return Object.assign({}, ...prevOptions)
     }
 
@@ -106,41 +166,22 @@ export const PsdCharacter = ({
     }
   }, [])
 
-
   return (
     <>
       <canvas className={className} ref={canvas} />
+
+      {/* Execute AST nodes */}
+      {/* ASTノードを実行 */}
       {ast?.children.map((child, i) => {
         switch (child.type) {
           case PsdElm.MotionSequence:
-            return <MotionSequenceRuntime
-              key={i}
-              ast={child}
-              variables={{}}
-              register={register}
-            />
+            return <MotionSequenceRuntime key={i} ast={child} variables={{}} register={register} />
           case PsdElm.DeclareVariable:
-            return <DeclareVariableRuntime
-              key={i}
-              ast={child}
-              variables={{}}
-              initializingVariables={{}}
-              register={register}
-            />
+            return <DeclareVariableRuntime key={i} ast={child} variables={{}} initializingVariables={{}} register={register} />
           case PsdElm.Voice:
-            return <VoiceRuntime
-              key={i}
-              ast={child}
-              variables={{}}
-              register={register}
-            />
+            return <VoiceRuntime key={i} ast={child} variables={{}} register={register} />
           case PsdElm.Motion:
-            return <MotionRuntime
-              key={i}
-              ast={child}
-              variables={{}}
-              register={register}
-            />
+            return <MotionRuntime key={i} ast={child} variables={{}} register={register} />
           default:
             return null
         }
