@@ -1,5 +1,5 @@
 import React, { isValidElement, type ReactElement, type ReactNode } from "react"
-import type { CharacterManagerNode,  DeclareCharactersNode,  SenarioNode,  DeclareCharacterNode,  ChapterNode,  SpeakerNode, ChapterChild } from "./ast"
+import type { CharacterManagerNode,  DeclareCharactersNode,  ScenarioNode,  DeclareCharacterNode,  ChapterNode,  SpeakerNode, ChapterChild } from "./ast"
 import { CharacterManagerElement as ManagerElm} from "./ast"
 import { Motion } from "../character-unit"
 
@@ -12,7 +12,7 @@ export const parseCharacterManager = (
 ): CharacterManagerNode => {
   const childrenArray = React.Children.toArray(children)
   if (childrenArray.length != 2) {
-    throw "CharacterManager need DeclareCharacters and Senario."
+    throw "CharacterManager need DeclareCharacters and Scenario."
   }
 
   if (!isValidElement(childrenArray[0]) || !isValidElement(childrenArray[1])) {
@@ -20,12 +20,12 @@ export const parseCharacterManager = (
   }
 
   const characters = parseDeclareCharacters(childrenArray[0])
-  const senario = parseSenario(childrenArray[1])
+  const scenario = parseScenario(childrenArray[1])
 
   return {
     type: ManagerElm.CharacterManager,
     characters: characters,
-    senario: senario,
+    scenario: scenario,
   }
 }
 
@@ -56,18 +56,18 @@ const parseDeclareCharactersChildren = (
 
 }
 
-const parseSenario = (
+const parseScenario = (
   self: AnyElement
-): SenarioNode => {
+): ScenarioNode => {
   const { children } = self.props
-  const body = parseSenarioChildren(children)
+  const body = parseScenarioChildren(children)
   return {
-    type: ManagerElm.Senario,
+    type: ManagerElm.Scenario,
     children: body,
   }
 }
 
-const parseSenarioChildren = (
+const parseScenarioChildren = (
   children: ReactNode 
 ): ChapterNode[] => {
   return React.Children.map(children, (child) => {

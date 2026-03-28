@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 export const CharacterManagerElement = {
   CharacterManager: "CharacterManager",
   DeclareCharacters: "DeclareCharacters",
-  Senario: "Senario",
+  Scenario: "Scenario",
   DeclareCharacter: "DeclareCharacter",
   Chapter: "Chapter",
   Speaker: "Speaker",
@@ -21,7 +21,7 @@ export type ChapterChild =
 export interface CharacterManagerNode {
   type: typeof CharacterManagerElement.CharacterManager
   characters: DeclareCharactersNode
-  senario: SenarioNode
+  scenario: ScenarioNode
 }
 
 export interface DeclareCharactersNode {
@@ -29,8 +29,8 @@ export interface DeclareCharactersNode {
   children: DeclareCharacterNode[]
 }
 
-export interface SenarioNode {
-  type: typeof CharacterManagerElement.Senario
+export interface ScenarioNode {
+  type: typeof CharacterManagerElement.Scenario
   children: ChapterNode[]
 }
 

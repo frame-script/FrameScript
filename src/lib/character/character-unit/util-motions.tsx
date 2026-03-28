@@ -8,12 +8,23 @@ import type { Trim } from "../../trim"
 // 型定義（PSDパーツの指定方法）
 // ================================
 
+/**
+ * Defines basic options for controlling eye and mouth animations.
+ * Used to configure how PSD layers are switched during animation.
+ * 
+ * 目と口のアニメーション制御に使用する基本設定。
+ * PSDのレイヤー切り替え方法を定義するために使う。
+ */
 export type BasicPsdOptions = {
   eye: EyeOptions4
   mouth: MouthOptions
 }
 
-// enum型 or bool型（レイヤーON/OFF）のどちらでも扱えるようにする
+/**
+ * Supports either enum-based switching or boolean layer toggling.
+ * 
+ * enum形式（1つ選択）またはbool形式（ON/OFF切り替え）のどちらでも扱えるようにする
+ */
 export type EyeOptions4 =
   | { kind: "enum"; options: EyeEnum<EyeShape4> }
   | { kind: "bool"; options: EyeBool<EyeShape4> }
@@ -30,8 +41,11 @@ export type SimpleMouthOptions =
 type EyeShape4 = "Open" | "HalfOpen" | "HalfClosed" | "Closed"
 
 /**
- * enum形式の目指定
- * PSDのパス + 各状態のレイヤー名
+ * Enum-style eye configuration.
+ * Specifies a single active layer from multiple options.
+ * 
+ * enum形式の目指定。
+ * 複数のレイヤーから1つを選択して切り替える。
  */
 export type EyeEnum<T extends string> = {
   Eye: string
@@ -39,7 +53,10 @@ export type EyeEnum<T extends string> = {
 } & Record<T, string>
 
 /**
- * bool形式の目指定（レイヤーON/OFF）
+ * Boolean-style eye configuration.
+ * Turns layers on/off individually.
+ * 
+ * bool形式の目指定（レイヤーON/OFF制御）
  */
 export type EyeBool<T extends string> = {
   Default: string
@@ -50,6 +67,8 @@ type MouthShapeVowel = "A" | "I" | "U" | "E" | "O" | "X"
 type MouthShape2 = "Open" | "Closed"
 
 /**
+ * Enum-style mouth configuration.
+ * 
  * enum形式の口指定
  */
 export type MouthEnum<T extends string> = {
@@ -58,13 +77,19 @@ export type MouthEnum<T extends string> = {
 } & Record<T, string>
 
 /**
+ * Boolean-style mouth configuration.
+ * 
  * bool形式の口指定
  */
 export type MouthBool<T extends string> = {
   Default: string
 } & Record<T, string>
 
-// 任意キーを必須にするユーティリティ型
+/**
+ * Utility type to enforce required keys.
+ * 
+ * 指定したキーを必須にするユーティリティ型
+ */
 type HasKey<K extends string, V = unknown> = {
   [P in K]: V
 } & Record<string, unknown>
@@ -81,9 +106,11 @@ export type LipSyncProps = {
 }
 
 /**
- * 音素データに基づいて口パクを行うコンポーネントを生成
- * 時刻tに対応するmouthCuesを探して、そのvalueから口形を決定する
- * * Psdに対応した口パク用のコンポーネントを返す。
+ * Creates a lip-sync component based on phoneme timing data.
+ * The mouth shape is automatically selected depending on the current time.
+ * 
+ * 音素タイミングデータをもとに口パクを行うコンポーネントを生成する。
+ * 現在の時間に応じて口の形が自動で切り替わる。
  *
  * @example
  * ```typescript
@@ -176,8 +203,11 @@ type SimpleLipSyncProps = {
 }
 
 /**
- * 音量に応じて口の開閉を行う簡易口パク
- * 一定以上の音量 → Open、それ以外 → Closed
+ * Creates a simple lip-sync based on audio volume.
+ * Mouth opens when volume exceeds threshold.
+ * 
+ * 音量に応じて口を開閉するシンプルな口パク。
+ * 一定以上の音量で口が開く。
  *
  * @example
  * ```typescript
@@ -246,7 +276,9 @@ export type BlinkProps = {
 }
 
 /**
- * 目パチ制御
+ * Creates a blink animation based on timing data.
+ * 
+ * タイミングデータに基づいて目パチを行う。
  *
  * @example
  * ```typescript
