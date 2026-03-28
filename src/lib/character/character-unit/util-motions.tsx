@@ -83,6 +83,35 @@ export type LipSyncProps = {
 /**
  * 音素データに基づいて口パクを行うコンポーネントを生成
  * 時刻tに対応するmouthCuesを探して、そのvalueから口形を決定する
+ * * Psdに対応した口パク用のコンポーネントを返す。
+ *
+ * @example
+ * ```typescript
+ * const LipSync = createLipSync({
+ *   kind: "enum" as const,
+ *   options: {
+ *     Mouth: "目・口/口", 
+ *     Default: "あ",
+ *     A: "あ", 
+ *     I: "い", 
+ *     U: "う", 
+ *     E: "え", 
+ *     O: "お", 
+ *     X: "閉じ", 
+ *   }
+ * })
+ *
+ * const data = {
+ *   mouthCues: [{start: 0}, {end: 1}, {value: "A"}]
+ * }
+ * 
+ * // 略 --------------------
+ *
+ * <PsdCharacter psd={psd}>
+ *   <Voice voice={voice}/>
+ *   <LipSync data={data}/>
+ * </PsdCharacter>
+ * ```
  */
 export const createLipSync = (mouthOptions: MouthOptions) => {
   return ({ data }: LipSyncProps) => {
@@ -149,6 +178,25 @@ type SimpleLipSyncProps = {
 /**
  * 音量に応じて口の開閉を行う簡易口パク
  * 一定以上の音量 → Open、それ以外 → Closed
+ *
+ * @example
+ * ```typescript
+ * const LipSync = createSimpleLipSync({
+ *   kind: "enum" as const,
+ *   options: {
+ *     Mouth: "目・口/口", 
+ *     Default: "あ",
+ *     Open: "あ", 
+ *     Closed: "閉じ", 
+ *   }
+ * })
+ * 
+ * // 略 --------------------
+ *
+ * <PsdCharacter psd={psd}>
+ *   <LipSync voice={voice}/>
+ * </PsdCharacter>
+ * ```
  */
 export const createSimpleLipSync = (mouthOptions: SimpleMouthOptions) => {
   return ({
@@ -199,7 +247,40 @@ export type BlinkProps = {
 
 /**
  * 目パチ制御
- * 時刻に対応するblinkCuesを二分探索で高速に取得
+ *
+ * @example
+ * ```typescript
+ * const Blink = createBlink({
+ *   kind: "enum" as const,
+ *   options: {
+ *     Eye: "目・口/目", 
+ *     Default: "デフォルト"
+ *     Open: "デフォルト",
+ *     HalfOpen: "やや閉じ",
+ *     HalfClosed: "半目",
+ *     Closed: "閉じ"
+ *   }
+ * })
+ *
+ * const data = {
+ *   blinkCues: [
+ *     { start: 0.00, end: 0.40, value: "A" },
+ *     { start: 0.40, end: 0.45, value: "B" },
+ *     { start: 0.45, end: 0.50, value: "C" },
+ *     { start: 0.50, end: 0.55, value: "D" },
+ *     { start: 0.55, end: 0.60, value: "C" },
+ *     { start: 0.60, end: 0.65, value: "B" },
+ *     { start: 0.65, end: 6.65, value: "A" }
+ *   ]
+ * }
+ * 
+ * // 略 --------------------
+ *
+ * <PsdCharacter psd={psd}>
+ *   <Voice voice={voice}/>
+ *   <Blink data={data}/>
+ * </PsdCharacter>
+ * ```
  */
 export const createBlink = (eyeOptions: EyeOptions4) => {
   return ({ data }: BlinkProps) => {
@@ -210,6 +291,7 @@ export const createBlink = (eyeOptions: EyeOptions4) => {
       
       // =========================
       // 二分探索（start <= t の最大index）
+      // LipSyncよりも長くなることが多いと想定し線形探索でなく二分探索
       // =========================
       let lo = 0
       let hi = sections.length - 1
