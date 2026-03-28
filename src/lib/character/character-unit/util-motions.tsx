@@ -323,7 +323,7 @@ function applyOption(optionDict: EyeOptions4 | MouthOptions | SimpleMouthOptions
     throw "unknown type dict"
   }
 
-  if (option == optionDict.options.Default) {
+  if (optionDict.options[opt] == optionDict.options.Default) {
     return {
       [optionDict.options.Default]: true
     }
