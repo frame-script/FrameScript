@@ -37,8 +37,10 @@ export type SimpleMouthOptions =
   | { kind: "enum"; options: MouthEnum<MouthShape2> }
   | { kind: "bool"; options: MouthBool<MouthShape2> }
 
-// 目の状態（4段階）
-type EyeShape4 = "Open" | "HalfOpen" | "HalfClosed" | "Closed"
+/**
+ * 目の状態（4段階）
+ */
+export type EyeShape4 = "Open" | "HalfOpen" | "HalfClosed" | "Closed"
 
 /**
  * Enum-style eye configuration.
@@ -62,9 +64,14 @@ export type EyeBool<T extends string> = {
   Default: string
 } & Record<T, string>
 
-// 口の形（母音ベース）
-type MouthShapeVowel = "A" | "I" | "U" | "E" | "O" | "X"
-type MouthShape2 = "Open" | "Closed"
+/**
+ * 口の形（母音ベース）
+ */
+export type MouthShapeVowel = "A" | "I" | "U" | "E" | "O" | "X"
+/**
+ * 口の形（音量ベース）
+ */
+export type MouthShape2 = "Open" | "Closed"
 
 /**
  * Enum-style mouth configuration.
@@ -140,7 +147,7 @@ export type LipSyncProps = {
  * </PsdCharacter>
  * ```
  */
-export const createLipSync = (mouthOptions: MouthOptions) => {
+export const createLipSync = (mouthOptions: MouthOptions, value2option: Record<string, MouthShapeVowel> = rhubarbTable) => {
   return ({ data }: LipSyncProps) => {
     return <Motion motion={(_v, frames) => {
 
@@ -152,7 +159,7 @@ export const createLipSync = (mouthOptions: MouthOptions) => {
       // 現在時刻に該当するセクションを線形探索
       for (let section of data.mouthCues) {
         if (section.start <= t && t < section.end) {
-          shape = lipSyncValueToMouthShape(section.value)
+          shape = value2option[section.value] ?? "X"
           break
         }
       }
@@ -170,21 +177,18 @@ export const createLipSync = (mouthOptions: MouthOptions) => {
 
 /**
  * 音素ラベル → 母音口形に変換
- * (A,B,C...などの外部フォーマットに対応)
+ * (rhubarbのフォーマットに対応)
  */
-const lipSyncValueToMouthShape = (value: string): MouthShapeVowel => {
-  switch (value) {
-    case "A": return "A"
-    case "B": return "I"
-    case "C": return "E"
-    case "D": return "A"
-    case "E": return "O"
-    case "F": return "U"
-    case "G": return "I"
-    case "H": return "U"
-    case "X": return "X"
-    default:  return "X" // 未知値は閉じ口扱い
-  }
+const rhubarbTable: Record<string, MouthShapeVowel> = {
+    "A": "A",
+    "B": "I",
+    "C": "E",
+    "D": "A",
+    "E": "O",
+    "F": "U",
+    "G": "I",
+    "H": "U",
+    "X": "X",
 }
 
 
@@ -366,6 +370,61 @@ const BlinkValueToEyeShape = (value: string): EyeShape4 => {
     case "C": return "HalfClosed"
     case "D": return "Closed"
     default:  return "Open"
+  }
+}
+
+export const generateBlinkData = (start: number, end: number): BlinkData => {
+  const unit = (t: number) => [
+    { start: t + 0.00, end: t + 0.01, value: "A" },
+    { start: t + 0.01, end: t + 0.02, value: "B" },
+    { start: t + 0.02, end: t + 0.04, value: "C" },
+    { start: t + 0.04, end: t + 0.06, value: "D" },
+    { start: t + 0.06, end: t + 0.08, value: "C" },
+    { start: t + 0.08, end: t + 0.09, value: "B" },
+  ]
+
+  const unitDuration = 0.09
+
+  let t = start
+  let lastEnd = start
+
+  const data: { start: number; end: number; value: string }[] = []
+
+  while (t < end) {
+    // ランダム間隔
+    const interval = 2 + Math.random() * 3
+    t += interval
+
+    // unitがはみ出るなら終了
+    if (t + unitDuration > end) break
+
+    // 空白時間をAで埋める
+    if (lastEnd < t) {
+      data.push({
+        start: lastEnd,
+        end: t,
+        value: "A",
+      })
+    }
+
+    const blink = unit(t)
+    data.push(...blink)
+
+    lastEnd = t + unitDuration
+    t = lastEnd
+  }
+
+  // 最後の余りもAで埋める
+  if (lastEnd < end) {
+    data.push({
+      start: lastEnd,
+      end: end,
+      value: "A",
+    })
+  }
+
+  return {
+    blinkCues: data,
   }
 }
 

@@ -226,14 +226,19 @@ import { MotionWithVars } from "../src/lib/character/character-unit"
 #### `createSimpleLipSync`
 
 PSDファイルに対応した音量ベースの口パクを行うコンポーネントを返す関数です。
-##### psd-tool-kitに対応している場合
-`Mouth`にはPSDの口のレイヤーを指定します。
-`Default`にはPSDファイルがデフォルトで表示する口のオプションを指定します。
-`Open`, `Closed`にはそれぞれ対応するオプションを指定します。
+PSDの口の状態をレイヤー、オプションに対応させる辞書を受け取り、コンポーネントを返します。
+辞書は次のように指定します。
 
-##### psd-tool-kitに対応していない場合
-`Default`にはPSDファイルがデフォルトで表示する口のレイヤーを指定します。
-`Open`, `Closed`にはそれぞれ対応するレイヤーを指定します。
+- psd-tool-kitに対応している場合
+  `kind`には`enum`を指定します。
+  `Mouth`にはPSDの口のレイヤーを指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のオプションを指定します。
+  `Open`, `Closed`にはそれぞれ対応するオプションを指定します。
+
+- psd-tool-kitに対応していない場合
+  `kind`には`bool`を指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のレイヤーを指定します。
+  `Open`, `Closed`にはそれぞれ対応するレイヤーを指定します。
 
 ```tsx
 import { createSimpleLipSync } from "../src/lib/character/character-unit"
@@ -248,5 +253,183 @@ const SimpleLipSync = createSimpleLipSync({
 })
 
 <SimpleLipSync voice="../assets/001_char.wav" />
+```
+
+#### `createLipSync`
+
+PSDファイルに対応した母音ベースの口パクを行うコンポーネントを返す関数です。
+
+PSDの口の状態をレイヤー、オプションに対応させる辞書を受け取り、コンポーネントを返します。
+コンポーネントは`data`としてタイミング情報を受け取り、口パクを制御します。
+`data`はrhubarb(https://github.com/DanielSWolf/rhubarb-lip-sync)の出力に対応します。
+辞書は次のように指定します。
+
+- psd-tool-kitに対応している場合
+  `kind`には`enum`を指定します。
+  `Mouth`にはPSDの口のレイヤーを指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のオプションを指定します。
+  `Open`, `Closed`にはそれぞれ対応するオプションを指定します。
+
+- psd-tool-kitに対応していない場合
+  `kind`には`bool`を指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のレイヤーを指定します。
+  `Open`, `Closed`にはそれぞれ対応するレイヤーを指定します。
+
+```tsx
+import { createLipSync } from "../src/lib/character/character-unit"
+
+const LipSync = createLipSync({
+  kind: "enum",
+  options: {
+    Mouth: "表情/口",
+    Default: "1",
+    A: "1",
+    I: "2",
+    U: "3",
+    E: "4",
+    O: "5",
+    X: "6",
+  }
+})
+
+const lipsync = {
+  mouthCues: [
+    { start: 0.00, end: 0.03, value: "A" },
+    { start: 0.03, end: 0.09, value: "B" },
+    { start: 0.09, end: 0.29, value: "C" }
+}
+
+<PsdCharacter psd="../assets/char.psd">
+  <Voice voice="../assets/001_char.wav" />
+  <LipSync data={lipsync} />
+</PsdCharacter>
+```
+
+#### `createBlink`
+
+PSDファイルに対応した目パチを行うコンポーネントを返す関数です。
+
+PSDの目の状態をレイヤー、オプションに対応させる辞書を受け取り、コンポーネントを返します。
+コンポーネントは`data`としてタイミング情報を受け取り、目パチを制御します。
+辞書は次のように指定します。
+
+- psd-tool-kitに対応している場合
+  `kind`には`enum`を指定します。
+  `Mouth`にはPSDの口のレイヤーを指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のオプションを指定します。
+  `Open`, `Closed`にはそれぞれ対応するオプションを指定します。
+
+- psd-tool-kitに対応していない場合
+  `kind`には`bool`を指定します。
+  `Default`にはPSDファイルがデフォルトで表示する口のレイヤーを指定します。
+  `Open`, `Closed`にはそれぞれ対応するレイヤーを指定します。
+
+`data`のvalueは次のように対応します。
+| value | option |
+| ---- | ---- |
+| "A" | "Open" |
+| "B" | "HalfOpen" |
+| "C" | "HalfClosed" |
+| "D" | "Closed" |
+
+
+
+```tsx
+import { createBlink, generateBlinkData } from "../src/lib/character/character-unit"
+
+const Blink = createBlink({
+  kind: "enum",
+  options: {
+    Mouth: "表情/目",
+    Default: "1",
+    Open: "1",
+    HalfOpen: "2",
+    HalfClosed: "3",
+    Closed: "4",
+  }
+})
+
+// const blink = generateBlinkData(0, 10)
+const blink = {
+  blinkCues: [
+    { start: 0.00, end: 0.01, value: "A" },
+    { start: 0.01, end: 0.02, value: "B" },
+    { start: 0.02, end: 0.03, value: "C" },
+    { start: 0.03, end: 0.04, value: "D" },
+    { start: 0.04, end: 0.05, value: "C" },
+    { start: 0.05, end: 0.06, value: "B" },
+    { start: 0.06, end: 0.07, value: "A" }
+}
+
+<PsdCharacter psd="../assets/char.psd">
+  <Voice voice="../assets/001_char.wav" />
+  <Blink data={lipsync} />
+</PsdCharacter>
+```
+
+### `<DialogScenerio>`
+
+PSD形式の立ち絵を利用して会話形式のシナリオを作成します。
+
+内部で使用できる主なコンポーネントは次の通りです。
+
+#### `<DeclareCharacters>`
+`<DeclareCharacter>`を子要素にとり、利用するキャラクターを宣言します。
+
+#### `<DeclareCharacter>`
+`<DeclareCharacters>`内で使用して利用するキャラクターを宣言します。
+子要素として`<PsdCharacter>`の子要素と同様のコンポーネントを取ることができ、非話者時の動作として割り当てられます。
+
+#### `<Scenario>`
+`<Chapter>`を並べて会話を宣言します。
+
+#### `<Chapter>`
+`<Scenario>`内で使用してキャラクターの話す単位を宣言します。
+
+#### `<Speaker>`
+`<Chapter>`内で使用して、話者の動作を宣言します。
+`<PsdCharacter>`の子要素と同様のコンポーネントを取ります。
+`<DeclareCharacter>`で宣言した`name`を指定して、対応するPSDを表示します。
+
+
+```tsx
+const AkaneLipSync = createSimpleLipSync({
+  kind: "enum",
+  options: {
+    Mouth: "目・口/口",
+    Default: "開き",
+    Open: "開き",
+    Closed: "閉じ",
+  }
+})
+
+const AoiLipSync = createSimpleLipSync({
+  kind: "bool",
+  options: {
+    Default: "全身/顔パーツ/口/お",
+    Open: "全身/顔パーツ/口/あ",
+    Closed: "全身/顔パーツ/口/にま",
+  }
+})
+
+<DialogueSenario>
+  <DeclareCharacters>
+    <DeclareCharacter idleClassName="akane" speakingClassName="akane" name="akane" psd="../assets/akane.psd" />
+    <DeclareCharacter idleClassName="aoi" speakingClassName="aoi" name="aoi" psd="../assets/aoi.psd" />
+    </DeclareCharacter>
+  </DeclareCharacters>
+  <Scenario>
+    <Chapter>
+      <Speaker name="aoi" >
+        <AoiLipSync voice="../assets/001_aoi.wav"/>
+      </Speaker>
+    </Chapter>
+    <Chapter>
+      <Speaker name="akane" >
+        <AkaneLipSync voice="../assets/002_akane.wav" />
+      </Speaker>
+    </Chapter>
+  </Scenario>
+</DialogueSenario>
 ```
 
