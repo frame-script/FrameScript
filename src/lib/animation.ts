@@ -82,7 +82,7 @@ type MoveController<T> = {
   to: (value: T, durationFrames: number, easing?: Easing) => AnimationHandle
 }
 
-type AnimationContext = {
+export type AnimationContext = {
   sleep: (frames: number) => AnimationHandle
   waitUntil: (frame: number) => AnimationHandle
   waitUntilClip: (label: string) => AnimationHandle
