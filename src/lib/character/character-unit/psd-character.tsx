@@ -531,7 +531,11 @@ type VoiceRuntimeProps = {
   register: OptionRegister
 }
 
-const VoiceRuntime = ({
+const VoiceRuntime = (props: VoiceRuntimeProps) => {
+    return <Clip> <VoiceRuntimeInner {...props} /> </Clip>
+}
+
+const VoiceRuntimeInner = ({
   ast,
   variables,
   register
