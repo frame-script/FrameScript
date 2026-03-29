@@ -152,7 +152,7 @@ const SimpleLipSync = createSimpleLipSync({
 </MotionSequence>
 ```
 
-#### MotionClip
+#### `<MotionClip>`
 
 MotionSequence直下で使用して、子要素を並列化します。
 
@@ -177,7 +177,7 @@ const SimpleLipSync = createSimpleLipSync({
 </MotionSequence>
 ```
 
-#### Voice
+#### `<Voice>`
 
 音声を配置します。
 内部的には音声はClipで囲われます。
@@ -188,7 +188,7 @@ import { Voice } from "../src/lib/character/character-unit"
 <Voice voice="../assets/001_char.wav" />
 ```
 
-#### MotionWithVars
+#### `<MotionWithVars>`
 
 変数を使用したアニメーションを作成します。
 `variables`で変数を宣言し、次に`animation`でアニメーションを宣言し、最後に`motion`でPSDのオプションを返します。
