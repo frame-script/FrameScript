@@ -4,7 +4,7 @@ import { PsdCharacterElement as PsdElm, type MotionClipNode, type CharacterNode,
 import { readPsd, type Psd } from "ag-psd"
 import { parsePsdCharacter } from "./parser"
 import { renderPsd } from "ag-psd-psdtool"
-import { useAnimation, useVariable, type Variable } from "../../animation"
+import { useAnimation, useVariable, type Variable, type VariableType } from "../../animation"
 import { useCurrentFrame, useGlobalCurrentFrame } from "../../frame"
 import { Sound } from "../../sound/sound"
 import { Clip, ClipSequence } from "../../clip"
@@ -260,6 +260,19 @@ type DeclareVariableRuntimeProps = {
   register: OptionRegister
 }
 
+const useTypedVariable = (value: VariableType): Variable<VariableType> => {
+  if (typeof value === "number") {
+    return useVariable(value) as Variable<VariableType>
+  }
+  if (typeof value === "string") {
+    return useVariable(value as `#${string}`) as Variable<VariableType>
+  }
+  if ("z" in value && typeof value.z === "number") {
+    return useVariable({ x: value.x, y: value.y, z: value.z }) as Variable<VariableType>
+  }
+  return useVariable({ x: value.x, y: value.y }) as Variable<VariableType>
+}
+
 const DeclareVariableRuntime = ({
   ast,
   variables,
@@ -270,7 +283,7 @@ const DeclareVariableRuntime = ({
   // DeclareVariableで受け取る型がTなので
   // ast.initValue: T
   // であり、これを使う限り問題ない
-  const variable = useVariable(ast.initValue)
+  const variable = useTypedVariable(ast.initValue)
   const newInitVariables = {[ast.variableName]: variable, ...initializingVariables}
 
   switch (ast.children.type) {
@@ -544,7 +557,7 @@ const VoiceRuntimeInner = ({
   if (!reg.current) {
       reg.current = register()
   }
-  const { update, getter, unregister } = reg.current
+  const { update, unregister } = reg.current
 
   useEffect(() => {
     return () => unregister()
@@ -597,7 +610,7 @@ const MotionRuntime = ({
   if (!reg.current) {
       reg.current = register()
   }
-  const { update, getter, unregister } = reg.current
+  const { update, unregister } = reg.current
 
   useEffect(() => {
     return () => unregister()

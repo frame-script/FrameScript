@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-render
+dist-electron
+frames
+bin
+docs/build
+docs/.docusaurus
+output.mp4
+output.gif
+output_youtube.mp4
+frame-script.gif
+circle.gif
+assets/NotoSerifCJKJP-Medium.ttf
+package-lock.json
+docs/package-lock.json

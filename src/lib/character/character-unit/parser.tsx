@@ -4,6 +4,19 @@ import { PsdCharacterElement as PsdElm } from "./ast"
 
 type AnyElement = ReactElement<any, any>
 
+const expandDslFunction = (child: AnyElement): ReactNode => {
+  const component = child.type as (props: Record<string, unknown>) => ReactNode
+  return component(child.props)
+}
+
+const expandDslElement = (child: AnyElement): AnyElement => {
+  const expanded = expandDslFunction(child)
+  if (!isValidElement(expanded)) {
+    throw new Error("Expanded DSL component must return a single React element")
+  }
+  return expanded
+}
+
 
 export const parsePsdCharacter = (
   children: ReactNode,
@@ -41,7 +54,7 @@ const parsePsdCharacterChildren = (
         result.push(parseMotion(child))
         break
       case "function":
-        const expanded = child.type(child.props)
+        const expanded = expandDslFunction(child)
         const expandedAst = parsePsdCharacterChildren(expanded)
         result.push(...expandedAst)
         break
@@ -91,7 +104,7 @@ const parseMotionSequenceChildren = (
         result.push(parseMotion(child))
         break
       case "function":
-        const expanded = child.type(child.props)
+        const expanded = expandDslFunction(child)
         const expandedAst = parseMotionSequenceChildren(expanded)
         result.push(...expandedAst)
         break
@@ -141,7 +154,7 @@ const parseDeclareVariableChild = (
       case PsdElm.DeclareAnimation:
         return parseDeclareAnimation(child)
       case "function":
-        const expanded = child.type(child.props)
+        const expanded = expandDslElement(child)
         const expandedAst = parseDeclareVariable(expanded)
         return expandedAst
 
@@ -190,7 +203,7 @@ const parseMotionClipChildren = (
         result.push(parseMotion(child))
         break
       case "function":
-        const expanded = child.type(child.props)
+        const expanded = expandDslFunction(child)
         const expandedAst = parseMotionClipChildren(expanded)
         result.push(...expandedAst)
         break
@@ -241,7 +254,7 @@ const parseDeclareAnimationChildren = (
         result.push(parseMotion(child))
         break
       case "function":
-        const expanded = child.type(child.props)
+        const expanded = expandDslFunction(child)
         const expandedAst = parseDeclareAnimationChildren(expanded)
         result.push(...expandedAst)
         break
