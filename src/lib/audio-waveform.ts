@@ -15,6 +15,94 @@ export type WaveformData = {
   durationSec: number
 }
 
+type AudioWaveformTracker = {
+  pending: number
+  start: () => () => void
+  wait: () => Promise<void>
+}
+
+const AUDIO_WAVEFORM_TRACKER_KEY = "__frameScript_AudioWaveformTracker"
+
+const getAudioWaveformTracker = (): AudioWaveformTracker => {
+  const g = globalThis as unknown as Record<string, unknown>
+  const existing = g[AUDIO_WAVEFORM_TRACKER_KEY] as
+    | AudioWaveformTracker
+    | undefined
+  if (existing) return existing
+
+  let pending = 0
+  const waiters = new Set<() => void>()
+
+  const notifyIfReady = () => {
+    if (pending !== 0) return
+    for (const resolve of Array.from(waiters)) {
+      resolve()
+    }
+    waiters.clear()
+  }
+
+  const tracker: AudioWaveformTracker = {
+    get pending() {
+      return pending
+    },
+    start: () => {
+      pending += 1
+      let done = false
+      return () => {
+        if (done) return
+        done = true
+        pending = Math.max(0, pending - 1)
+        notifyIfReady()
+      }
+    },
+    wait: () => {
+      if (pending === 0) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        waiters.add(resolve)
+      })
+    },
+  }
+
+  g[AUDIO_WAVEFORM_TRACKER_KEY] = tracker
+  return tracker
+}
+
+const waitForAnimationTick = () =>
+  new Promise<void>((resolve) => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function"
+    ) {
+      setTimeout(resolve, 0)
+      return
+    }
+    window.requestAnimationFrame(() => resolve())
+  })
+
+const installAudioWaveformApi = () => {
+  if (typeof window === "undefined") return
+  const tracker = getAudioWaveformTracker()
+  const waitAudioWaveformsReady = async () => {
+    while (true) {
+      if (tracker.pending === 0) {
+        await waitForAnimationTick()
+        if (tracker.pending === 0) return
+      }
+      await tracker.wait()
+    }
+  }
+
+  ;(window as any).__frameScript = {
+    ...(window as any).__frameScript,
+    waitAudioWaveformsReady,
+    getAudioWaveformsPending: () => tracker.pending,
+  }
+}
+
+if (typeof window !== "undefined") {
+  installAudioWaveformApi()
+}
+
 const waveformCache = new Map<string, WaveformData | null>()
 const waveformPromises = new Map<string, Promise<WaveformData | null>>()
 let waveformAudioContext: AudioContext | null = null
@@ -76,6 +164,7 @@ export const loadWaveformData = async (
   const existing = waveformPromises.get(path)
   if (existing) return existing
 
+  const finishPending = getAudioWaveformTracker().start()
   const promise = (async () => {
     try {
       const ctx = getAudioContext()
@@ -95,6 +184,7 @@ export const loadWaveformData = async (
       return null
     } finally {
       waveformPromises.delete(path)
+      finishPending()
     }
   })()
 

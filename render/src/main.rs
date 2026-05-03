@@ -163,6 +163,49 @@ async fn wait_for_images_ready(page: &Page) {
     page.evaluate(script).await.unwrap();
 }
 
+async fn wait_for_audio_waveforms_ready(page: &Page) {
+    let script = r#"
+        (async () => {
+          const api = window.__frameScript;
+          if (api && typeof api.waitAudioWaveformsReady === "function") {
+            await api.waitAudioWaveformsReady();
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
+async fn wait_for_psd_ready(page: &Page) {
+    let script = r#"
+        (async () => {
+          const api = window.__frameScript;
+          if (api && typeof api.waitPsdReady === "function") {
+            await api.waitPsdReady();
+          }
+        })()
+    "#;
+    page.evaluate(script).await.unwrap();
+}
+
+async fn wait_for_psd_frame(page: &Page, frame: usize) {
+    let script = format!(
+        r#"
+        (async () => {{
+          const api = window.__frameScript;
+          if (api && typeof api.waitPsdFrame === "function") {{
+            try {{
+              await api.waitPsdFrame({});
+            }} catch (_e) {{
+              // ignore
+            }}
+          }}
+        }})()
+    "#,
+        frame
+    );
+    page.evaluate(script).await.unwrap();
+}
+
 async fn wait_for_webgl_ready(page: &Page) {
     let script = r#"
         (async () => {
@@ -337,8 +380,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let completed_clone = completed.clone();
         let is_canceled_clone = is_canceled.clone();
         tasks.push(tokio::spawn(async move {
-            let profile_dir =
-                PathBuf::from(format!("{}/profiles/profile-{:03}", FRAME_DIRECTORY, worker_id));
+            let profile_dir = PathBuf::from(format!(
+                "{}/profiles/profile-{:03}",
+                FRAME_DIRECTORY, worker_id
+            ));
 
             let (mut browser, mut handler) = spawn_browser_instance(profile_dir, width, height)
                 .await
@@ -361,7 +406,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffmpeg_low_memory_clone,
             )
             .await
-            .map_err(|error| format!("worker {worker_id}: failed to create ffmpeg writer: {error}"))?;
+            .map_err(|error| {
+                format!("worker {worker_id}: failed to create ffmpeg writer: {error}")
+            })?;
 
             let page = browser
                 .new_page(page_url)
@@ -373,6 +420,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             wait_for_frame_api(&page).await;
             wait_for_animation_ready(&page).await;
             wait_for_draw_text_ready(&page).await;
+            wait_for_audio_waveforms_ready(&page).await;
+            wait_for_psd_ready(&page).await;
             wait_for_webgl_ready(&page).await;
 
             for frame in start..end {
@@ -389,9 +438,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "#,
                     frame
                 );
-                page.evaluate(js)
-                    .await
-                    .map_err(|error| format!("worker {worker_id}: setFrame eval failed: {error}"))?;
+                page.evaluate(js).await.map_err(|error| {
+                    format!("worker {worker_id}: setFrame eval failed: {error}")
+                })?;
 
                 wait_for_next_frame(&page).await;
 
@@ -410,10 +459,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "#,
                     frame
                 );
-                page.evaluate(script)
-                    .await
-                    .map_err(|error| format!("worker {worker_id}: waitCanvasFrame eval failed: {error}"))?;
+                page.evaluate(script).await.map_err(|error| {
+                    format!("worker {worker_id}: waitCanvasFrame eval failed: {error}")
+                })?;
 
+                wait_for_audio_waveforms_ready(&page).await;
+                wait_for_psd_frame(&page, frame).await;
                 wait_for_images_ready(&page).await;
                 wait_for_webgl_frame(&page, frame).await;
 

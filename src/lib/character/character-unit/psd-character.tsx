@@ -21,7 +21,7 @@ import {
 } from "../../animation"
 import { useCurrentFrame, useGlobalCurrentFrame } from "../../frame"
 import { Sound } from "../../sound/sound"
-import { Clip, ClipSequence } from "../../clip"
+import { Clip, ClipSequence, useClipActive } from "../../clip"
 import { useAudioSegments } from "../../audio-plan"
 import { useWaveformBank } from "../../sound/character"
 
@@ -36,6 +36,131 @@ type PsdPath = {
 }
 
 type PsdOptions = Record<string, any>
+
+type PsdTracker = {
+  pending: number
+  start: () => () => void
+  wait: () => Promise<void>
+}
+
+const PSD_TRACKER_KEY = "__frameScript_PsdTracker"
+const psdFrameCallbacks = new Map<string, (frame: number) => Promise<void>>()
+
+const getPsdTracker = (): PsdTracker => {
+  const g = globalThis as unknown as Record<string, unknown>
+  const existing = g[PSD_TRACKER_KEY] as PsdTracker | undefined
+  if (existing) return existing
+
+  let pending = 0
+  const waiters = new Set<() => void>()
+
+  const notifyIfReady = () => {
+    if (pending !== 0) return
+    for (const resolve of Array.from(waiters)) {
+      resolve()
+    }
+    waiters.clear()
+  }
+
+  const tracker: PsdTracker = {
+    get pending() {
+      return pending
+    },
+    start: () => {
+      pending += 1
+      let done = false
+      return () => {
+        if (done) return
+        done = true
+        pending = Math.max(0, pending - 1)
+        notifyIfReady()
+      }
+    },
+    wait: () => {
+      if (pending === 0) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        waiters.add(resolve)
+      })
+    },
+  }
+
+  g[PSD_TRACKER_KEY] = tracker
+  return tracker
+}
+
+const waitForAnimationTick = () =>
+  new Promise<void>((resolve) => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function"
+    ) {
+      setTimeout(resolve, 0)
+      return
+    }
+    window.requestAnimationFrame(() => resolve())
+  })
+
+const installPsdApi = () => {
+  if (typeof window === "undefined") return
+  const tracker = getPsdTracker()
+  const waitPsdReady = async () => {
+    while (true) {
+      if (tracker.pending === 0) {
+        await waitForAnimationTick()
+        if (tracker.pending === 0) return
+      }
+      await tracker.wait()
+    }
+  }
+
+  const waitPsdFrame = async (frame: number) => {
+    if (tracker.pending > 0) {
+      await waitPsdReady()
+    }
+    const callbacks = Array.from(psdFrameCallbacks.values())
+    if (callbacks.length > 0) {
+      await Promise.all(callbacks.map((cb) => cb(frame)))
+    }
+    if (tracker.pending > 0) {
+      await waitPsdReady()
+    }
+  }
+
+  ;(window as any).__frameScript = {
+    ...(window as any).__frameScript,
+    waitPsdReady,
+    waitPsdFrame,
+    getPsdPending: () => tracker.pending,
+  }
+}
+
+if (typeof window !== "undefined") {
+  installPsdApi()
+}
+
+const usePsdPending = () => {
+  const loadIdRef = useRef(0)
+  const pendingFinishRef = useRef<(() => void) | null>(null)
+
+  const beginPending = useCallback(() => {
+    loadIdRef.current += 1
+    if (!pendingFinishRef.current) {
+      pendingFinishRef.current = getPsdTracker().start()
+    }
+    return loadIdRef.current
+  }, [])
+
+  const endPending = useCallback(() => {
+    if (pendingFinishRef.current) {
+      pendingFinishRef.current()
+      pendingFinishRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => endPending(), [endPending])
+
+  return { beginPending, endPending, loadIdRef }
+}
 
 /**
  * Option register system for PSD rendering.
@@ -79,6 +204,10 @@ export const PsdCharacter = ({
 }: PsdCharacterProps) => {
   const [myPsd, setPsd] = useState<Psd | undefined>(undefined)
   const [ast, setAst] = useState<CharacterNode | undefined>(undefined)
+  const myPsdRef = useRef<Psd | undefined>(undefined)
+  const active = useClipActive()
+  const { beginPending, endPending, loadIdRef } = usePsdPending()
+  const waitPsdIdRef = useRef(`psd-${Math.random().toString(36).slice(2)}`)
 
   /**
    * Registry storing per-node options.
@@ -104,15 +233,49 @@ export const PsdCharacter = ({
 
   const canvas = useRef<HTMLCanvasElement>(null)
 
+  useEffect(() => {
+    myPsdRef.current = myPsd
+  }, [myPsd])
+
+  const drawPsd = useCallback(() => {
+    const psdFile = myPsdRef.current
+    const canvasElement = canvas.current
+    if (!psdFile || !canvasElement) return false
+    renderPsd(psdFile, options.current, { canvas: canvasElement })
+    return true
+  }, [])
+
   /**
    * Load PSD and parse DSL into AST.
    *
    * PSDのロードとDSLのAST変換
    */
   useEffect(() => {
-    fetchPsd(normalizePsdPath(psd)).then((p) => setPsd(p))
+    const loadId = beginPending()
+    let alive = true
+
+    setPsd(undefined)
+    fetchPsd(normalizePsdPath(psd))
+      .then((p) => {
+        if (!alive || loadId !== loadIdRef.current) return
+        setPsd(p)
+      })
+      .catch((error) => {
+        console.error("PsdCharacter: failed to load psd", error)
+      })
+      .finally(() => {
+        if (loadId === loadIdRef.current) {
+          endPending()
+        }
+      })
     setAst(parsePsdCharacter(children))
-  }, [psd])
+    return () => {
+      alive = false
+      if (loadId === loadIdRef.current) {
+        endPending()
+      }
+    }
+  }, [beginPending, endPending, loadIdRef, psd])
 
   /**
    * Render PSD every frame.
@@ -121,10 +284,23 @@ export const PsdCharacter = ({
    */
   const frame = useCurrentFrame()
   useEffect(() => {
-    if (typeof myPsd !== "undefined" && canvas.current) {
-      renderPsd(myPsd, options.current, { canvas: canvas.current })
+    drawPsd()
+  }, [drawPsd, frame, myPsd])
+
+  useEffect(() => {
+    if (!active) return
+    const id = waitPsdIdRef.current
+    const waitForFrame = async (_targetFrame: number) => {
+      if (drawPsd()) return
+      await waitForAnimationTick()
+      drawPsd()
     }
-  }, [frame, myPsd])
+
+    psdFrameCallbacks.set(id, waitForFrame)
+    return () => {
+      psdFrameCallbacks.delete(id)
+    }
+  }, [active, drawPsd])
 
   /**
    * Merge all registered options.
@@ -315,20 +491,10 @@ type DeclareVariableRuntimeProps = {
 }
 
 const useTypedVariable = (value: VariableType): Variable<VariableType> => {
-  if (typeof value === "number") {
-    return useVariable(value) as Variable<VariableType>
-  }
-  if (typeof value === "string") {
-    return useVariable(value as `#${string}`) as Variable<VariableType>
-  }
-  if ("z" in value && typeof value.z === "number") {
-    return useVariable({
-      x: value.x,
-      y: value.y,
-      z: value.z,
-    }) as Variable<VariableType>
-  }
-  return useVariable({ x: value.x, y: value.y }) as Variable<VariableType>
+  const useVariableForUnion = useVariable as (
+    initial: VariableType,
+  ) => Variable<VariableType>
+  return useVariableForUnion(value)
 }
 
 const DeclareVariableRuntime = ({
