@@ -11,7 +11,7 @@ export function createManualPromise(): ManualPromise<void> {
   const promise = new Promise<void>((res, rej) => {
     resolve = res
     reject = rej
-  });
+  })
 
   return { promise, resolve, reject }
 }

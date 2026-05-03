@@ -1,4 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState, type DependencyList } from "react"
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DependencyList,
+} from "react"
 import { useClipId, useClipStart, useProvideClipDuration } from "./clip"
 import { useCurrentFrame } from "./frame"
 import type { Easing } from "./animation/functions"
@@ -28,7 +34,6 @@ export type Vec2 = { x: number; y: number }
  * ```
  */
 export type Vec3 = { x: number; y: number; z: number }
-
 
 export type ColorHex = `#${string}`
 /**
@@ -159,7 +164,9 @@ const installAnimationApi = () => {
         if (typeof window.requestAnimationFrame !== "function") {
           return
         }
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() => resolve()),
+        )
         if (tracker.pending === 0) return
       }
       await tracker.wait()
@@ -174,13 +181,24 @@ const installAnimationApi = () => {
 }
 
 const toFrames = (value: number) => Math.max(0, Math.round(value))
-const isDev = typeof import.meta !== "undefined" && Boolean((import.meta as any).env?.DEV)
+const isDev =
+  typeof import.meta !== "undefined" && Boolean((import.meta as any).env?.DEV)
 
-type ParsedColor = { r: number; g: number; b: number; a: number; hasAlpha: boolean }
+type ParsedColor = {
+  r: number
+  g: number
+  b: number
+  a: number
+  hasAlpha: boolean
+}
 
 const clampChannel = (value: number) => Math.min(255, Math.max(0, value))
 
-const expandShortHex = (hex: string) => hex.split("").map((ch) => ch + ch).join("")
+const expandShortHex = (hex: string) =>
+  hex
+    .split("")
+    .map((ch) => ch + ch)
+    .join("")
 
 const parseColorHex = (value: string): ParsedColor | null => {
   if (!value.startsWith("#")) return null
@@ -208,7 +226,8 @@ const parseColorHex = (value: string): ParsedColor | null => {
 }
 
 const formatColorHex = (r: number, g: number, b: number, a: number | null) => {
-  const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, "0").toUpperCase()
+  const toHex = (value: number) =>
+    clampChannel(value).toString(16).padStart(2, "0").toUpperCase()
   return `#${toHex(r)}${toHex(g)}${toHex(b)}${a == null ? "" : toHex(a)}`
 }
 
@@ -227,7 +246,8 @@ const getKind = (value: unknown): VariableKind | null => {
   return null
 }
 
-const lerpNumber = (from: number, to: number, t: number) => from + (to - from) * t
+const lerpNumber = (from: number, to: number, t: number) =>
+  from + (to - from) * t
 const lerpVec2 = (from: Vec2, to: Vec2, t: number) => ({
   x: from.x + (to.x - from.x) * t,
   y: from.y + (to.y - from.y) * t,
@@ -274,7 +294,11 @@ const assertCompatibleValue = (kind: VariableKind, value: unknown) => {
   }
 }
 
-const sampleSegment = (segment: Segment<VariableType>, frame: number, lerp: Lerp<VariableType>) => {
+const sampleSegment = (
+  segment: Segment<VariableType>,
+  frame: number,
+  lerp: Lerp<VariableType>,
+) => {
   const duration = Math.max(1, segment.end - segment.start + 1)
   if (duration <= 1) {
     return segment.to
@@ -466,7 +490,10 @@ export const useAnimation = (
     }
     return map
   }, [clips, clipId])
-  const effectDeps = useMemo(() => [...deps, clipLabelMap, clipStart], [deps, clipLabelMap, clipStart])
+  const effectDeps = useMemo(
+    () => [...deps, clipLabelMap, clipStart],
+    [deps, clipLabelMap, clipStart],
+  )
 
   useProvideClipDuration(durationFrames)
 
@@ -501,8 +528,13 @@ export const useAnimation = (
       now: 0,
       maxFrame: 0,
       register: (variable) => {
-        if (variable._state.ownerId != null && variable._state.ownerId !== ownerId) {
-          throw new Error("useAnimation: a variable cannot be shared across multiple animations")
+        if (
+          variable._state.ownerId != null &&
+          variable._state.ownerId !== ownerId
+        ) {
+          throw new Error(
+            "useAnimation: a variable cannot be shared across multiple animations",
+          )
         }
         variable._state.ownerId = ownerId
         variablesRef.current.add(variable)

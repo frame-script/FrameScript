@@ -49,7 +49,8 @@ export const StudioStateContext = createContext<StudioState | null>(null)
  */
 export const useIsPlaying = () => {
   const ctx = useContext(StudioStateContext)
-  if (!ctx) throw new Error("useIsPlaying must be used inside <StudioStateContext>")
+  if (!ctx)
+    throw new Error("useIsPlaying must be used inside <StudioStateContext>")
   return ctx.isPlaying
 }
 
@@ -66,7 +67,8 @@ export const useIsPlaying = () => {
  */
 export const useSetIsPlaying = () => {
   const ctx = useContext(StudioStateContext)
-  if (!ctx) throw new Error("useSetIsPlaying must be used inside <StudioStateContext>")
+  if (!ctx)
+    throw new Error("useSetIsPlaying must be used inside <StudioStateContext>")
   return ctx.setIsPlaying
 }
 
@@ -82,7 +84,10 @@ export const useSetIsPlaying = () => {
  */
 export const useIsPlayingStore = () => {
   const ctx = useContext(StudioStateContext)
-  if (!ctx) throw new Error("useIsPlayingStore must be used inside <StudioStateContext>")
+  if (!ctx)
+    throw new Error(
+      "useIsPlayingStore must be used inside <StudioStateContext>",
+    )
   return ctx.isPlayingStore
 }
 
@@ -98,6 +103,7 @@ export const useIsPlayingStore = () => {
  */
 export const useIsRender = () => {
   const ctx = useContext(StudioStateContext)
-  if (!ctx) throw new Error("useIsRender must be used inside <StudioStateContext>")
+  if (!ctx)
+    throw new Error("useIsRender must be used inside <StudioStateContext>")
   return ctx.isRender
 }

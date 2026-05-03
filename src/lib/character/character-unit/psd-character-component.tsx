@@ -37,7 +37,12 @@ type DeclareVariableProps<T extends string, U extends VariableType> = {
  * @param variableName 変数名
  * @param initValue 変数の初期値。useVariableで指定するもの
  */
-export const DeclareVariable = <T extends string = string, U extends VariableType = VariableType>(_: DeclareVariableProps<T, U>) => null
+export const DeclareVariable = <
+  T extends string = string,
+  U extends VariableType = VariableType,
+>(
+  _: DeclareVariableProps<T, U>,
+) => null
 
 DeclareVariable.__dslType = PsdCharacterElement.DeclareVariable
 
@@ -51,7 +56,10 @@ export const MotionClip = defineDSL<{
 }>(PsdCharacterElement.MotionClip)
 
 type DeclareAnimationProps<T extends string> = {
-  animation: (ctx: AnimationContext, variables: Record<T, Variable<VariableType>>) => Promise<void>
+  animation: (
+    ctx: AnimationContext,
+    variables: Record<T, Variable<VariableType>>,
+  ) => Promise<void>
   children: React.ReactNode
 }
 
@@ -64,7 +72,9 @@ type DeclareAnimationProps<T extends string> = {
  * @template T 初期化する変数の変数名リテラルのUnion
  * @param animation AnimationContextと変数のRecordを受け取ってアニメーションを記述する。useAnimationの第一引数と同じ
  */
-export const DeclareAnimation = <T extends string = string>(_: DeclareAnimationProps<T>) => null
+export const DeclareAnimation = <T extends string = string>(
+  _: DeclareAnimationProps<T>,
+) => null
 DeclareAnimation.__dslType = PsdCharacterElement.DeclareAnimation
 
 /**
@@ -78,7 +88,12 @@ DeclareAnimation.__dslType = PsdCharacterElement.DeclareAnimation
  */
 export const Voice = defineDSL<{
   voice: string
-  voiceMotion?: (segment: AudioSegment, waveform: WaveformData, variables: Record<string, Variable<VariableType>>, frames: number[]) => Record<string, any>
+  voiceMotion?: (
+    segment: AudioSegment,
+    waveform: WaveformData,
+    variables: Record<string, Variable<VariableType>>,
+    frames: number[],
+  ) => Record<string, any>
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
@@ -87,7 +102,10 @@ export const Voice = defineDSL<{
 }>(PsdCharacterElement.Voice)
 
 type MotionProps<T extends string> = {
-  motion: (variables: Record<T, Variable<VariableType>>, frames: number[]) => Record<string, any>
+  motion: (
+    variables: Record<T, Variable<VariableType>>,
+    frames: number[],
+  ) => Record<string, any>
 }
 
 /**
@@ -131,7 +149,6 @@ const typeVariables = <T extends Record<string, VariableType>>(
   return result
 }
 
-
 type DeclareVariablesProps<T extends Record<string, VariableType>> = {
   variables: T
   animation: (ctx: AnimationContext, variables: Variables<T>) => Promise<void>
@@ -150,26 +167,38 @@ type DeclareVariablesProps<T extends Record<string, VariableType>> = {
  * @param variables 変数をオブジェクトとして宣言する。e.g. variables: {t: 0, p: {x: 0, y: 0}}
  * @param animation AnimationContextと宣言した変数を受け取って、アニメーションを登録する。useAnimationのコールバックと同様。
  */
-export const DeclareVariables = <T extends Record<string, VariableType> = any>(props: DeclareVariablesProps<T>) => {
-  let result =
-    <DeclareAnimation animation={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
-        {props.children}
+export const DeclareVariables = <T extends Record<string, VariableType> = any>(
+  props: DeclareVariablesProps<T>,
+) => {
+  let result = (
+    <DeclareAnimation
+      animation={(ctx, variables) =>
+        props.animation(ctx, typeVariables<T>(variables))
+      }
+    >
+      {props.children}
     </DeclareAnimation>
+  )
 
   // Wrap children with DeclareVariable in reverse order (outermost = first variable)
   // 逆順でDeclareVariableをネストしてラップする（最初の変数が最外側になる）
-  for (const [key, value] of Object.entries(props.variables).reverse() as Entries<typeof props.variables>) {
-    result =
+  for (const [key, value] of Object.entries(
+    props.variables,
+  ).reverse() as Entries<typeof props.variables>) {
+    result = (
       <DeclareVariable variableName={key as string} initValue={value}>
         {result}
       </DeclareVariable>
+    )
   }
 
   return result
 }
 
-
-type MotionWithVarsProps<S extends Record<string, VariableType>, T extends Record<string, VariableType>> = {
+type MotionWithVarsProps<
+  S extends Record<string, VariableType>,
+  T extends Record<string, VariableType>,
+> = {
   variables: TypedRecord<T>
   animation: (ctx: AnimationContext, variable: Variables<T>) => Promise<void>
   motion: (variables: Variables<S & T>, frames: number[]) => Record<string, any>
@@ -177,7 +206,12 @@ type MotionWithVarsProps<S extends Record<string, VariableType>, T extends Recor
 
 type VoiceMotionProps<T extends Record<string, VariableType>> = {
   voice: string
-  voiceMotion: (segment: AudioSegment, waveform: WaveformData, variables: Variables<T>, frames: number[]) => Record<string, any>
+  voiceMotion: (
+    segment: AudioSegment,
+    waveform: WaveformData,
+    variables: Variables<T>,
+    frames: number[],
+  ) => Record<string, any>
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
@@ -194,21 +228,30 @@ type VoiceMotionProps<T extends Record<string, VariableType>> = {
  * VoiceのvoiceMotionと同様だがvariablesに型をつけられる
  * @template T 宣言する変数の型
  */
-export const VoiceMotion = <T extends Record<string, VariableType> = any>(props: VoiceMotionProps<T>) => {
-  let result =
+export const VoiceMotion = <T extends Record<string, VariableType> = any>(
+  props: VoiceMotionProps<T>,
+) => {
+  let result = (
     <Voice
-      voice={props.voice} 
-      voiceMotion={(segment: AudioSegment, waveform: WaveformData, variables: Record<string, Variable<VariableType>>, frames: number[]) => props.voiceMotion(segment, waveform, typeVariables(variables), frames)}
+      voice={props.voice}
+      voiceMotion={(
+        segment: AudioSegment,
+        waveform: WaveformData,
+        variables: Record<string, Variable<VariableType>>,
+        frames: number[],
+      ) =>
+        props.voiceMotion(segment, waveform, typeVariables(variables), frames)
+      }
       trim={props.trim}
       fadeInFrames={props.fadeInFrames}
       fadeOutFrames={props.fadeOutFrames}
       volume={props.volume}
       showWaveform={props.showWaveform}
     />
+  )
 
   return result
 }
-
 
 /**
  * Create Motion using variables.
@@ -227,19 +270,36 @@ export const VoiceMotion = <T extends Record<string, VariableType> = any>(props:
  * @param animation AnimationContextと宣言した変数を受け取って、アニメーションを登録する。useAnimationのコールバックと同様。
  * @param motion variablesとframesを受け取って、psdのオプションのRecordを返す。フックは使えないのでvariables.t.get(frames[0])のようにして変数を利用する。
  */
-export const MotionWithVars = <S extends Record<string, VariableType> = {}, T extends Record<string, VariableType> = Record<string, any>>(props: MotionWithVarsProps<S, T>) => {
-  let result =
-    <DeclareAnimation animation={(ctx, variables) => props.animation(ctx, typeVariables<T>(variables))}>
-      <Motion motion={(variables, frames) => props.motion(typeVariables<S & T>(variables), frames)} />
+export const MotionWithVars = <
+  S extends Record<string, VariableType> = {},
+  T extends Record<string, VariableType> = Record<string, any>,
+>(
+  props: MotionWithVarsProps<S, T>,
+) => {
+  let result = (
+    <DeclareAnimation
+      animation={(ctx, variables) =>
+        props.animation(ctx, typeVariables<T>(variables))
+      }
+    >
+      <Motion
+        motion={(variables, frames) =>
+          props.motion(typeVariables<S & T>(variables), frames)
+        }
+      />
     </DeclareAnimation>
+  )
 
   // Wrap with DeclareVariable in reverse order
   // DeclareVariableで逆順にラップする
-  for (const [key, value] of Object.entries(props.variables).reverse() as Entries<typeof props.variables>) {
-    result =
+  for (const [key, value] of Object.entries(
+    props.variables,
+  ).reverse() as Entries<typeof props.variables>) {
+    result = (
       <DeclareVariable variableName={key as string} initValue={value}>
         {result}
       </DeclareVariable>
+    )
   }
 
   return result

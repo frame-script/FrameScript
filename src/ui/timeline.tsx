@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { TimelineClip } from "../lib/timeline"
 import { useTimelineClips, useClipVisibilityState } from "../lib/timeline"
 import { useGlobalCurrentFrame, useSetGlobalCurrentFrame } from "../lib/frame"
@@ -97,7 +105,9 @@ const TimelineClipItem = memo(
           left,
           width,
           height: laneHeight - 8,
-          background: visible ? `linear-gradient(90deg, ${c1}, ${c2})` : "linear-gradient(90deg, #1f2937, #0f172a)",
+          background: visible
+            ? `linear-gradient(90deg, ${c1}, ${c2})`
+            : "linear-gradient(90deg, #1f2937, #0f172a)",
           color: visible ? "#0b1221" : "#94a3b8",
           borderRadius: 4,
           padding: "4px 8px",
@@ -105,7 +115,9 @@ const TimelineClipItem = memo(
           display: "flex",
           alignItems: "center",
           gap: 8,
-          boxShadow: visible ? "0 6px 18px rgba(0,0,0,0.25)" : "0 4px 12px rgba(0,0,0,0.2)",
+          boxShadow: visible
+            ? "0 6px 18px rgba(0,0,0,0.25)"
+            : "0 4px 12px rgba(0,0,0,0.2)",
           overflow: "hidden",
           opacity: visible ? 1 : 0.35,
         }}
@@ -136,8 +148,26 @@ const TimelineClipItem = memo(
           </div>
         ) : null}
 
-        <span style={{ fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", position: "relative", zIndex: 2 }}>{label}</span>
-        <span style={{ fontSize: 12, opacity: 0.8, position: "relative", zIndex: 2 }}>
+        <span
+          style={{
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            overflow: "hidden",
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          {label}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            opacity: 0.8,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
           {formatSeconds(clip.start)}s - {formatSeconds(clip.end)}s
         </span>
         {activeFrame != null ? (
@@ -183,7 +213,10 @@ export const TimelineUI = () => {
   const waveformAutoLimitFrames = Math.max(1, Math.round(fps * 60))
 
   const placedClips = useMemo(() => stackClipsIntoTracks(clips), [clips])
-  const trackCount = Math.max(1, placedClips.reduce((max, clip) => Math.max(max, clip.trackIndex + 1), 0))
+  const trackCount = Math.max(
+    1,
+    placedClips.reduce((max, clip) => Math.max(max, clip.trackIndex + 1), 0),
+  )
   const audioSegmentsByClip = useMemo(() => {
     const map = new Map<string, ClipWaveformSegment[]>()
     for (const clip of placedClips) {
@@ -208,7 +241,8 @@ export const TimelineUI = () => {
         const durationFrames = Math.max(0, overlapEnd - overlapStart + 1)
         if (durationFrames <= 0) continue
 
-        const sourceOffset = segment.sourceStartFrame + Math.max(0, overlapStart - segStart)
+        const sourceOffset =
+          segment.sourceStartFrame + Math.max(0, overlapStart - segStart)
         segments.push({
           path: segment.source.path,
           startOffsetFrames: Math.max(0, overlapStart - clip.start),
@@ -470,7 +504,9 @@ export const TimelineUI = () => {
   const ticks = useMemo(() => {
     const targetSpacingPx = 120
     const candidateSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
-    const intervalSeconds = candidateSeconds.find((s) => s * pxPerSecond >= targetSpacingPx) ?? candidateSeconds[candidateSeconds.length - 1]
+    const intervalSeconds =
+      candidateSeconds.find((s) => s * pxPerSecond >= targetSpacingPx) ??
+      candidateSeconds[candidateSeconds.length - 1]
     const intervalFrames = Math.max(1, Math.round(intervalSeconds * fps))
     const result: { frame: number; px: number; label: string }[] = []
     for (let frame = 0; frame <= durationInFrames; frame += intervalFrames) {
@@ -478,7 +514,10 @@ export const TimelineUI = () => {
       result.push({
         frame,
         px: frame * pxPerFrame,
-        label: seconds >= 60 ? `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, "0")}` : `${seconds.toFixed(1)}s`,
+        label:
+          seconds >= 60
+            ? `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, "0")}`
+            : `${seconds.toFixed(1)}s`,
       })
     }
     return result
@@ -496,7 +535,17 @@ export const TimelineUI = () => {
   const rulerTickNodes = useMemo(
     () =>
       ticks.map((tick) => (
-        <div key={tick.frame} style={{ position: "absolute", left: tick.px, top: 0, width: 1, height: rulerHeight, background: "#334155" }}>
+        <div
+          key={tick.frame}
+          style={{
+            position: "absolute",
+            left: tick.px,
+            top: 0,
+            width: 1,
+            height: rulerHeight,
+            background: "#334155",
+          }}
+        >
           <div
             style={{
               position: "absolute",
@@ -539,7 +588,8 @@ export const TimelineUI = () => {
             left: 0,
             right: 0,
             height: laneHeight,
-            borderBottom: index === trackCount - 1 ? "none" : "1px dashed #2f3033",
+            borderBottom:
+              index === trackCount - 1 ? "none" : "1px dashed #2f3033",
           }}
         />
       )),
@@ -554,7 +604,9 @@ export const TimelineUI = () => {
           label={clip.label ?? `Clip ${(clipOrder.get(clip.id) ?? 0) + 1}`}
           visible={visibleByClip.get(clip.id) ?? true}
           activeFrame={activeFrameByClip.get(clip.id) ?? null}
-          waveformSegments={audioSegmentsByClip.get(clip.id) ?? EMPTY_WAVEFORM_SEGMENTS}
+          waveformSegments={
+            audioSegmentsByClip.get(clip.id) ?? EMPTY_WAVEFORM_SEGMENTS
+          }
           pxPerFrame={pxPerFrame}
           laneHeight={laneHeight}
           laneGap={laneGap}
@@ -573,7 +625,8 @@ export const TimelineUI = () => {
       visibleByClip,
     ],
   )
-  const trackAreaHeight = trackCount * laneHeight + (trackCount - 1) * laneGap + 16
+  const trackAreaHeight =
+    trackCount * laneHeight + (trackCount - 1) * laneGap + 16
   const trackTop = scrubHeight + scrubGap + rulerHeight + rulerGap
   const containerHeight = trackTop + trackAreaHeight
   const scrollbarStyles = `
@@ -599,11 +652,47 @@ export const TimelineUI = () => {
   `
 
   return (
-    <div style={{ background: "#0f0f12", border: "1px solid #27272a", borderRadius: 8, padding: 12, color: "#e5e7eb", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+    <div
+      style={{
+        background: "#0f0f12",
+        border: "1px solid #27272a",
+        borderRadius: 8,
+        padding: 12,
+        color: "#e5e7eb",
+        height: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        minHeight: 0,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflow: "hidden",
+      }}
+    >
       <style>{scrollbarStyles}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 220px", minWidth: 180, maxWidth: 240 }}>
-          <label style={{ fontSize: 12, color: "#cbd5e1", minWidth: 46 }}>Scale</label>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flex: "0 0 220px",
+            minWidth: 180,
+            maxWidth: 240,
+          }}
+        >
+          <label style={{ fontSize: 12, color: "#cbd5e1", minWidth: 46 }}>
+            Scale
+          </label>
           <input
             type="range"
             min={0.05}
@@ -613,14 +702,31 @@ export const TimelineUI = () => {
             onChange={(e) => setZoom(Number(e.target.value))}
             style={{ flex: "1 1 auto", minWidth: 100 }}
           />
-          <div style={{ width: 64, fontSize: 12, textAlign: "right", color: "#e5e7eb" }}>{Math.round(zoom * 100)}%</div>
+          <div
+            style={{
+              width: 64,
+              fontSize: 12,
+              textAlign: "right",
+              color: "#e5e7eb",
+            }}
+          >
+            {Math.round(zoom * 100)}%
+          </div>
         </div>
 
         <div style={{ flex: "0 0 auto" }}>
           <TransportControls />
         </div>
 
-        <div style={{ fontSize: 12, lineHeight: 1.3, minWidth: 140, textAlign: "right", marginLeft: "auto" }}>
+        <div
+          style={{
+            fontSize: 12,
+            lineHeight: 1.3,
+            minWidth: 140,
+            textAlign: "right",
+            marginLeft: "auto",
+          }}
+        >
           <div>Frame: {safeCurrentFrame}</div>
           <div>Time: {formatSeconds(safeCurrentFrame)}s</div>
           <div>Duration: {formatSeconds(durationInFrames)}s</div>

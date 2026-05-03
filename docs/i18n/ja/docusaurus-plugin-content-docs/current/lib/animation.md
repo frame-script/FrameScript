@@ -20,7 +20,9 @@ const CircleScene = () => {
 
   const { ready } = useAnimation(async (ctx) => {
     // 同時に動かしたい処理は handle を作って並列で待つ
-    const move = ctx.move(position).to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
+    const move = ctx
+      .move(position)
+      .to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
     const fade = ctx.move(opacity).to(1, seconds(0.6), BEZIER_SMOOTH)
     await ctx.parallel([move, fade])
   }, [])
@@ -70,7 +72,9 @@ const colorRgb = useVariable("#FFAA33")
 ```tsx
 useAnimation(async (ctx) => {
   // まず動きをキック
-  const move = ctx.move(position).to({ x: 300, y: 0 }, seconds(1), BEZIER_SMOOTH)
+  const move = ctx
+    .move(position)
+    .to({ x: 300, y: 0 }, seconds(1), BEZIER_SMOOTH)
 
   // 先に別の待ち時間を入れる
   await ctx.sleep(seconds(0.4))
@@ -113,7 +117,14 @@ const Title = () => {
     await context.move(progress).to(1, seconds(2))
   })
 
-  return <DrawText text="Hello" fontUrl="assets/Roboto.ttf" fontSize={96} progress={progress} />
+  return (
+    <DrawText
+      text="Hello"
+      fontUrl="assets/Roboto.ttf"
+      fontSize={96}
+      progress={progress}
+    />
+  )
 }
 ```
 
@@ -135,7 +146,11 @@ const Formula = () => {
   })
 
   return (
-    <DrawTex tex={"\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"} fontSize={96} progress={progress} />
+    <DrawTex
+      tex={"\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"}
+      fontSize={96}
+      progress={progress}
+    />
   )
 }
 ```

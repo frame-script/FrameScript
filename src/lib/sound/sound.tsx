@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { PROJECT_SETTINGS } from "../../../project/project"
 import { useGlobalCurrentFrame } from "../frame"
-import { useClipActive, useClipId, useClipRange, useProvideClipDuration } from "../clip"
-import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan"
+import {
+  useClipActive,
+  useClipId,
+  useClipRange,
+  useProvideClipDuration,
+} from "../clip"
+import {
+  registerAudioSegmentGlobal,
+  unregisterAudioSegmentGlobal,
+} from "../audio-plan"
 import { fetchAudioBuffer } from "../audio"
 import { useIsPlaying, useIsRender } from "../studio-state"
 import type { Trim } from "../trim"
@@ -90,8 +98,13 @@ export const sound_length = (sound: Sound | string): number => {
 
     if (xhr.status >= 200 && xhr.status < 300) {
       const payload = JSON.parse(xhr.responseText) as { duration_ms?: number }
-      const rawMs = typeof payload.duration_ms === "number" ? payload.duration_ms : 0
-      if (!Number.isFinite(rawMs) || rawMs <= 0 || rawMs > MAX_REASONABLE_DURATION_MS) {
+      const rawMs =
+        typeof payload.duration_ms === "number" ? payload.duration_ms : 0
+      if (
+        !Number.isFinite(rawMs) ||
+        rawMs <= 0 ||
+        rawMs > MAX_REASONABLE_DURATION_MS
+      ) {
         return 0
       }
       const seconds = rawMs / 1000
@@ -124,8 +137,13 @@ const fetchSoundLengthAsync = async (sound: Sound): Promise<number> => {
         return 0
       }
       const payload = (await res.json()) as { duration_ms?: number }
-      const rawMs = typeof payload.duration_ms === "number" ? payload.duration_ms : 0
-      if (!Number.isFinite(rawMs) || rawMs <= 0 || rawMs > MAX_REASONABLE_DURATION_MS) {
+      const rawMs =
+        typeof payload.duration_ms === "number" ? payload.duration_ms : 0
+      if (
+        !Number.isFinite(rawMs) ||
+        rawMs <= 0 ||
+        rawMs > MAX_REASONABLE_DURATION_MS
+      ) {
         soundLengthCache.set(sound.path, 0)
         return 0
       }
@@ -278,8 +296,14 @@ export const Sound = ({
       if (relativeFrame >= clipDurationFrames) return
 
       const remainingClipFrames = Math.max(0, clipEndFrame - projectFrame + 1)
-      const availableFromOffsetFrames = Math.max(0, durationFrames - relativeFrame)
-      const playFrames = Math.min(remainingClipFrames, availableFromOffsetFrames)
+      const availableFromOffsetFrames = Math.max(
+        0,
+        durationFrames - relativeFrame,
+      )
+      const playFrames = Math.min(
+        remainingClipFrames,
+        availableFromOffsetFrames,
+      )
       if (playFrames <= 0) return
 
       const ctx = await ensureAudioContext()
@@ -293,7 +317,10 @@ export const Sound = ({
 
       const offsetSec = (trimStartFrames + relativeFrame) / fps
       const durSec = playFrames / fps
-      const clampedOffset = Math.min(Math.max(0, offsetSec), Math.max(0, buffer.duration))
+      const clampedOffset = Math.min(
+        Math.max(0, offsetSec),
+        Math.max(0, buffer.duration),
+      )
       const maxDur = Math.max(0, buffer.duration - clampedOffset)
       const clampedDur = Math.min(durSec, maxDur)
       if (clampedDur <= 0) return

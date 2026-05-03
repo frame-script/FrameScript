@@ -1,13 +1,21 @@
-import type { CSSProperties } from "react";
-import { useEffect, useId, useMemo, useRef } from "react";
-import { useCurrentFrame } from "../frame";
-import { PROJECT_SETTINGS } from "../../../project/project";
-import { useIsPlaying, useIsRender } from "../studio-state";
-import { useClipActive, useClipId, useClipRange, useProvideClipDuration } from "../clip";
-import { registerAudioSegmentGlobal, unregisterAudioSegmentGlobal } from "../audio-plan";
-import { VideoCanvasRender } from "./video-render";
-import type { Trim } from "../trim";
-import { resolveTrimFrames } from "../trim";
+import type { CSSProperties } from "react"
+import { useEffect, useId, useMemo, useRef } from "react"
+import { useCurrentFrame } from "../frame"
+import { PROJECT_SETTINGS } from "../../../project/project"
+import { useIsPlaying, useIsRender } from "../studio-state"
+import {
+  useClipActive,
+  useClipId,
+  useClipRange,
+  useProvideClipDuration,
+} from "../clip"
+import {
+  registerAudioSegmentGlobal,
+  unregisterAudioSegmentGlobal,
+} from "../audio-plan"
+import { VideoCanvasRender } from "./video-render"
+import type { Trim } from "../trim"
+import { resolveTrimFrames } from "../trim"
 
 /**
  * Video source descriptor.
@@ -56,15 +64,15 @@ export const normalizeVideo = (video: Video | string): Video => {
 }
 
 const buildVideoUrl = (video: Video) => {
-  const url = new URL("http://localhost:3000/video");
-  url.searchParams.set("path", video.path);
-  return url.toString();
+  const url = new URL("http://localhost:3000/video")
+  url.searchParams.set("path", video.path)
+  return url.toString()
 }
 
 const buildMetaUrl = (video: Video) => {
-  const url = new URL("http://localhost:3000/video/meta");
-  url.searchParams.set("path", video.path);
-  return url.toString();
+  const url = new URL("http://localhost:3000/video/meta")
+  url.searchParams.set("path", video.path)
+  return url.toString()
 }
 
 type VideoMeta = {
@@ -82,7 +90,13 @@ const fetchVideoMetaSync = (video: Video): VideoMeta => {
     return videoMetaCache.get(video.path)!
   }
 
-  const fallback: VideoMeta = { duration_ms: 0, fps: 0, frame_count: 0, width: 0, height: 0 }
+  const fallback: VideoMeta = {
+    duration_ms: 0,
+    fps: 0,
+    frame_count: 0,
+    width: 0,
+    height: 0,
+  }
 
   try {
     const xhr = new XMLHttpRequest()
@@ -92,12 +106,23 @@ const fetchVideoMetaSync = (video: Video): VideoMeta => {
     if (xhr.status >= 200 && xhr.status < 300) {
       const payload = JSON.parse(xhr.responseText) as Partial<VideoMeta>
       const meta: VideoMeta = {
-        duration_ms: typeof payload.duration_ms === "number" ? Math.max(0, payload.duration_ms) : 0,
+        duration_ms:
+          typeof payload.duration_ms === "number"
+            ? Math.max(0, payload.duration_ms)
+            : 0,
         fps: typeof payload.fps === "number" ? payload.fps : 0,
         frame_count:
-          typeof payload.frame_count === "number" ? Math.max(0, Math.round(payload.frame_count)) : 0,
-        width: typeof payload.width === "number" ? Math.max(0, Math.round(payload.width)) : 0,
-        height: typeof payload.height === "number" ? Math.max(0, Math.round(payload.height)) : 0,
+          typeof payload.frame_count === "number"
+            ? Math.max(0, Math.round(payload.frame_count))
+            : 0,
+        width:
+          typeof payload.width === "number"
+            ? Math.max(0, Math.round(payload.width))
+            : 0,
+        height:
+          typeof payload.height === "number"
+            ? Math.max(0, Math.round(payload.height))
+            : 0,
       }
       videoMetaCache.set(video.path, meta)
       return meta
@@ -207,7 +232,10 @@ export const Video = ({ video, style, trim, showWaveform }: VideoProps) => {
       aspectRatio: `${width} / ${height}`,
     }
   }, [resolvedVideo, style])
-  const rawDurationFrames = useMemo(() => video_length(resolvedVideo), [resolvedVideo])
+  const rawDurationFrames = useMemo(
+    () => video_length(resolvedVideo),
+    [resolvedVideo],
+  )
   const { trimStartFrames, trimEndFrames } = useMemo(
     () =>
       resolveTrimFrames({
@@ -222,7 +250,10 @@ export const Video = ({ video, style, trim, showWaveform }: VideoProps) => {
 
     const projectStartFrame = clipRange.start
     const clipDurationFrames = Math.max(0, clipRange.end - clipRange.start + 1)
-    const availableFrames = Math.max(0, rawDurationFrames - trimStartFrames - trimEndFrames)
+    const availableFrames = Math.max(
+      0,
+      rawDurationFrames - trimStartFrames - trimEndFrames,
+    )
     const durationFrames = Math.min(clipDurationFrames, availableFrames)
     if (durationFrames <= 0) return
 
@@ -239,7 +270,16 @@ export const Video = ({ video, style, trim, showWaveform }: VideoProps) => {
     return () => {
       unregisterAudioSegmentGlobal(id)
     }
-  }, [clipId, clipRange, id, rawDurationFrames, resolvedVideo.path, showWaveform, trimEndFrames, trimStartFrames])
+  }, [
+    clipId,
+    clipRange,
+    id,
+    rawDurationFrames,
+    resolvedVideo.path,
+    showWaveform,
+    trimEndFrames,
+    trimStartFrames,
+  ])
 
   if (isRender) {
     return (
@@ -264,16 +304,27 @@ export const Video = ({ video, style, trim, showWaveform }: VideoProps) => {
 
 type VideoCanvasProps = Omit<VideoProps, "trim"> & VideoResolvedTrimProps
 
-const VideoCanvas = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: VideoCanvasProps) => {
+const VideoCanvas = ({
+  video,
+  style,
+  trimStartFrames = 0,
+  trimEndFrames = 0,
+}: VideoCanvasProps) => {
   const resolvedVideo = useMemo(() => normalizeVideo(video), [video])
-  const elementRef = useRef<HTMLVideoElement | null>(null);
+  const elementRef = useRef<HTMLVideoElement | null>(null)
   const currentFrame = useCurrentFrame()
   const isPlaying = useIsPlaying()
   const isVisible = useClipActive()
   const playingFlag = useRef(false)
   const pendingSeek = useRef<number | null>(null)
-  const rawDuration = useMemo(() => video_length(resolvedVideo), [resolvedVideo])
-  const durationFrames = Math.max(0, rawDuration - trimStartFrames - trimEndFrames)
+  const rawDuration = useMemo(
+    () => video_length(resolvedVideo),
+    [resolvedVideo],
+  )
+  const durationFrames = Math.max(
+    0,
+    rawDuration - trimStartFrames - trimEndFrames,
+  )
   useProvideClipDuration(durationFrames)
 
   useEffect(() => {
@@ -290,7 +341,7 @@ const VideoCanvas = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: V
   }, [currentFrame, isPlaying])
 
   const src = useMemo(() => {
-    return buildVideoUrl(resolvedVideo);
+    return buildVideoUrl(resolvedVideo)
   }, [resolvedVideo.path])
 
   const baseStyle: CSSProperties = {
@@ -338,5 +389,5 @@ const VideoCanvas = ({ video, style, trimStartFrames = 0, trimEndFrames = 0 }: V
       onEnded={() => elementRef.current?.pause()}
       style={style ? { ...baseStyle, ...style } : baseStyle}
     />
-  );
-};
+  )
+}

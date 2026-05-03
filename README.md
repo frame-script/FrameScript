@@ -39,8 +39,8 @@ export const PROJECT = () => {
         {/* <Clip> is an element displayed on the timeline */}
         {/* The timeline length reflects the <Video/> length (can be overridden) */}
         <Clip label="Clip Name">
-          { /* <Video/> loads a video */ }
-          <Video video={{ path: "~/Videos/example.mp4" }}/>
+          {/* <Video/> loads a video */}
+          <Video video={{ path: "~/Videos/example.mp4" }} />
         </Clip>
       </TimeLine>
     </Project>
@@ -65,7 +65,9 @@ const CircleScene = () => {
 
   useAnimation(async (ctx) => {
     // Run motions in parallel by creating handles
-    const move = ctx.move(position).to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
+    const move = ctx
+      .move(position)
+      .to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
     const fade = ctx.move(opacity).to(1, seconds(0.6), BEZIER_SMOOTH)
     await ctx.parallel([move, fade])
   }, [])
@@ -94,7 +96,9 @@ const CircleScene = () => {
 <img src="circle.gif" alt="circle_move" loop=infinite>
 
 ## QuickStart
+
 (Requires Node.js)
+
 ```bash
 npm init @frame-script/latest
 cd <project-path>

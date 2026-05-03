@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, type DependencyList, type RefObject } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type DependencyList,
+  type RefObject,
+} from "react"
 import { createManualPromise, type ManualPromise } from "../../util/promise"
 
 export type WebGLContextLike = WebGLRenderingContext | WebGL2RenderingContext
@@ -10,7 +16,10 @@ type WebGLTracker = {
 }
 
 const WEBGL_TRACKER_KEY = "__frameScript_WebGLTracker"
-const waitWebGLFrameCallbacks = new Map<string, (frame: number) => Promise<void>>()
+const waitWebGLFrameCallbacks = new Map<
+  string,
+  (frame: number) => Promise<void>
+>()
 
 const getWebGLTracker = (): WebGLTracker => {
   const g = globalThis as unknown as Record<string, unknown>
@@ -58,7 +67,10 @@ const getWebGLTracker = (): WebGLTracker => {
 
 const waitForAnimationTick = () =>
   new Promise<void>((resolve) => {
-    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function"
+    ) {
       setTimeout(resolve, 0)
       return
     }
@@ -137,7 +149,7 @@ export const useWebGLPending = () => {
  * await trackWebGLReady(loadTextures())
  * ```
  */
-export const trackWebGLReady = async <T,>(promise: Promise<T>): Promise<T> => {
+export const trackWebGLReady = async <T>(promise: Promise<T>): Promise<T> => {
   const finish = getWebGLTracker().start()
   try {
     return await promise
@@ -180,7 +192,9 @@ export type WebGLContextOptions = {
  */
 export const useWebGLContext = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
-  init: (info: WebGLContextInfo) => void | (() => void) | Promise<void | (() => void)>,
+  init: (
+    info: WebGLContextInfo,
+  ) => void | (() => void) | Promise<void | (() => void)>,
   options?: WebGLContextOptions,
 ) => {
   const glRef = useRef<WebGLContextLike | null>(null)
@@ -215,7 +229,7 @@ export const useWebGLContext = (
 
     const runInit = async () => {
       const gl = preferWebGL2
-        ? canvas.getContext("webgl2") ?? canvas.getContext("webgl")
+        ? (canvas.getContext("webgl2") ?? canvas.getContext("webgl"))
         : canvas.getContext("webgl")
 
       if (!gl) {
@@ -229,9 +243,14 @@ export const useWebGLContext = (
 
       glRef.current = gl
       isWebGL2Ref.current =
-        typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext
+        typeof WebGL2RenderingContext !== "undefined" &&
+        gl instanceof WebGL2RenderingContext
 
-      const info: WebGLContextInfo = { gl, isWebGL2: isWebGL2Ref.current, canvas }
+      const info: WebGLContextInfo = {
+        gl,
+        isWebGL2: isWebGL2Ref.current,
+        canvas,
+      }
       if (typeof optionsRef.current?.onContextCreated === "function") {
         optionsRef.current.onContextCreated(info)
       }
@@ -301,7 +320,9 @@ export const useWebGLContext = (
   return { glRef, isWebGL2Ref }
 }
 
-const waitForWebGL2Finish = async (gl: WebGL2RenderingContext): Promise<boolean> => {
+const waitForWebGL2Finish = async (
+  gl: WebGL2RenderingContext,
+): Promise<boolean> => {
   const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
   if (!sync) {
     gl.finish()
@@ -309,7 +330,8 @@ const waitForWebGL2Finish = async (gl: WebGL2RenderingContext): Promise<boolean>
   }
   gl.flush()
 
-  const start = typeof performance !== "undefined" ? performance.now() : Date.now()
+  const start =
+    typeof performance !== "undefined" ? performance.now() : Date.now()
   const timeoutMs = 5000
   let completed = false
   while (true) {
@@ -321,7 +343,8 @@ const waitForWebGL2Finish = async (gl: WebGL2RenderingContext): Promise<boolean>
     if (status === gl.WAIT_FAILED) {
       break
     }
-    const now = typeof performance !== "undefined" ? performance.now() : Date.now()
+    const now =
+      typeof performance !== "undefined" ? performance.now() : Date.now()
     if (now - start > timeoutMs) {
       break
     }

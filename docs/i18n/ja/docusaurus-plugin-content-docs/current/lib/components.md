@@ -14,11 +14,7 @@ FrameScript で使う主要プリミティブをまとめます。
 ```tsx
 import { Project } from "../src/lib/project"
 
-export const PROJECT = () => (
-  <Project>
-    {/* scenes/clips */}
-  </Project>
-)
+export const PROJECT = () => <Project>{/* scenes/clips */}</Project>
 ```
 
 ### `<TimeLine>`
@@ -30,9 +26,7 @@ import { TimeLine } from "../src/lib/timeline"
 
 export const PROJECT = () => (
   <Project>
-    <TimeLine>
-      {/* Clip / ClipSequence */}
-    </TimeLine>
+    <TimeLine>{/* Clip / ClipSequence */}</TimeLine>
   </Project>
 )
 ```
@@ -68,6 +62,7 @@ export const PROJECT = () => (
 ### Clip utilities
 
 #### `useClipStart()`
+
 現在のクリップの開始フレームを返します。
 
 ```tsx
@@ -75,15 +70,17 @@ const start = useClipStart()
 ```
 
 #### `useClipRange()`
+
 現在のクリップの範囲を返します
 
 ```tsx
 const range = useClipRange()
 const start = range.start
-const end   = range.end
+const end = range.end
 ```
 
 #### `useClipId()`
+
 現在のクリップ ID を返します。
 
 ```tsx
@@ -91,13 +88,17 @@ const id = useClipId()
 ```
 
 #### `useClipDepth()`
+
 現在のクリップのネスト深度を返します。
+
 ```tsx
 const depth = useClipDepth()
 ```
 
 #### `useClipActive()`
+
 現在のクリップがアクティブかつ表示中なら true を返します。
+
 ```tsx
 const active = useClipActive()
 ```
@@ -131,6 +132,7 @@ const active = useClipActive()
 ## Frame utilities
 
 ### `useCurrentFrame()`
+
 現在のフレーム数を取得します。
 `<Clip>` 内では相対フレームが返ります。
 

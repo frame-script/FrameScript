@@ -1,88 +1,90 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"
 
 type Progress = {
-  completed: number;
-  total: number;
-};
+  completed: number
+  total: number
+}
 
 export const RenderProgressPage = () => {
   const normalizeOutputPath = (value: string | null) => {
-    if (!value) return null;
-    return value.replace(/[\r\n]+/g, "").trim();
-  };
+    if (!value) return null
+    return value.replace(/[\r\n]+/g, "").trim()
+  }
 
-  const [progress, setProgress] = useState<Progress>({ completed: 0, total: 0 });
-  const isCompleted = progress.total > 0 && progress.completed >= progress.total;
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelBusy, setCancelBusy] = useState(false);
+  const [progress, setProgress] = useState<Progress>({ completed: 0, total: 0 })
+  const isCompleted = progress.total > 0 && progress.completed >= progress.total
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
   const [outputPath, setOutputPath] = useState<string | null>(() => {
-    const hash = window.location.hash ?? "";
-    const query = hash.includes("?") ? hash.split("?")[1] ?? "" : "";
-    const params = new URLSearchParams(query);
-    return normalizeOutputPath(params.get("output"));
-  });
+    const hash = window.location.hash ?? ""
+    const query = hash.includes("?") ? (hash.split("?")[1] ?? "") : ""
+    const params = new URLSearchParams(query)
+    return normalizeOutputPath(params.get("output"))
+  })
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false
     const tick = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:3000/render_progress");
+        const res = await fetch("http://127.0.0.1:3000/render_progress")
         if (res.ok) {
-          const data = (await res.json()) as Progress;
+          const data = (await res.json()) as Progress
           if (!cancelled) {
-            setProgress(data);
+            setProgress(data)
           }
         }
       } catch (_error) {
         // ignore
       }
-    };
+    }
 
-    tick();
-    const timer = window.setInterval(tick, 50);
+    tick()
+    const timer = window.setInterval(tick, 50)
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
-    let alive = true;
+    let alive = true
     const readOutputPath = async () => {
-      if (!window.renderAPI?.getOutputPath) return;
+      if (!window.renderAPI?.getOutputPath) return
       try {
-        const result = await window.renderAPI.getOutputPath();
+        const result = await window.renderAPI.getOutputPath()
         if (alive) {
-          const next = normalizeOutputPath(result.displayPath ?? result.path);
-          setOutputPath(next);
+          const next = normalizeOutputPath(result.displayPath ?? result.path)
+          setOutputPath(next)
         }
       } catch (_error) {
         // ignore
       }
-    };
-    void readOutputPath();
+    }
+    void readOutputPath()
     return () => {
-      alive = false;
-    };
-  }, []);
+      alive = false
+    }
+  }, [])
 
   const pct =
-    progress.total > 0 ? Math.min(100, Math.round((progress.completed / progress.total) * 100)) : 0;
+    progress.total > 0
+      ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+      : 0
 
   const requestCancel = async () => {
-    setCancelBusy(true);
+    setCancelBusy(true)
     try {
       await fetch("http://127.0.0.1:3000/render_cancel", {
         method: "POST",
-      });
-      window.close();
+      })
+      window.close()
     } catch (_error) {
       // ignore
     } finally {
-      setCancelBusy(false);
-      setConfirmCancel(false);
+      setCancelBusy(false)
+      setConfirmCancel(false)
     }
-  };
+  }
 
   return (
     <div
@@ -108,9 +110,18 @@ export const RenderProgressPage = () => {
           padding: 12,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            marginBottom: 8,
+            gap: 8,
+          }}
+        >
           <span style={{ fontSize: 12, color: "#94a3b8" }}>Progress</span>
-          <span style={{ fontSize: 12, color: "#e5e7eb", marginLeft: "auto" }}>{pct}%</span>
+          <span style={{ fontSize: 12, color: "#e5e7eb", marginLeft: "auto" }}>
+            {pct}%
+          </span>
         </div>
         <div
           style={{
@@ -140,7 +151,15 @@ export const RenderProgressPage = () => {
             : `${progress.completed} / ${progress.total} frames`}
         </div>
       </div>
-      <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+      <div
+        style={{
+          marginTop: 20,
+          display: "flex",
+          justifyContent: "flex-end",
+          gap: 10,
+          alignItems: "center",
+        }}
+      >
         {confirmCancel ? (
           <div
             style={{
@@ -221,12 +240,13 @@ export const RenderProgressPage = () => {
             minWidth: 100,
             fontWeight: 600,
             boxShadow: isCompleted ? "0 6px 14px rgba(0,0,0,0.25)" : "none",
-            transition: "background 120ms ease, color 120ms ease, box-shadow 120ms ease",
+            transition:
+              "background 120ms ease, color 120ms ease, box-shadow 120ms ease",
           }}
         >
           Close
         </button>
       </div>
     </div>
-  );
-};
+  )
+}

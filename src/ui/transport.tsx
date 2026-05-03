@@ -11,7 +11,8 @@ const iconStyle: React.CSSProperties = {
   display: "inline-block",
   width: 18,
   textAlign: "center",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  fontFamily:
+    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
 }
 const buttonBase: React.CSSProperties = {
   display: "inline-flex",
@@ -134,12 +135,16 @@ export const TransportControls = () => {
       const startMs = performance.now()
       queuedFrameRef.current = nextFrame
       if (renderedFrameRef.current !== lastSetFrameRef.current) {
-        logPerfSpike("transport.scheduleFrameCommit", performance.now() - startMs, {
-          reason: "waiting_render",
-          nextFrame,
-          rendered: renderedFrameRef.current,
-          lastSet: lastSetFrameRef.current,
-        })
+        logPerfSpike(
+          "transport.scheduleFrameCommit",
+          performance.now() - startMs,
+          {
+            reason: "waiting_render",
+            nextFrame,
+            rendered: renderedFrameRef.current,
+            lastSet: lastSetFrameRef.current,
+          },
+        )
         return
       }
       const queued = queuedFrameRef.current
@@ -150,54 +155,61 @@ export const TransportControls = () => {
         lastSetFrameRef.current = queued
         setCurrentFrame(queued)
       }
-      logPerfSpike("transport.scheduleFrameCommit", performance.now() - startMs, {
-        reason: "commit",
-        nextFrame: queued,
-      })
+      logPerfSpike(
+        "transport.scheduleFrameCommit",
+        performance.now() - startMs,
+        {
+          reason: "commit",
+          nextFrame: queued,
+        },
+      )
     },
     [setCurrentFrame],
   )
 
-  const tick = useCallback((timestamp: number) => {
-    const startMs = performance.now()
-    const finish = (reason: string) => {
-      logPerfSpike("transport.tick", performance.now() - startMs, {
-        reason,
-        frame: frameRef.current,
-        durationFrames,
-      })
-    }
-    if (!playingRef.current) return
-    if (playbackStartTimeRef.current == null) {
-      playbackStartTimeRef.current = timestamp
-      playbackStartFrameRef.current = frameRef.current
-    }
-    const elapsedMs = timestamp - playbackStartTimeRef.current
-    const nextFloat = playbackStartFrameRef.current + (elapsedMs / 1000) * fps
-    const nextInt = Math.floor(nextFloat)
-
-    const endFrame = durationFrames - 1
-    if (nextFloat > endFrame) {
-      if (loop) {
-        playbackStartFrameRef.current = 0
-        playbackStartTimeRef.current = timestamp
-        scheduleFrameCommit(0)
-        rafRef.current = requestAnimationFrame(tick)
-      } else {
-        scheduleFrameCommit(endFrame)
-        stopPlayback()
+  const tick = useCallback(
+    (timestamp: number) => {
+      const startMs = performance.now()
+      const finish = (reason: string) => {
+        logPerfSpike("transport.tick", performance.now() - startMs, {
+          reason,
+          frame: frameRef.current,
+          durationFrames,
+        })
       }
-      finish("boundary")
-      return
-    }
+      if (!playingRef.current) return
+      if (playbackStartTimeRef.current == null) {
+        playbackStartTimeRef.current = timestamp
+        playbackStartFrameRef.current = frameRef.current
+      }
+      const elapsedMs = timestamp - playbackStartTimeRef.current
+      const nextFloat = playbackStartFrameRef.current + (elapsedMs / 1000) * fps
+      const nextInt = Math.floor(nextFloat)
 
-    frameFloatRef.current = nextFloat
-    if (nextInt !== frameRef.current) {
-      scheduleFrameCommit(nextInt)
-    }
-    rafRef.current = requestAnimationFrame(tick)
-    finish("normal")
-  }, [durationFrames, fps, loop, scheduleFrameCommit, stopPlayback])
+      const endFrame = durationFrames - 1
+      if (nextFloat > endFrame) {
+        if (loop) {
+          playbackStartFrameRef.current = 0
+          playbackStartTimeRef.current = timestamp
+          scheduleFrameCommit(0)
+          rafRef.current = requestAnimationFrame(tick)
+        } else {
+          scheduleFrameCommit(endFrame)
+          stopPlayback()
+        }
+        finish("boundary")
+        return
+      }
+
+      frameFloatRef.current = nextFloat
+      if (nextInt !== frameRef.current) {
+        scheduleFrameCommit(nextInt)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+      finish("normal")
+    },
+    [durationFrames, fps, loop, scheduleFrameCommit, stopPlayback],
+  )
 
   const togglePlay = useCallback(() => {
     if (playingRef.current) {
@@ -230,14 +242,14 @@ export const TransportControls = () => {
   const step = useCallback(
     (delta: number) => {
       stopPlayback()
-    const target = Math.max(0, frameRef.current + delta)
-    frameRef.current = target
-    frameFloatRef.current = target
-    lastSetFrameRef.current = target
-    queuedFrameRef.current = null
-    setCurrentFrame(target)
-  },
-  [setCurrentFrame, stopPlayback],
+      const target = Math.max(0, frameRef.current + delta)
+      frameRef.current = target
+      frameFloatRef.current = target
+      lastSetFrameRef.current = target
+      queuedFrameRef.current = null
+      setCurrentFrame(target)
+    },
+    [setCurrentFrame, stopPlayback],
   )
 
   const jumpToStart = useCallback(() => {
@@ -272,18 +284,39 @@ export const TransportControls = () => {
         boxShadow: "0 10px 26px rgba(0,0,0,0.35)",
       }}
     >
-      <Button onClick={jumpToStart}><span style={iconStyle}>⏮</span></Button>
-      <Button onClick={() => step(-1)}><span style={iconStyle}>&lt;</span></Button>
+      <Button onClick={jumpToStart}>
+        <span style={iconStyle}>⏮</span>
+      </Button>
+      <Button onClick={() => step(-1)}>
+        <span style={iconStyle}>&lt;</span>
+      </Button>
       <Button onClick={togglePlay} fixedWidth={104}>
         <span style={iconStyle}>{isPlaying ? "⏸ " : "▶"}</span>
-        <span style={{ fontWeight: 600, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace" }}>
+        <span
+          style={{
+            fontWeight: 600,
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+          }}
+        >
           {isPlaying ? "Pause" : "Play "}
         </span>
       </Button>
-      <Button onClick={() => step(1)}><span style={iconStyle}>&gt;</span></Button>
-      <Button onClick={jumpToEnd}><span style={iconStyle}>⏭</span></Button>
+      <Button onClick={() => step(1)}>
+        <span style={iconStyle}>&gt;</span>
+      </Button>
+      <Button onClick={jumpToEnd}>
+        <span style={iconStyle}>⏭</span>
+      </Button>
 
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+      <div
+        style={{
+          marginLeft: "auto",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
         <label
           style={{
             display: "inline-flex",
@@ -303,7 +336,12 @@ export const TransportControls = () => {
             type="checkbox"
             checked={loop}
             onChange={(e) => setLoop(e.target.checked)}
-            style={{ accentColor: "#5bd5ff", width: 14, height: 14, cursor: "pointer" }}
+            style={{
+              accentColor: "#5bd5ff",
+              width: 14,
+              height: 14,
+              cursor: "pointer",
+            }}
           />
           Loop
         </label>

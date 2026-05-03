@@ -33,8 +33,8 @@ export const PROJECT = () => {
         {/* <Clip> はタイムラインに表示される要素 */}
         {/* タイムライン上の長さは <Video/> の長さを自動で反映する（指定も可能） */}
         <Clip label="Clip Name">
-          { /* <Video/> は動画を読み込む */ }
-          <Video video={{ path: "~/Videos/example.mp4" }}/>
+          {/* <Video/> は動画を読み込む */}
+          <Video video={{ path: "~/Videos/example.mp4" }} />
         </Clip>
       </TimeLine>
     </Project>

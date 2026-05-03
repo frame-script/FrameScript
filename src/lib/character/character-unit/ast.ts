@@ -13,7 +13,6 @@ export const PsdCharacterElement = {
   Motion: "Motion",
 } as const
 
-
 export type CharacterChild =
   | MotionSequenceNode
   | DeclareVariableNode
@@ -26,9 +25,7 @@ export type MotionSequenceChild =
   | VoiceNode
   | MotionNode
 
-export type DeclareVariableChild =
-  | DeclareVariableNode
-  | DeclareAnimationNode
+export type DeclareVariableChild = DeclareVariableNode | DeclareAnimationNode
 
 export type MotionClipChild =
   | MotionSequenceNode
@@ -41,9 +38,6 @@ export type DeclareAnimationChild =
   | DeclareVariableNode
   | VoiceNode
   | MotionNode
-
-
-
 
 export interface CharacterNode {
   type: typeof PsdCharacterElement.Character
@@ -69,23 +63,39 @@ export interface MotionClipNode {
 
 export interface DeclareAnimationNode {
   type: typeof PsdCharacterElement.DeclareAnimation
-  animation: (ctx: AnimationContext, variable: Record<string, Variable<VariableType>>) => Promise<void>
+  animation: (
+    ctx: AnimationContext,
+    variable: Record<string, Variable<VariableType>>,
+  ) => Promise<void>
   children: DeclareAnimationChild[]
 }
 
 export interface VoiceNode {
   type: typeof PsdCharacterElement.Voice
   voice: string
-  voiceMotion?: (segment: AudioSegment, waveform: WaveformData | null, variables: Record<string, Variable<VariableType>>, frames: number[]) => Record<string, any>
+  voiceMotion?: (
+    segment: AudioSegment,
+    waveform: WaveformData | null,
+    variables: Record<string, Variable<VariableType>>,
+    frames: number[],
+  ) => Record<string, any>
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
-  volume: undefined | number | ((variables: Record<string, Variable<VariableType>>, frames: number[]) => number)
+  volume:
+    | undefined
+    | number
+    | ((
+        variables: Record<string, Variable<VariableType>>,
+        frames: number[],
+      ) => number)
   showWaveform?: boolean
 }
 
 export interface MotionNode {
   type: typeof PsdCharacterElement.Motion
-  motion: (variables: Record<string, Variable<VariableType>>, frames: number[]) => Record<string, any>
+  motion: (
+    variables: Record<string, Variable<VariableType>>,
+    frames: number[],
+  ) => Record<string, any>
 }
-

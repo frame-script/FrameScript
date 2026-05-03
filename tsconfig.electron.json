@@ -9,7 +9,5 @@
     "isolatedModules": false,
     "types": ["node"]
   },
-  "include": [
-    "electron/**/*.ts"
-  ]
+  "include": ["electron/**/*.ts"]
 }

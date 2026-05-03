@@ -37,8 +37,8 @@ export const PROJECT = () => {
         {/* <Clip> はタイムラインに表示される要素 */}
         {/* タイムライン上の長さは <Video/> の長さを自動で反映する（指定も可能） */}
         <Clip label="Clip Name">
-          { /* <Video/> は動画を読み込む */ }
-          <Video video={{ path: "~/Videos/example.mp4" }}/>
+          {/* <Video/> は動画を読み込む */}
+          <Video video={{ path: "~/Videos/example.mp4" }} />
         </Clip>
       </TimeLine>
     </Project>
@@ -63,7 +63,9 @@ const CircleScene = () => {
 
   useAnimation(async (ctx) => {
     // 同時に動かしたい処理は handle を作って並列で待つ
-    const move = ctx.move(position).to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
+    const move = ctx
+      .move(position)
+      .to({ x: 240, y: 0 }, seconds(1.2), BEZIER_SMOOTH)
     const fade = ctx.move(opacity).to(1, seconds(0.6), BEZIER_SMOOTH)
     await ctx.parallel([move, fade])
   }, [])
@@ -92,7 +94,9 @@ const CircleScene = () => {
 <img src="circle.gif" alt="circle_move" loop=infinite>
 
 ## QuickStart
+
 (実行にはNode.jsが必要です)
+
 ```bash
 npm init @frame-script/latest
 cd <project-path>

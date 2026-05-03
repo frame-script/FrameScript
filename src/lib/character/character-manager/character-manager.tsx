@@ -11,7 +11,7 @@ import type { OneOrMany } from "../utils/util-types"
 
 /**
  * Determines where implicit (non-speaking) characters are placed.
- * 
+ *
  * 非話者キャラクターをどのレイヤー順で配置するかを指定する
  * - "front": 前面に配置
  * - "back": 背面に配置
@@ -25,14 +25,15 @@ type DialogueScenarioProps = {
    * Accepts DSL components:
    * - DeclareCharacters
    * - Scenario
-   * 
+   *
    * DSLコンポーネントを受け取る:
    * - DeclareCharacters（キャラ定義）
    * - Scenario（シナリオ本体）
    */
-  children: OneOrMany<ReactElement<typeof DeclareCharacters> | ReactElement<typeof Scenario>>
+  children: OneOrMany<
+    ReactElement<typeof DeclareCharacters> | ReactElement<typeof Scenario>
+  >
 }
-
 
 // ================================
 // Main Component
@@ -41,13 +42,13 @@ type DialogueScenarioProps = {
 /**
  * Builds a dialogue-style scenario from declared characters and chapters.
  * Renders each scene with speaking and non-speaking characters automatically arranged.
- * 
+ *
  * キャラクター定義とチャプター構成から、会話形式のシナリオを生成する。
  * 各シーンごとに、話者・非話者のキャラクターを自動で配置して描画する。
- * 
+ *
  * @param implicitPlacement Controls layering of non-speaking characters
  * @param children DSL components describing characters and scenario
- * 
+ *
  * @param implicitPlacement 非話者キャラクターの前後配置
  * @param children シナリオDSL
  *
@@ -75,9 +76,8 @@ type DialogueScenarioProps = {
  */
 export const DialogueScenario = ({
   implicitPlacement = "back",
-  children
+  children,
 }: DialogueScenarioProps) => {
-
   // =========================
   // 1. Parse DSL → AST
   // =========================
@@ -88,14 +88,14 @@ export const DialogueScenario = ({
   // =========================
   /**
    * Map<name, characterInfo>
-   * 
+   *
    * キャラクター名をキーにした辞書を構築
    * - psd: 使用PSD
    * - speakingClassName: 話者時スタイル
    * - idleState: 非話者時の描画要素
    */
   const characters = new Map(
-    ast.characters.children.map(character => {
+    ast.characters.children.map((character) => {
       return [
         character.name,
         {
@@ -112,47 +112,45 @@ export const DialogueScenario = ({
             >
               {character.children}
             </PsdCharacter>
-          )
-        }
+          ),
+        },
       ]
-    })
+    }),
   )
 
   // =========================
   // 3. Build scenario per chapter
   // =========================
-  const scenario = ast.scenario.children.map(chapter => {
-
+  const scenario = ast.scenario.children.map((chapter) => {
     // -------------------------
     // Extract explicit speakers
     // -------------------------
     /**
      * Characters explicitly marked as speakers in this chapter
-     * 
+     *
      * このチャプター内でSpeakerとして明示指定されたキャラクター
      */
     const explicitSpeakers = chapter.children
-      .filter(child => child.kind == "speaker")
-      .map(s => s.node.name)
+      .filter((child) => child.kind == "speaker")
+      .map((s) => s.node.name)
 
     // -------------------------
     // Determine implicit characters
     // -------------------------
     /**
      * Characters NOT speaking in this chapter
-     * 
+     *
      * このチャプターで話していないキャラクター
      */
-    const implicitCharacters = Array.from(characters.entries())
-      .filter(([key, _]) => !explicitSpeakers.includes(key))
+    const implicitCharacters = Array.from(characters.entries()).filter(
+      ([key, _]) => !explicitSpeakers.includes(key),
+    )
 
     // -------------------------
     // Build explicit speaker nodes
     // -------------------------
-    const explicits = chapter.children.map(elm => {
-
+    const explicits = chapter.children.map((elm) => {
       if (elm.kind == "speaker") {
-
         // Resolve default speaking class
         // デフォルトの話者classNameを付与
         let defaultClass = ""
@@ -185,7 +183,7 @@ export const DialogueScenario = ({
     // Build implicit (idle) nodes
     // -------------------------
     const implicits = implicitCharacters.map(
-      ([_, character]) => character.idleState
+      ([_, character]) => character.idleState,
     )
 
     // -------------------------
@@ -193,13 +191,13 @@ export const DialogueScenario = ({
     // -------------------------
     /**
      * Merge based on placement rule
-     * 
+     *
      * implicitPlacementに応じて前後関係を決定
      */
     const merged = mergeImplicitCharacters(
       implicitPlacement,
       explicits,
-      implicits
+      implicits,
     )
 
     // Wrap each chapter as a Clip
@@ -212,16 +210,11 @@ export const DialogueScenario = ({
   // =========================
   /**
    * Final output is a sequence of clips
-   * 
+   *
    * 最終的にClipの連続として出力
    */
-  return (
-    <ClipSequence>
-      {scenario}
-    </ClipSequence>
-  )
+  return <ClipSequence>{scenario}</ClipSequence>
 }
-
 
 // ================================
 // Helpers
@@ -230,9 +223,9 @@ export const DialogueScenario = ({
 /**
  * Merge explicit (speaking) and implicit (idle) characters
  * based on placement rule.
- * 
+ *
  * 話者と非話者の描画順を制御する
- * 
+ *
  * @param implicitPlacement front or back
  * @param explicits speaking elements
  * @param implicits idle elements
@@ -240,7 +233,7 @@ export const DialogueScenario = ({
 const mergeImplicitCharacters = (
   implicitPlacement: ImplicitCharacterPlacement,
   explicits: ReactNode[],
-  implicits: ReactNode[]
+  implicits: ReactNode[],
 ) => {
   switch (implicitPlacement) {
     case "front":

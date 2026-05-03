@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, type ImgHTMLAttributes, type SyntheticEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type ImgHTMLAttributes,
+  type SyntheticEvent,
+} from "react"
 
 type ImageTracker = {
   pending: number
@@ -52,7 +58,10 @@ const getImageTracker = (): ImageTracker => {
 
 const waitForAnimationTick = () =>
   new Promise<void>((resolve) => {
-    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function"
+    ) {
       setTimeout(resolve, 0)
       return
     }
@@ -137,7 +146,8 @@ export const Img = ({ src, onLoad, onError, ...props }: ImgProps) => {
 
     const handleLoad = (event: Event) => {
       onLoad?.(event as unknown as SyntheticEvent<HTMLImageElement>)
-      const decode = typeof img.decode === "function" ? img.decode() : Promise.resolve()
+      const decode =
+        typeof img.decode === "function" ? img.decode() : Promise.resolve()
       decode.catch(() => {}).finally(finalize)
     }
 
@@ -147,7 +157,8 @@ export const Img = ({ src, onLoad, onError, ...props }: ImgProps) => {
     }
 
     if (img.complete && img.naturalWidth > 0) {
-      const decode = typeof img.decode === "function" ? img.decode() : Promise.resolve()
+      const decode =
+        typeof img.decode === "function" ? img.decode() : Promise.resolve()
       decode.catch(() => {}).finally(finalize)
     } else {
       img.addEventListener("load", handleLoad)

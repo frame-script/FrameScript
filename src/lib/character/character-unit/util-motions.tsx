@@ -1,6 +1,9 @@
 import { PROJECT_SETTINGS } from "../../../../project/project"
 import { framesToSeconds } from "../../audio"
-import { DEFAULT_THRESHOLD, resolveSegmentAmplitude } from "../../sound/character"
+import {
+  DEFAULT_THRESHOLD,
+  resolveSegmentAmplitude,
+} from "../../sound/character"
 import { Motion, VoiceMotion } from "./psd-character-component"
 import type { Trim } from "../../trim"
 
@@ -11,7 +14,7 @@ import type { Trim } from "../../trim"
 /**
  * Defines basic options for controlling eye and mouth animations.
  * Used to configure how PSD layers are switched during animation.
- * 
+ *
  * 目と口のアニメーション制御に使用する基本設定。
  * PSDのレイヤー切り替え方法を定義するために使う。
  */
@@ -22,7 +25,7 @@ export type BasicPsdOptions = {
 
 /**
  * Supports either enum-based switching or boolean layer toggling.
- * 
+ *
  * enum形式（1つ選択）またはbool形式（ON/OFF切り替え）のどちらでも扱えるようにする
  */
 export type EyeOptions4 =
@@ -45,7 +48,7 @@ export type EyeShape4 = "Open" | "HalfOpen" | "HalfClosed" | "Closed"
 /**
  * Enum-style eye configuration.
  * Specifies a single active layer from multiple options.
- * 
+ *
  * enum形式の目指定。
  * 複数のレイヤーから1つを選択して切り替える。
  */
@@ -57,7 +60,7 @@ export type EyeEnum<T extends string> = {
 /**
  * Boolean-style eye configuration.
  * Turns layers on/off individually.
- * 
+ *
  * bool形式の目指定（レイヤーON/OFF制御）
  */
 export type EyeBool<T extends string> = {
@@ -75,7 +78,7 @@ export type MouthShape2 = "Open" | "Closed"
 
 /**
  * Enum-style mouth configuration.
- * 
+ *
  * enum形式の口指定
  */
 export type MouthEnum<T extends string> = {
@@ -85,7 +88,7 @@ export type MouthEnum<T extends string> = {
 
 /**
  * Boolean-style mouth configuration.
- * 
+ *
  * bool形式の口指定
  */
 export type MouthBool<T extends string> = {
@@ -94,19 +97,21 @@ export type MouthBool<T extends string> = {
 
 /**
  * Utility type to enforce required keys.
- * 
+ *
  * 指定したキーを必須にするユーティリティ型
  */
 type HasKey<K extends string, V = unknown> = {
   [P in K]: V
 } & Record<string, unknown>
 
-
 // ================================
 // LipSync（音素ベース口パク）
 // ================================
 
-export type LipSyncData  = HasKey<"mouthCues", {start: number, end: number, value: string}[]>
+export type LipSyncData = HasKey<
+  "mouthCues",
+  { start: number; end: number; value: string }[]
+>
 
 export type LipSyncProps = {
   data: LipSyncData
@@ -115,7 +120,7 @@ export type LipSyncProps = {
 /**
  * Creates a lip-sync component based on phoneme timing data.
  * The mouth shape is automatically selected depending on the current time.
- * 
+ *
  * 音素タイミングデータをもとに口パクを行うコンポーネントを生成する。
  * 現在の時間に応じて口の形が自動で切り替わる。
  *
@@ -124,21 +129,21 @@ export type LipSyncProps = {
  * const LipSync = createLipSync({
  *   kind: "enum" as const,
  *   options: {
- *     Mouth: "目・口/口", 
+ *     Mouth: "目・口/口",
  *     Default: "あ",
- *     A: "あ", 
- *     I: "い", 
- *     U: "う", 
- *     E: "え", 
- *     O: "お", 
- *     X: "閉じ", 
+ *     A: "あ",
+ *     I: "い",
+ *     U: "う",
+ *     E: "え",
+ *     O: "お",
+ *     X: "閉じ",
  *   }
  * })
  *
  * const data = {
  *   mouthCues: [{start: 0}, {end: 1}, {value: "A"}]
  * }
- * 
+ *
  * // 略 --------------------
  *
  * <PsdCharacter psd={psd}>
@@ -147,31 +152,37 @@ export type LipSyncProps = {
  * </PsdCharacter>
  * ```
  */
-export const createLipSync = (mouthOptions: MouthOptions, value2option: Record<string, MouthShapeVowel> = rhubarbTable) => {
+export const createLipSync = (
+  mouthOptions: MouthOptions,
+  value2option: Record<string, MouthShapeVowel> = rhubarbTable,
+) => {
   return ({ data }: LipSyncProps) => {
-    return <Motion motion={(_v, frames) => {
+    return (
+      <Motion
+        motion={(_v, frames) => {
+          // 現在フレームを秒に変換
+          const t = framesToSeconds(frames[0])
 
-      // 現在フレームを秒に変換
-      const t = framesToSeconds(frames[0])
+          let shape: MouthShapeVowel | undefined = undefined
 
-      let shape: MouthShapeVowel | undefined = undefined
+          // 現在時刻に該当するセクションを線形探索
+          for (let section of data.mouthCues) {
+            if (section.start <= t && t < section.end) {
+              shape = value2option[section.value] ?? "X"
+              break
+            }
+          }
 
-      // 現在時刻に該当するセクションを線形探索
-      for (let section of data.mouthCues) {
-        if (section.start <= t && t < section.end) {
-          shape = value2option[section.value] ?? "X"
-          break
-        }
-      }
+          // 該当なし → 何も変更しない
+          if (!shape) {
+            return {}
+          }
 
-      // 該当なし → 何も変更しない
-      if (!shape) {
-        return {}
-      }
-
-      // PSDのレイヤー指定に変換
-      return applyOption(mouthOptions, shape)
-    }} />
+          // PSDのレイヤー指定に変換
+          return applyOption(mouthOptions, shape)
+        }}
+      />
+    )
   }
 }
 
@@ -180,24 +191,23 @@ export const createLipSync = (mouthOptions: MouthOptions, value2option: Record<s
  * (rhubarbのフォーマットに対応)
  */
 const rhubarbTable: Record<string, MouthShapeVowel> = {
-    "A": "A",
-    "B": "I",
-    "C": "E",
-    "D": "A",
-    "E": "O",
-    "F": "U",
-    "G": "I",
-    "H": "U",
-    "X": "X",
+  A: "A",
+  B: "I",
+  C: "E",
+  D: "A",
+  E: "O",
+  F: "U",
+  G: "I",
+  H: "U",
+  X: "X",
 }
-
 
 // ================================
 // Simple LipSync（音量ベース）
 // ================================
 
 type SimpleLipSyncProps = {
-  voice: string,
+  voice: string
   threshold?: number
   trim?: Trim
   fadeInFrames?: number
@@ -209,7 +219,7 @@ type SimpleLipSyncProps = {
 /**
  * Creates a simple lip-sync based on audio volume.
  * Mouth opens when volume exceeds threshold.
- * 
+ *
  * 音量に応じて口を開閉するシンプルな口パク。
  * 一定以上の音量で口が開く。
  *
@@ -218,13 +228,13 @@ type SimpleLipSyncProps = {
  * const LipSync = createSimpleLipSync({
  *   kind: "enum" as const,
  *   options: {
- *     Mouth: "目・口/口", 
+ *     Mouth: "目・口/口",
  *     Default: "あ",
- *     Open: "あ", 
- *     Closed: "閉じ", 
+ *     Open: "あ",
+ *     Closed: "閉じ",
  *   }
  * })
- * 
+ *
  * // 略 --------------------
  *
  * <PsdCharacter psd={psd}>
@@ -240,40 +250,43 @@ export const createSimpleLipSync = (mouthOptions: SimpleMouthOptions) => {
     fadeInFrames,
     fadeOutFrames,
     volume,
-    showWaveform
+    showWaveform,
   }: SimpleLipSyncProps) => {
-    return <VoiceMotion
-      voice={voice}
-      voiceMotion={(audioSegment, waveform, _, frames) => {
+    return (
+      <VoiceMotion
+        voice={voice}
+        voiceMotion={(audioSegment, waveform, _, frames) => {
+          // 現在フレーム時点の音量を取得
+          const amp = resolveSegmentAmplitude(
+            audioSegment,
+            waveform,
+            frames[frames.length - 1],
+            PROJECT_SETTINGS.fps,
+          )
 
-        // 現在フレーム時点の音量を取得
-        const amp = resolveSegmentAmplitude(
-          audioSegment,
-          waveform,
-          frames[frames.length - 1],
-          PROJECT_SETTINGS.fps
-        )
-
-        // 閾値で開閉を切り替え
-        return amp > threshold
-          ? applyOption(mouthOptions, "Open")
-          : applyOption(mouthOptions, "Closed")
-      }}
-      trim={trim}
-      fadeInFrames={fadeInFrames}
-      fadeOutFrames={fadeOutFrames}
-      volume={volume}
-      showWaveform={showWaveform}
-    />
+          // 閾値で開閉を切り替え
+          return amp > threshold
+            ? applyOption(mouthOptions, "Open")
+            : applyOption(mouthOptions, "Closed")
+        }}
+        trim={trim}
+        fadeInFrames={fadeInFrames}
+        fadeOutFrames={fadeOutFrames}
+        volume={volume}
+        showWaveform={showWaveform}
+      />
+    )
   }
 }
-
 
 // ================================
 // Blink（目パチ）
 // ================================
 
-export type BlinkData = HasKey<"blinkCues", {start: number, end: number, value: string}[]>
+export type BlinkData = HasKey<
+  "blinkCues",
+  { start: number; end: number; value: string }[]
+>
 
 export type BlinkProps = {
   data: BlinkData
@@ -281,7 +294,7 @@ export type BlinkProps = {
 
 /**
  * Creates a blink animation based on timing data.
- * 
+ *
  * タイミングデータに基づいて目パチを行う。
  *
  * @example
@@ -289,7 +302,7 @@ export type BlinkProps = {
  * const Blink = createBlink({
  *   kind: "enum" as const,
  *   options: {
- *     Eye: "目・口/目", 
+ *     Eye: "目・口/目",
  *     Default: "デフォルト"
  *     Open: "デフォルト",
  *     HalfOpen: "やや閉じ",
@@ -309,7 +322,7 @@ export type BlinkProps = {
  *     { start: 0.65, end: 6.65, value: "A" }
  *   ]
  * }
- * 
+ *
  * // 略 --------------------
  *
  * <PsdCharacter psd={psd}>
@@ -320,43 +333,46 @@ export type BlinkProps = {
  */
 export const createBlink = (eyeOptions: EyeOptions4) => {
   return ({ data }: BlinkProps) => {
-    return <Motion motion={(_v, frames) => {
+    return (
+      <Motion
+        motion={(_v, frames) => {
+          const t = framesToSeconds(frames[1])
+          const sections = data.blinkCues
 
-      const t = framesToSeconds(frames[1])
-      const sections = data.blinkCues
-      
-      // =========================
-      // 二分探索（start <= t の最大index）
-      // LipSyncよりも長くなることが多いと想定し線形探索でなく二分探索
-      // =========================
-      let lo = 0
-      let hi = sections.length - 1
-      let idx = -1
-      
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1
-      
-        if (sections[mid].start <= t) {
-          idx = mid
-          lo = mid + 1
-        } else {
-          hi = mid - 1
-        }
-      }
-      
-      let shape: EyeShape4 | undefined = undefined
+          // =========================
+          // 二分探索（start <= t の最大index）
+          // LipSyncよりも長くなることが多いと想定し線形探索でなく二分探索
+          // =========================
+          let lo = 0
+          let hi = sections.length - 1
+          let idx = -1
 
-      // 範囲内なら有効
-      if (idx !== -1 && t < sections[idx].end) {
-        shape = BlinkValueToEyeShape(sections[idx].value)
-      }
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1
 
-      if (!shape) {
-        return {}
-      }
+            if (sections[mid].start <= t) {
+              idx = mid
+              lo = mid + 1
+            } else {
+              hi = mid - 1
+            }
+          }
 
-      return applyOption(eyeOptions, shape)
-    }} />
+          let shape: EyeShape4 | undefined = undefined
+
+          // 範囲内なら有効
+          if (idx !== -1 && t < sections[idx].end) {
+            shape = BlinkValueToEyeShape(sections[idx].value)
+          }
+
+          if (!shape) {
+            return {}
+          }
+
+          return applyOption(eyeOptions, shape)
+        }}
+      />
+    )
   }
 }
 
@@ -365,17 +381,22 @@ export const createBlink = (eyeOptions: EyeOptions4) => {
  */
 const BlinkValueToEyeShape = (value: string): EyeShape4 => {
   switch (value) {
-    case "A": return "Open"
-    case "B": return "HalfOpen"
-    case "C": return "HalfClosed"
-    case "D": return "Closed"
-    default:  return "Open"
+    case "A":
+      return "Open"
+    case "B":
+      return "HalfOpen"
+    case "C":
+      return "HalfClosed"
+    case "D":
+      return "Closed"
+    default:
+      return "Open"
   }
 }
 
 export const generateBlinkData = (start: number, end: number): BlinkData => {
   const unit = (t: number) => [
-    { start: t + 0.00, end: t + 0.01, value: "A" },
+    { start: t + 0.0, end: t + 0.01, value: "A" },
     { start: t + 0.01, end: t + 0.02, value: "B" },
     { start: t + 0.02, end: t + 0.04, value: "C" },
     { start: t + 0.04, end: t + 0.06, value: "D" },
@@ -428,14 +449,22 @@ export const generateBlinkData = (start: number, end: number): BlinkData => {
   }
 }
 
-
 // ================================
 // 共通：PSDレイヤー適用ロジック
 // ================================
 
-function applyOption(optionDict: EyeOptions4, option: EyeShape4): Record<string, any>;
-function applyOption(optionDict: MouthOptions, option: MouthShapeVowel): Record<string, any>;
-function applyOption(optionDict: SimpleMouthOptions, option: MouthShape2): Record<string, any>;
+function applyOption(
+  optionDict: EyeOptions4,
+  option: EyeShape4,
+): Record<string, any>
+function applyOption(
+  optionDict: MouthOptions,
+  option: MouthShapeVowel,
+): Record<string, any>
+function applyOption(
+  optionDict: SimpleMouthOptions,
+  option: MouthShape2,
+): Record<string, any>
 
 /**
  * option（状態）をPSDレイヤー指定に変換する
@@ -448,9 +477,8 @@ function applyOption(optionDict: SimpleMouthOptions, option: MouthShape2): Recor
  */
 function applyOption(
   optionDict: EyeOptions4 | MouthOptions | SimpleMouthOptions,
-  option: EyeShape4 | MouthShapeVowel | MouthShape2
+  option: EyeShape4 | MouthShapeVowel | MouthShape2,
 ): Record<string, any> {
-
   // 未定義のキーは無視
   if (!(option in optionDict.options)) return {}
 
@@ -460,18 +488,17 @@ function applyOption(
   // enum形式
   // =========================
   if (optionDict.kind == "enum") {
-
     // 口
     if ("Mouth" in optionDict.options) {
       return {
-        [optionDict.options.Mouth]: optionDict.options[opt]
+        [optionDict.options.Mouth]: optionDict.options[opt],
       }
     }
 
     // 目
     if ("Eye" in optionDict.options) {
       return {
-        [optionDict.options.Eye]: optionDict.options[opt]
+        [optionDict.options.Eye]: optionDict.options[opt],
       }
     }
 
@@ -484,13 +511,13 @@ function applyOption(
   if (optionDict.options[opt] == optionDict.options.Default) {
     // デフォルト状態
     return {
-      [optionDict.options.Default]: true
+      [optionDict.options.Default]: true,
     }
   } else {
     // 対象ON + デフォルトOFF
     return {
       [optionDict.options.Default]: false,
-      [optionDict.options[opt]]: true
+      [optionDict.options[opt]]: true,
     }
   }
 }

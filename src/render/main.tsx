@@ -12,7 +12,14 @@ const RanderRoot = () => {
   }, [])
 
   return (
-    <StudioStateContext.Provider value={{ isPlaying: false, setIsPlaying, isPlayingStore: storeRef.current, isRender: true }}>
+    <StudioStateContext.Provider
+      value={{
+        isPlaying: false,
+        setIsPlaying,
+        isPlayingStore: storeRef.current,
+        isRender: true,
+      }}
+    >
       <WithCurrentFrame>
         <PROJECT />
       </WithCurrentFrame>
@@ -25,5 +32,5 @@ const root = document.getElementById("root")!
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <RanderRoot />
-  </React.StrictMode>
+  </React.StrictMode>,
 )

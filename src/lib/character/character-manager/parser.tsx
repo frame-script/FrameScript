@@ -1,11 +1,17 @@
 import React, { isValidElement, type ReactElement, type ReactNode } from "react"
-import type { CharacterManagerNode,  DeclareCharactersNode,  ScenarioNode,  DeclareCharacterNode,  ChapterNode,  SpeakerNode, ChapterChild } from "./ast"
-import { CharacterManagerElement as ManagerElm} from "./ast"
+import type {
+  CharacterManagerNode,
+  DeclareCharactersNode,
+  ScenarioNode,
+  DeclareCharacterNode,
+  ChapterNode,
+  SpeakerNode,
+  ChapterChild,
+} from "./ast"
+import { CharacterManagerElement as ManagerElm } from "./ast"
 import { Motion } from "../character-unit"
 
-
 type AnyElement = ReactElement<any, any>
-
 
 export const parseCharacterManager = (
   children: ReactNode,
@@ -29,9 +35,7 @@ export const parseCharacterManager = (
   }
 }
 
-const parseDeclareCharacters = (
-  self: AnyElement
-): DeclareCharactersNode => {
+const parseDeclareCharacters = (self: AnyElement): DeclareCharactersNode => {
   const { children } = self.props
   const body = parseDeclareCharactersChildren(children)
   return {
@@ -41,24 +45,23 @@ const parseDeclareCharacters = (
 }
 
 const parseDeclareCharactersChildren = (
-  children: ReactNode 
+  children: ReactNode,
 ): DeclareCharacterNode[] => {
-  return React.Children.map(children, (child) => {
-    if (!isValidElement(child)) return
+  return (
+    React.Children.map(children, (child) => {
+      if (!isValidElement(child)) return
 
-    const type = getDslType(child)
-    if (type == ManagerElm.DeclareCharacter) {
-      return parseDeclareCharacter(child)
-    } else {
-      throw `Invalid DSL type in ${ManagerElm.DeclareCharacters}: ${type}`
-    }
-  }) ?? []
-
+      const type = getDslType(child)
+      if (type == ManagerElm.DeclareCharacter) {
+        return parseDeclareCharacter(child)
+      } else {
+        throw `Invalid DSL type in ${ManagerElm.DeclareCharacters}: ${type}`
+      }
+    }) ?? []
+  )
 }
 
-const parseScenario = (
-  self: AnyElement
-): ScenarioNode => {
+const parseScenario = (self: AnyElement): ScenarioNode => {
   const { children } = self.props
   const body = parseScenarioChildren(children)
   return {
@@ -67,29 +70,32 @@ const parseScenario = (
   }
 }
 
-const parseScenarioChildren = (
-  children: ReactNode 
-): ChapterNode[] => {
-  return React.Children.map(children, (child) => {
-    if (!isValidElement(child)) return
+const parseScenarioChildren = (children: ReactNode): ChapterNode[] => {
+  return (
+    React.Children.map(children, (child) => {
+      if (!isValidElement(child)) return
 
-    const type = getDslType(child)
-    if (type == ManagerElm.Chapter) {
-      return parseChapter(child)
-    } else {
-      throw `Invalid DSL type in ${ManagerElm.DeclareCharacters}: ${type}`
-    }
-  }) ?? []
-
+      const type = getDslType(child)
+      if (type == ManagerElm.Chapter) {
+        return parseChapter(child)
+      } else {
+        throw `Invalid DSL type in ${ManagerElm.DeclareCharacters}: ${type}`
+      }
+    }) ?? []
+  )
 }
 
-const parseDeclareCharacter = (
-  self: AnyElement
-): DeclareCharacterNode => {
+const parseDeclareCharacter = (self: AnyElement): DeclareCharacterNode => {
   const { name, psd, idleClassName, speakingClassName, children } = self.props
-  let comp_child = <Motion motion={(_v, _f) => {return {}}} />
+  let comp_child = (
+    <Motion
+      motion={(_v, _f) => {
+        return {}
+      }}
+    />
+  )
   if (children) {
-      comp_child = children
+    comp_child = children
   }
   return {
     type: ManagerElm.DeclareCharacter,
@@ -101,9 +107,7 @@ const parseDeclareCharacter = (
   }
 }
 
-const parseChapter = (
-  self: AnyElement
-): ChapterNode => {
+const parseChapter = (self: AnyElement): ChapterNode => {
   const { children } = self.props
   const body = parseChapterChildren(children)
   return {
@@ -112,25 +116,22 @@ const parseChapter = (
   }
 }
 
-const parseChapterChildren = (
-  children: ReactNode 
-): ChapterChild[] => {
-  return React.Children.map(children, child => {
-    if (!isValidElement(child)) return
+const parseChapterChildren = (children: ReactNode): ChapterChild[] => {
+  return (
+    React.Children.map(children, (child) => {
+      if (!isValidElement(child)) return
 
-    const type = getDslType(child)
-    if (type == ManagerElm.Speaker) {
-      return { kind: "speaker", node: parseSpeaker(child) }
-    } else {
-      return { kind: "other", node: child }
-    }
-  }) ?? []
-
+      const type = getDslType(child)
+      if (type == ManagerElm.Speaker) {
+        return { kind: "speaker", node: parseSpeaker(child) }
+      } else {
+        return { kind: "other", node: child }
+      }
+    }) ?? []
+  )
 }
 
-const parseSpeaker = (
-  self: AnyElement
-): SpeakerNode => {
+const parseSpeaker = (self: AnyElement): SpeakerNode => {
   const { className, name, children } = self.props
   return {
     type: ManagerElm.Speaker,
@@ -139,7 +140,6 @@ const parseSpeaker = (
     children,
   }
 }
-
 
 const getDslType = (el: AnyElement): string | undefined => {
   const type = el.type as any

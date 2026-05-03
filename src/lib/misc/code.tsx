@@ -90,7 +90,9 @@ const parseHexColor = (value: string): RgbaColor | null => {
 const parseRgbColor = (value: string): RgbaColor | null => {
   const match = value
     .trim()
-    .match(/^rgba?\(\s*([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)(?:\s*,\s*([-+]?[\d.]+))?\s*\)$/i)
+    .match(
+      /^rgba?\(\s*([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)(?:\s*,\s*([-+]?[\d.]+))?\s*\)$/i,
+    )
   if (!match) return null
 
   const r = Number(match[1])
@@ -116,7 +118,8 @@ const parseCssColor = (value: string): RgbaColor | null => {
   ctx.fillStyle = fallback
   ctx.fillStyle = value
   const normalized = ctx.fillStyle.trim()
-  if (normalized === fallback && value.trim().toLowerCase() !== fallback) return null
+  if (normalized === fallback && value.trim().toLowerCase() !== fallback)
+    return null
   return parseHexColor(normalized) ?? parseRgbColor(normalized)
 }
 
@@ -143,8 +146,10 @@ const interpolateColor = (from: string, to: string, t: number) => {
   })
 }
 
-const resolveHighlightFillColor = (fillColor: string | undefined, color: string) =>
-  fillColor ?? colorWithAlpha(color, DEFAULT_HIGHLIGHT_FILL_ALPHA)
+const resolveHighlightFillColor = (
+  fillColor: string | undefined,
+  color: string,
+) => fillColor ?? colorWithAlpha(color, DEFAULT_HIGHLIGHT_FILL_ALPHA)
 
 const snapToDevicePixel = (value: number) => {
   if (typeof window === "undefined") return value
@@ -336,13 +341,35 @@ const hasType = (types: string[], values: string[]) =>
   values.some((value) => types.includes(value))
 
 const pickTokenColor = (types: string[], theme: CodeTheme) => {
-  if (hasType(types, ["comment", "prolog", "doctype", "cdata"])) return theme.comment
+  if (hasType(types, ["comment", "prolog", "doctype", "cdata"]))
+    return theme.comment
   if (hasType(types, ["keyword"])) return theme.keyword
   if (hasType(types, ["type", "class-name", "generic"])) return theme.type
-  if (hasType(types, ["builtin", "function", "function-variable", "method", "namespace"])) return theme.builtin
-  if (hasType(types, ["string", "char", "template-string", "regex", "url", "attr-value"])) return theme.string
-  if (hasType(types, ["number", "boolean", "constant", "symbol"])) return theme.number
-  if (hasType(types, ["operator", "punctuation", "tag", "attr-name"])) return theme.punctuation
+  if (
+    hasType(types, [
+      "builtin",
+      "function",
+      "function-variable",
+      "method",
+      "namespace",
+    ])
+  )
+    return theme.builtin
+  if (
+    hasType(types, [
+      "string",
+      "char",
+      "template-string",
+      "regex",
+      "url",
+      "attr-value",
+    ])
+  )
+    return theme.string
+  if (hasType(types, ["number", "boolean", "constant", "symbol"]))
+    return theme.number
+  if (hasType(types, ["operator", "punctuation", "tag", "attr-name"]))
+    return theme.punctuation
   return theme.base
 }
 
@@ -538,7 +565,10 @@ export const Code = ({
   style,
   className,
 }: CodeProps) => {
-  const mergedTheme = useMemo(() => ({ ...DEFAULT_THEME, ...(theme ?? {}) }), [theme])
+  const mergedTheme = useMemo(
+    () => ({ ...DEFAULT_THEME, ...(theme ?? {}) }),
+    [theme],
+  )
   const parsedSteps = useMemo(
     () => steps.map((item) => parseStep(item, mergedTheme)),
     [steps, mergedTheme],
@@ -556,7 +586,10 @@ export const Code = ({
   const current = parsedSteps[stepIndex]
   const next = parsedSteps[nextIndex]
   const matches = useMemo(
-    () => (stepIndex === nextIndex ? [] : buildLineMatches(current.lines, next.lines)),
+    () =>
+      stepIndex === nextIndex
+        ? []
+        : buildLineMatches(current.lines, next.lines),
     [current.lines, next.lines, stepIndex, nextIndex],
   )
   const matchFrom = new Map<number, number>()
@@ -634,7 +667,13 @@ export const Code = ({
       if (mapped == null) {
         addLine(`line-out-${stepIndex}-${index}`, tokens, index, index, 1 - t)
       } else {
-        addLine(`line-move-${stepIndex}-${index}-${mapped}`, tokens, index, mapped, 1)
+        addLine(
+          `line-move-${stepIndex}-${index}-${mapped}`,
+          tokens,
+          index,
+          mapped,
+          1,
+        )
       }
     })
     next.tokens.forEach((tokens, index) => {
@@ -695,8 +734,14 @@ export const Code = ({
     if (!fromBox || !toBox) return null
     const fromColor = fromBox.entry?.color ?? DEFAULT_HIGHLIGHT_COLOR
     const toColor = toBox.entry?.color ?? DEFAULT_HIGHLIGHT_COLOR
-    const fromFillColor = resolveHighlightFillColor(fromBox.entry?.fillColor, fromColor)
-    const toFillColor = resolveHighlightFillColor(toBox.entry?.fillColor, toColor)
+    const fromFillColor = resolveHighlightFillColor(
+      fromBox.entry?.fillColor,
+      fromColor,
+    )
+    const toFillColor = resolveHighlightFillColor(
+      toBox.entry?.fillColor,
+      toColor,
+    )
 
     return {
       id: track.id ?? track.steps[highlightFrom]?.id,
@@ -721,7 +766,10 @@ export const Code = ({
     .filter((box): box is NonNullable<typeof box> => Boolean(box))
 
   return (
-    <div className={className} style={style ? { ...baseStyle, ...style } : baseStyle}>
+    <div
+      className={className}
+      style={style ? { ...baseStyle, ...style } : baseStyle}
+    >
       {lineRenders.map((line) => {
         const fromY = line.from * lineHeightPx
         const toY = line.to * lineHeightPx
@@ -748,9 +796,12 @@ export const Code = ({
           </div>
         )
       })}
-      {highlightBoxes.map((highlightBox, index) => (
+      {highlightBoxes.map((highlightBox, index) =>
         (() => {
-          const strokeWidth = Math.max(0.5, highlightBox.entry?.strokeWidth ?? 3)
+          const strokeWidth = Math.max(
+            0.5,
+            highlightBox.entry?.strokeWidth ?? 3,
+          )
           const rect = resolveHighlightRect(
             padding + highlightBox.x,
             padding + highlightBox.y,
@@ -780,8 +831,8 @@ export const Code = ({
               }}
             />
           )
-        })()
-      ))}
+        })(),
+      )}
       {highlights.map((highlight, index) => {
         const pos = resolveValue(highlight.position)
         const size = resolveValue(highlight.size)
@@ -805,7 +856,10 @@ export const Code = ({
         const resolvedPos = pos ?? fallbackPos
         const resolvedSize = size ?? fallbackSize
         const strokeColor = highlight.color ?? DEFAULT_HIGHLIGHT_COLOR
-        const fillColor = resolveHighlightFillColor(highlight.fillColor, strokeColor)
+        const fillColor = resolveHighlightFillColor(
+          highlight.fillColor,
+          strokeColor,
+        )
         const strokeWidth = Math.max(0.5, highlight.strokeWidth ?? 3)
         const rect = resolveHighlightRect(
           padding + resolvedPos.x,

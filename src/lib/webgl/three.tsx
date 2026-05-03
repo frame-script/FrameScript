@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, type CSSProperties } from "react"
 import * as THREE from "three"
 import { PROJECT_SETTINGS } from "../../../project/project"
 import { useCurrentFrame } from "../frame"
-import { useWebGLContext, useWebGLFrameWaiter, type WebGLContextLike } from "./index"
+import {
+  useWebGLContext,
+  useWebGLFrameWaiter,
+  type WebGLContextLike,
+} from "./index"
 
 export type ThreeSize = {
   width: number
@@ -55,11 +59,24 @@ export type ThreeCanvasProps = {
   onContextFailed?: () => void
 }
 
-const resolveSize = (canvas: HTMLCanvasElement, pixelRatio?: number): ThreeSize => {
+const resolveSize = (
+  canvas: HTMLCanvasElement,
+  pixelRatio?: number,
+): ThreeSize => {
   const rect = canvas.getBoundingClientRect()
-  const cssWidth = Math.max(1, Math.round(rect.width || PROJECT_SETTINGS.width || 1))
-  const cssHeight = Math.max(1, Math.round(rect.height || PROJECT_SETTINGS.height || 1))
-  const dpr = Math.max(1, pixelRatio ?? (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1))
+  const cssWidth = Math.max(
+    1,
+    Math.round(rect.width || PROJECT_SETTINGS.width || 1),
+  )
+  const cssHeight = Math.max(
+    1,
+    Math.round(rect.height || PROJECT_SETTINGS.height || 1),
+  )
+  const dpr = Math.max(
+    1,
+    pixelRatio ??
+      (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1),
+  )
   return {
     cssWidth,
     cssHeight,
@@ -235,7 +252,12 @@ export const ThreeCanvas = ({
 
     const nextSize = resolveSize(canvas, pixelRatio)
     const prevSize = sizeRef.current
-    if (!prevSize || prevSize.width !== nextSize.width || prevSize.height !== nextSize.height || prevSize.dpr !== nextSize.dpr) {
+    if (
+      !prevSize ||
+      prevSize.width !== nextSize.width ||
+      prevSize.height !== nextSize.height ||
+      prevSize.dpr !== nextSize.dpr
+    ) {
       sizeRef.current = nextSize
       renderer.setPixelRatio(nextSize.dpr)
       renderer.setSize(nextSize.cssWidth, nextSize.cssHeight, false)

@@ -118,8 +118,13 @@ export const AudioWaveformSegment = ({
     if (endSec <= 0 || startSec >= data.durationSec) return null
 
     const clampedStart = Math.max(0, startSec)
-    const clampedEnd = Math.min(data.durationSec, Math.max(clampedStart, endSec))
-    const startIndex = Math.floor((clampedStart / data.durationSec) * data.peaks.length)
+    const clampedEnd = Math.min(
+      data.durationSec,
+      Math.max(clampedStart, endSec),
+    )
+    const startIndex = Math.floor(
+      (clampedStart / data.durationSec) * data.peaks.length,
+    )
     const endIndex = Math.max(
       startIndex + 1,
       Math.ceil((clampedEnd / data.durationSec) * data.peaks.length),

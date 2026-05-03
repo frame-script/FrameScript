@@ -1,4 +1,10 @@
-import React, { useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import React, {
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react"
 import { PROJECT_SETTINGS } from "../../project/project"
 
 type FrameStore = {
@@ -9,10 +15,13 @@ type FrameStore = {
 
 const CURRENT_FRAME_CONTEXT_KEY = "__frameScript_CurrentFrameContext"
 const CLIP_START_CONTEXT_KEY = "__frameScript_ClipStartContext"
-const FRAME_UPDATES_ENABLED_CONTEXT_KEY = "__frameScript_FrameUpdatesEnabledContext"
+const FRAME_UPDATES_ENABLED_CONTEXT_KEY =
+  "__frameScript_FrameUpdatesEnabledContext"
 const CurrentFrameContext: React.Context<FrameStore | null> = (() => {
   const g = globalThis as unknown as Record<string, unknown>
-  const existing = g[CURRENT_FRAME_CONTEXT_KEY] as React.Context<FrameStore | null> | undefined
+  const existing = g[CURRENT_FRAME_CONTEXT_KEY] as
+    | React.Context<FrameStore | null>
+    | undefined
   if (existing) return existing
   const created = React.createContext<FrameStore | null>(null)
   g[CURRENT_FRAME_CONTEXT_KEY] = created
@@ -21,7 +30,9 @@ const CurrentFrameContext: React.Context<FrameStore | null> = (() => {
 
 const ClipStartContext: React.Context<number | null> = (() => {
   const g = globalThis as unknown as Record<string, unknown>
-  const existing = g[CLIP_START_CONTEXT_KEY] as React.Context<number | null> | undefined
+  const existing = g[CLIP_START_CONTEXT_KEY] as
+    | React.Context<number | null>
+    | undefined
   if (existing) return existing
   const created = React.createContext<number | null>(null)
   g[CLIP_START_CONTEXT_KEY] = created
@@ -30,7 +41,9 @@ const ClipStartContext: React.Context<number | null> = (() => {
 
 const FrameUpdatesEnabledContext: React.Context<boolean> = (() => {
   const g = globalThis as unknown as Record<string, unknown>
-  const existing = g[FRAME_UPDATES_ENABLED_CONTEXT_KEY] as React.Context<boolean> | undefined
+  const existing = g[FRAME_UPDATES_ENABLED_CONTEXT_KEY] as
+    | React.Context<boolean>
+    | undefined
   if (existing) return existing
   const created = React.createContext<boolean>(true)
   g[FRAME_UPDATES_ENABLED_CONTEXT_KEY] = created
@@ -68,7 +81,10 @@ const createFrameStore = (initialFrame = 0): FrameStore => {
  * </WithClipStart>
  * ```
  */
-export const WithClipStart: React.FC<{ start: number; children: React.ReactNode }> = ({ start, children }) => {
+export const WithClipStart: React.FC<{
+  start: number
+  children: React.ReactNode
+}> = ({ start, children }) => {
   return <ClipStartContext value={start}>{children}</ClipStartContext>
 }
 
@@ -84,11 +100,15 @@ export const WithClipStart: React.FC<{ start: number; children: React.ReactNode 
  * </WithFrameUpdates>
  * ```
  */
-export const WithFrameUpdates: React.FC<{ enabled: boolean; children: React.ReactNode }> = ({
-  enabled,
-  children,
-}) => {
-  return <FrameUpdatesEnabledContext value={enabled}>{children}</FrameUpdatesEnabledContext>
+export const WithFrameUpdates: React.FC<{
+  enabled: boolean
+  children: React.ReactNode
+}> = ({ enabled, children }) => {
+  return (
+    <FrameUpdatesEnabledContext value={enabled}>
+      {children}
+    </FrameUpdatesEnabledContext>
+  )
 }
 
 const subscribeNever = () => () => {}
@@ -105,7 +125,8 @@ const subscribeNever = () => () => {}
  */
 export const useGlobalFrameSelector = <T,>(selector: (frame: number) => T) => {
   const store = useContext(CurrentFrameContext)
-  if (!store) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>")
+  if (!store)
+    throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>")
   const updatesEnabled = useContext(FrameUpdatesEnabledContext)
   const subscribe = updatesEnabled ? store.subscribe : subscribeNever
   const getSnapshot = () => selector(store.get())
@@ -124,7 +145,9 @@ export const useGlobalFrameSelector = <T,>(selector: (frame: number) => T) => {
  * </WithCurrentFrame>
  * ```
  */
-export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const storeRef = useRef<FrameStore | null>(null)
   if (!storeRef.current) {
     storeRef.current = createFrameStore(0)
@@ -136,8 +159,8 @@ export const WithCurrentFrame: React.FC<{ children: React.ReactNode }> = ({ chil
     const api = {
       setFrame: (frame: number) => store.set(frame),
       getFrame: () => store.get(),
-    };
-    (window as any).__frameScript = {
+    }
+    ;(window as any).__frameScript = {
       ...(window as any).__frameScript,
       setFrame: api.setFrame,
       getFrame: api.getFrame,
@@ -198,7 +221,8 @@ export const useGlobalCurrentFrame = () => {
  */
 export const useSetGlobalCurrentFrame = () => {
   const store = useContext(CurrentFrameContext)
-  if (!store) throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>")
+  if (!store)
+    throw new Error("useCurrentFrame must be used inside <WithCurrentFrame>")
   return store.set
 }
 

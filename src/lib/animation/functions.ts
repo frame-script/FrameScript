@@ -45,7 +45,12 @@ export const lerp = (a: number, b: number, t: number) => a + (b - a) * t
  * const ease = cubicBezier(0.42, 0, 0.58, 1)
  * ```
  */
-export const cubicBezier = (x1: number, y1: number, x2: number, y2: number): Easing => {
+export const cubicBezier = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): Easing => {
   if (x1 === y1 && x2 === y2) {
     return (t) => clamp(t, 0, 1)
   }
@@ -76,12 +81,17 @@ export const cubicBezier = (x1: number, y1: number, x2: number, y2: number): Eas
     let currentSample = 1
     const lastSample = SPLINE_TABLE_SIZE - 1
 
-    for (; currentSample !== lastSample && sampleValues[currentSample] <= x; currentSample += 1) {
+    for (
+      ;
+      currentSample !== lastSample && sampleValues[currentSample] <= x;
+      currentSample += 1
+    ) {
       intervalStart += SAMPLE_STEP_SIZE
     }
     currentSample -= 1
 
-    const dist = (x - sampleValues[currentSample]) /
+    const dist =
+      (x - sampleValues[currentSample]) /
       (sampleValues[currentSample + 1] - sampleValues[currentSample])
     let guessForT = intervalStart + dist * SAMPLE_STEP_SIZE
 
@@ -355,7 +365,11 @@ export const frameProgress = (
  * const opacity = fadeInOut(frame, durationFrames)
  * ```
  */
-export const fadeInOut = (frame: number, durationFrames: number, opts?: { in?: number; out?: number }) => {
+export const fadeInOut = (
+  frame: number,
+  durationFrames: number,
+  opts?: { in?: number; out?: number },
+) => {
   const total = Math.max(1, durationFrames)
   const fadeIn = Math.max(0, Math.floor(opts?.in ?? Math.min(18, total / 6)))
   const fadeOut = Math.max(0, Math.floor(opts?.out ?? Math.min(18, total / 6)))

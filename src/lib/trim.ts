@@ -28,7 +28,10 @@ export type ResolvedTrim = {
 }
 
 const toFrames = (value: number | undefined) =>
-  Math.max(0, Math.floor(Number.isFinite(value as number) ? (value as number) : 0))
+  Math.max(
+    0,
+    Math.floor(Number.isFinite(value as number) ? (value as number) : 0),
+  )
 
 /**
  * Resolves trim parameters into start/end frames.
@@ -54,7 +57,9 @@ export const resolveTrimFrames = (params: {
       const endExclusive = from + duration
       const trimStartFrames = from
       const trimEndFrames =
-        rawDurationFrames > 0 ? Math.max(0, rawDurationFrames - endExclusive) : 0
+        rawDurationFrames > 0
+          ? Math.max(0, rawDurationFrames - endExclusive)
+          : 0
       return { trimStartFrames, trimEndFrames }
     }
 

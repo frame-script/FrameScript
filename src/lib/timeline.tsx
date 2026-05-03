@@ -1,4 +1,10 @@
-import React, { useCallback, useContext, useMemo, useState, useSyncExternalStore } from "react"
+import React, {
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react"
 
 type TimeLineProps = {
   children?: React.ReactNode
@@ -150,7 +156,11 @@ export const TimeLine = ({ children }: TimeLineProps) => {
     return <>{children}</>
   }
 
-  return <TimelineContext.Provider value={value}>{children}</TimelineContext.Provider>
+  return (
+    <TimelineContext.Provider value={value}>
+      {children}
+    </TimelineContext.Provider>
+  )
 }
 
 /**

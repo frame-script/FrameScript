@@ -67,7 +67,9 @@ export const ClipVisibilityPanel = () => {
       }}
     >
       <style>{scrollbarStyles}</style>
-      <div style={{ fontWeight: 600, fontSize: 13, color: "#cbd5e1" }}>Clips</div>
+      <div style={{ fontWeight: 600, fontSize: 13, color: "#cbd5e1" }}>
+        Clips
+      </div>
       <div
         className="fs-scroll"
         style={{
@@ -94,7 +96,9 @@ export const ClipVisibilityPanel = () => {
                 padding: "8px 10px",
                 borderRadius: 8,
                 border: "1px solid #1f2a3c",
-                background: isVisible ? "linear-gradient(90deg, #1f2937, #111827)" : "#0f172a",
+                background: isVisible
+                  ? "linear-gradient(90deg, #1f2937, #111827)"
+                  : "#0f172a",
                 color: isVisible ? "#e5e7eb" : "#94a3b8",
                 cursor: "pointer",
                 textAlign: "left",
@@ -106,9 +110,23 @@ export const ClipVisibilityPanel = () => {
                 type="checkbox"
                 checked={isVisible}
                 onChange={(e) => setClipVisibility(clip.id, e.target.checked)}
-                style={{ accentColor: "#5bd5ff", width: 14, height: 14, cursor: "pointer" }}
+                style={{
+                  accentColor: "#5bd5ff",
+                  width: 14,
+                  height: 14,
+                  cursor: "pointer",
+                }}
               />
-              <span style={{ flex: "1 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+              <span
+                style={{
+                  flex: "1 1 auto",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {label}
+              </span>
             </label>
           )
         })}

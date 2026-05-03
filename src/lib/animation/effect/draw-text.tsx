@@ -1,5 +1,12 @@
 import type { CSSProperties } from "react"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import opentype, { type Font } from "opentype.js"
 import { useCurrentFrame } from "../../frame"
 import { useProvideClipDuration } from "../../clip"
@@ -179,7 +186,10 @@ const useGlyphLengths = (glyphs: GlyphPath[]) => {
     })
 
     setGlyphLengths((prev) => {
-      if (prev.length === next.length && prev.every((value, idx) => value === next[idx])) {
+      if (
+        prev.length === next.length &&
+        prev.every((value, idx) => value === next[idx])
+      ) {
         return prev
       }
       return next
@@ -199,7 +209,11 @@ const getDrawableCount = (glyphs: GlyphPath[], glyphLengths: number[]) => {
   return glyphs.filter((glyph) => !glyph.isGap).length
 }
 
-const resolveStaggerTiming = (totalFrames: number, count: number, ratio: number) => {
+const resolveStaggerTiming = (
+  totalFrames: number,
+  count: number,
+  ratio: number,
+) => {
   if (count <= 0) return { per: 0, step: 0 }
   const denom = 1 + ratio * Math.max(0, count - 1)
   const per = Math.max(1, Math.round(totalFrames / Math.max(1, denom)))
@@ -240,7 +254,9 @@ const computeTotalDuration = (params: {
     return Math.max(1, Math.round(Math.max(0, durationFrames) + safeDelay))
   }
 
-  const safeLagRatio = Number.isFinite(lagRatio) ? Math.max(0, lagRatio ?? 0) : DEFAULT_LAG_RATIO
+  const safeLagRatio = Number.isFinite(lagRatio)
+    ? Math.max(0, lagRatio ?? 0)
+    : DEFAULT_LAG_RATIO
   const safeOutLagRatio = Number.isFinite(outLagRatio)
     ? Math.max(0, outLagRatio ?? 0)
     : safeLagRatio
@@ -254,7 +270,8 @@ const computeTotalDuration = (params: {
   let total = lastStrokeEnd
 
   if (resolvedFillColor !== "transparent" && fillDurationFrames > 0) {
-    const fillEnd = lastStrokeEnd + Math.max(0, fillDelayFrames) + fillDurationFrames
+    const fillEnd =
+      lastStrokeEnd + Math.max(0, fillDelayFrames) + fillDurationFrames
     total = Math.max(total, fillEnd)
   }
 
@@ -264,7 +281,8 @@ const computeTotalDuration = (params: {
       drawCount,
       safeOutLagRatio,
     )
-    const outEnd = Math.max(0, outStartFrames) + outStep * (drawCount - 1) + outPer
+    const outEnd =
+      Math.max(0, outStartFrames) + outStep * (drawCount - 1) + outPer
     total = Math.max(total, outEnd)
   }
 
@@ -313,7 +331,9 @@ const renderGlyphSvg = (params: {
   } = params
 
   const drawCount = getDrawableCount(glyphs, glyphLengths)
-  const safeLagRatio = Number.isFinite(lagRatio) ? Math.max(0, lagRatio ?? 0) : DEFAULT_LAG_RATIO
+  const safeLagRatio = Number.isFinite(lagRatio)
+    ? Math.max(0, lagRatio ?? 0)
+    : DEFAULT_LAG_RATIO
   const safeOutLagRatio = Number.isFinite(outLagRatio)
     ? Math.max(0, outLagRatio ?? 0)
     : safeLagRatio
@@ -338,12 +358,17 @@ const renderGlyphSvg = (params: {
   })
 
   const outStartBase = outStartFrames ?? null
-  const outTimings = glyphs.map(() => ({ start: outStartBase ?? 0, duration: 0 }))
+  const outTimings = glyphs.map(() => ({
+    start: outStartBase ?? 0,
+    duration: 0,
+  }))
   if (outStartBase != null && outPerGlyphFrames > 0) {
     let outCursor = outStartBase
     const drawable = glyphs
       .map((glyph, index) => ({ glyph, index }))
-      .filter(({ glyph, index }) => !glyph.isGap && (glyphLengths[index] ?? 0) > 0)
+      .filter(
+        ({ glyph, index }) => !glyph.isGap && (glyphLengths[index] ?? 0) > 0,
+      )
       .map(({ index }) => index)
 
     for (let i = drawable.length - 1; i >= 0; i -= 1) {
@@ -369,11 +394,16 @@ const renderGlyphSvg = (params: {
         const length = glyphLengths[index] ?? 0
         const timing = glyphTimings[index]
         const inProgress =
-          timing.duration > 0 ? clamp01((frame - timing.start) / timing.duration) : 0
+          timing.duration > 0
+            ? clamp01((frame - timing.start) / timing.duration)
+            : 0
         const outTiming = outTimings[index]
         const outProgress =
-          outTiming.duration > 0 ? clamp01((frame - outTiming.start) / outTiming.duration) : 0
-        const progress = outProgress > 0 ? inProgress * (1 - outProgress) : inProgress
+          outTiming.duration > 0
+            ? clamp01((frame - outTiming.start) / outTiming.duration)
+            : 0
+        const progress =
+          outProgress > 0 ? inProgress * (1 - outProgress) : inProgress
         const dashOffset = length > 0 ? length * (1 - progress) : 0
         // Workaround for Chromium/Skia: stroke-dash can leak a 1px cap at progress=0 on Windows.
         const strokeVisible = length > 0 && progress > STROKE_VISIBLE_EPSILON
@@ -382,7 +412,8 @@ const renderGlyphSvg = (params: {
           resolvedFillColor === "transparent"
             ? 0
             : clamp01((frame - fillStart) / Math.max(1, fillDurationFrames))
-        const fillOpacity = fillProgress * (outProgress > 0 ? 1 - outProgress : 1)
+        const fillOpacity =
+          fillProgress * (outProgress > 0 ? 1 - outProgress : 1)
         return (
           <path
             key={`${index}-${glyph.d}`}
@@ -417,7 +448,9 @@ const installDrawTextApi = () => {
         if (typeof window.requestAnimationFrame !== "function") {
           return
         }
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() => resolve()),
+        )
         if (tracker.pending === 0) return
       }
       await tracker.wait()
@@ -465,7 +498,9 @@ const loadFont = async (fontUrl: string) => {
       try {
         const res = await fetch(candidate)
         if (!res.ok) {
-          throw new Error(`DrawText: failed to fetch font (${res.status}) ${candidate}`)
+          throw new Error(
+            `DrawText: failed to fetch font (${res.status}) ${candidate}`,
+          )
         }
         const buffer = await res.arrayBuffer()
         return opentype.parse(buffer)
@@ -577,7 +612,11 @@ const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
     defs.set(id, { d, transform: collectSelfTransform(path) || undefined })
   })
 
-  const addGlyph = (d: string, node: Element, extraTransform?: string | null) => {
+  const addGlyph = (
+    d: string,
+    node: Element,
+    extraTransform?: string | null,
+  ) => {
     if (!d) return
     const transform = joinTransforms([
       ...collectParentTransforms(node),
@@ -606,7 +645,12 @@ const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
     const y = Number.parseFloat(rect.getAttribute("y") ?? "0")
     const width = Number.parseFloat(rect.getAttribute("width") ?? "0")
     const height = Number.parseFloat(rect.getAttribute("height") ?? "0")
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    if (
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width <= 0 ||
+      height <= 0
+    ) {
       return null
     }
     return `M ${x} ${y} h ${width} v ${height} h ${-width} Z`
@@ -621,7 +665,10 @@ const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
     return `M ${x1} ${y1} L ${x2} ${y2}`
   }
 
-  const polyToPath = (points: Array<{ x: number; y: number }>, close: boolean) => {
+  const polyToPath = (
+    points: Array<{ x: number; y: number }>,
+    close: boolean,
+  ) => {
     if (points.length < 2) return null
     const [first, ...rest] = points
     const parts = [`M ${first.x} ${first.y}`]
@@ -632,70 +679,84 @@ const collectSvgGlyphs = (svg: SVGSVGElement): GlyphPath[] => {
     return parts.join(" ")
   }
 
-  svg.querySelectorAll("path, use, rect, line, polygon, polyline").forEach((node) => {
-    if (!(node instanceof SVGElement)) return
-    if (node.closest("defs")) return
-    const tag = node.tagName.toLowerCase()
-    if (tag === "path") {
-      const d = node.getAttribute("d")
-      if (!d) return
-      addGlyph(d, node)
-      return
-    }
+  svg
+    .querySelectorAll("path, use, rect, line, polygon, polyline")
+    .forEach((node) => {
+      if (!(node instanceof SVGElement)) return
+      if (node.closest("defs")) return
+      const tag = node.tagName.toLowerCase()
+      if (tag === "path") {
+        const d = node.getAttribute("d")
+        if (!d) return
+        addGlyph(d, node)
+        return
+      }
 
-    if (tag === "rect") {
-      const d = rectToPath(node as SVGRectElement)
-      if (!d) return
-      addGlyph(d, node)
-      return
-    }
+      if (tag === "rect") {
+        const d = rectToPath(node as SVGRectElement)
+        if (!d) return
+        addGlyph(d, node)
+        return
+      }
 
-    if (tag === "line") {
-      const d = lineToPath(node as SVGLineElement)
-      if (!d) return
-      addGlyph(d, node)
-      return
-    }
+      if (tag === "line") {
+        const d = lineToPath(node as SVGLineElement)
+        if (!d) return
+        addGlyph(d, node)
+        return
+      }
 
-    if (tag === "polygon" || tag === "polyline") {
-      const points = parsePoints(node.getAttribute("points"))
-      const d = polyToPath(points, tag === "polygon")
-      if (!d) return
-      addGlyph(d, node)
-      return
-    }
+      if (tag === "polygon" || tag === "polyline") {
+        const points = parsePoints(node.getAttribute("points"))
+        const d = polyToPath(points, tag === "polygon")
+        if (!d) return
+        addGlyph(d, node)
+        return
+      }
 
-    if (tag === "use") {
-      const href =
-        node.getAttribute("href") ||
-        node.getAttribute("xlink:href") ||
-        node.getAttributeNS("http://www.w3.org/1999/xlink", "href")
-      if (!href) return
-      const id = href.startsWith("#") ? href.slice(1) : href
-      const ref = defs.get(id) || (() => {
-        const selector = `#${escapeSelector(id)}`
-        const found = svg.querySelector(selector)
-        if (found instanceof SVGPathElement) {
-          const d = found.getAttribute("d")
-          if (d) return { d, transform: collectSelfTransform(found) || undefined }
-        }
-        return null
-      })()
-      if (!ref?.d) return
+      if (tag === "use") {
+        const href =
+          node.getAttribute("href") ||
+          node.getAttribute("xlink:href") ||
+          node.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+        if (!href) return
+        const id = href.startsWith("#") ? href.slice(1) : href
+        const ref =
+          defs.get(id) ||
+          (() => {
+            const selector = `#${escapeSelector(id)}`
+            const found = svg.querySelector(selector)
+            if (found instanceof SVGPathElement) {
+              const d = found.getAttribute("d")
+              if (d)
+                return {
+                  d,
+                  transform: collectSelfTransform(found) || undefined,
+                }
+            }
+            return null
+          })()
+        if (!ref?.d) return
 
-      const x = Number.parseFloat(node.getAttribute("x") ?? "0")
-      const y = Number.parseFloat(node.getAttribute("y") ?? "0")
-      const translate =
-        Number.isFinite(x) || Number.isFinite(y) ? `translate(${x || 0} ${y || 0})` : null
-      const transform = joinTransforms([
-        ...collectParentTransforms(node),
-        ref.transform,
-        translate,
-        collectSelfTransform(node),
-      ])
-      glyphs.push({ d: ref.d, isGap: false, transform: transform || undefined })
-    }
-  })
+        const x = Number.parseFloat(node.getAttribute("x") ?? "0")
+        const y = Number.parseFloat(node.getAttribute("y") ?? "0")
+        const translate =
+          Number.isFinite(x) || Number.isFinite(y)
+            ? `translate(${x || 0} ${y || 0})`
+            : null
+        const transform = joinTransforms([
+          ...collectParentTransforms(node),
+          ref.transform,
+          translate,
+          collectSelfTransform(node),
+        ])
+        glyphs.push({
+          d: ref.d,
+          isGap: false,
+          transform: transform || undefined,
+        })
+      }
+    })
 
   return glyphs
 }
@@ -802,7 +863,9 @@ export const DrawText = ({
       setGlyphs([])
       setGlyphLoadId(loadId)
       setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-      setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      setBoxSize((prev) =>
+        prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 },
+      )
       return
     }
 
@@ -847,7 +910,11 @@ export const DrawText = ({
         if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
           setGlyphs([])
           setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-          setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+          setBoxSize((prev) =>
+            prev.width === 0 && prev.height === 0
+              ? prev
+              : { width: 0, height: 0 },
+          )
           return
         }
 
@@ -856,7 +923,9 @@ export const DrawText = ({
         const nextViewBox = `${minX} ${minY} ${width} ${height}`
         setViewBox((prev) => (prev === nextViewBox ? prev : nextViewBox))
         setBoxSize((prev) =>
-          prev.width === width && prev.height === height ? prev : { width, height },
+          prev.width === width && prev.height === height
+            ? prev
+            : { width, height },
         )
         setGlyphs(nextGlyphs)
         setGlyphLoadId(loadId)
@@ -868,7 +937,11 @@ export const DrawText = ({
         setGlyphs([])
         setGlyphLoadId(loadId)
         setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-        setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+        setBoxSize((prev) =>
+          prev.width === 0 && prev.height === 0
+            ? prev
+            : { width: 0, height: 0 },
+        )
       })
 
     return () => {
@@ -1013,7 +1086,9 @@ export const DrawTex = ({
       setGlyphs([])
       setGlyphLoadId(loadId)
       setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-      setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      setBoxSize((prev) =>
+        prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 },
+      )
       return
     }
 
@@ -1025,7 +1100,11 @@ export const DrawTex = ({
           setGlyphs([])
           setGlyphLoadId(loadId)
           setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-          setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+          setBoxSize((prev) =>
+            prev.width === 0 && prev.height === 0
+              ? prev
+              : { width: 0, height: 0 },
+          )
         }
         return
       }
@@ -1066,7 +1145,11 @@ export const DrawTex = ({
         setGlyphs([])
         setGlyphLoadId(loadId)
         setViewBox((prev) => (prev === "0 0 0 0" ? prev : "0 0 0 0"))
-        setBoxSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+        setBoxSize((prev) =>
+          prev.width === 0 && prev.height === 0
+            ? prev
+            : { width: 0, height: 0 },
+        )
       }
     }
 

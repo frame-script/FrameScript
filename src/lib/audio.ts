@@ -14,7 +14,8 @@ export type AudioSource = { path: string } | string
 
 const audioCache = new Map<string, Promise<AudioBuffer>>()
 
-const normalize = (src: AudioSource): { path: string } => (typeof src === "string" ? { path: src } : src)
+const normalize = (src: AudioSource): { path: string } =>
+  typeof src === "string" ? { path: src } : src
 
 const buildAudioUrl = (src: { path: string }) => {
   const url = new URL("http://localhost:3000/audio")
@@ -32,7 +33,10 @@ const buildAudioUrl = (src: { path: string }) => {
  * const buffer = await fetchAudioBuffer("assets/music.mp3", audioCtx)
  * ```
  */
-export const fetchAudioBuffer = async (src: AudioSource, audioContext: AudioContext): Promise<AudioBuffer> => {
+export const fetchAudioBuffer = async (
+  src: AudioSource,
+  audioContext: AudioContext,
+): Promise<AudioBuffer> => {
   const resolved = normalize(src)
   const cached = audioCache.get(resolved.path)
   if (cached) return cached

@@ -60,7 +60,8 @@ export const resolveSegmentAmplitude = (
   currentFrame: number,
   fps: number,
 ) => {
-  if (!waveform || waveform.peaks.length === 0 || waveform.durationSec <= 0) return 0
+  if (!waveform || waveform.peaks.length === 0 || waveform.durationSec <= 0)
+    return 0
   const durationFrames = Math.max(0, segment.durationFrames)
   if (durationFrames <= 0) return 0
 
@@ -76,7 +77,9 @@ export const resolveSegmentAmplitude = (
   )
 
   let amplitude = waveform.peaks[index] ?? 0
-  const volume = Number.isFinite(segment.volume) ? Math.max(0, segment.volume ?? 1) : 1
+  const volume = Number.isFinite(segment.volume)
+    ? Math.max(0, segment.volume ?? 1)
+    : 1
   amplitude *= volume
 
   const fadeInFrames = Math.max(0, segment.fadeInFrames ?? 0)
@@ -88,7 +91,11 @@ export const resolveSegmentAmplitude = (
   if (fadeOutFrames > 0) {
     const fadeOutStart = Math.max(0, durationFrames - fadeOutFrames)
     if (relativeFrame >= fadeOutStart) {
-      amplitude *= clamp((durationFrames - 1 - relativeFrame) / fadeOutFrames, 0, 1)
+      amplitude *= clamp(
+        (durationFrames - 1 - relativeFrame) / fadeOutFrames,
+        0,
+        1,
+      )
     }
   }
 
@@ -133,7 +140,9 @@ export const Character = ({
       clips.filter((clip) => clip.label === clipLabel).map((clip) => clip.id),
     )
     if (ids.size === 0) return []
-    return audioSegments.filter((segment) => segment.clipId && ids.has(segment.clipId))
+    return audioSegments.filter(
+      (segment) => segment.clipId && ids.has(segment.clipId),
+    )
   }, [audioSegments, clipLabel, clips])
 
   const waveformPaths = useMemo(
@@ -146,13 +155,20 @@ export const Character = ({
     let max = 0
     for (const segment of relevantSegments) {
       const waveform = waveformBank.get(segment.source.path) ?? null
-      const value = resolveSegmentAmplitude(segment, waveform, currentFrame, fps)
+      const value = resolveSegmentAmplitude(
+        segment,
+        waveform,
+        currentFrame,
+        fps,
+      )
       if (value > max) max = value
     }
     return max
   }, [currentFrame, fps, relevantSegments, waveformBank])
 
-  const safeThreshold = Number.isFinite(threshold) ? Math.max(0, threshold) : DEFAULT_THRESHOLD
+  const safeThreshold = Number.isFinite(threshold)
+    ? Math.max(0, threshold)
+    : DEFAULT_THRESHOLD
   const isSpeaking = amplitude >= safeThreshold
 
   return (

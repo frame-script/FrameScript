@@ -10,8 +10,7 @@ Studio uses a `<video>` tag; render mode uses WebSocket + Canvas.
 
 ```tsx
 import { Video } from "../src/lib/video/video"
-
-<Video video="assets/demo.mp4" />
+;<Video video="assets/demo.mp4" />
 ```
 
 You can trim the source in frames:
@@ -33,8 +32,7 @@ Image component that waits for decode before the headless renderer captures fram
 
 ```tsx
 import { Img } from "../src/lib/image"
-
-<Img src="assets/intro.png" />
+;<Img src="assets/intro.png" />
 ```
 
 ### `video_length`
@@ -51,8 +49,7 @@ Plays audio in Studio and applies it to the final render.
 
 ```tsx
 import { Sound } from "../src/lib/sound/sound"
-
-<Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
+;<Sound sound="assets/music.mp3" trim={{ trimStart: 30 }} />
 ```
 
 Waveform display in the timeline is automatic for clips shorter than 60 seconds.
@@ -135,22 +132,23 @@ Internally, it uses `<Sequence>`, and each child is wrapped in a `<Clip>`.
 
 ```tsx
 import { MotionSequence, Voice } from "../src/lib/character/character-unit"
-
-<MotionSequence>
+;<MotionSequence>
   <Voice voice="../assets/001_char.wav" />
   <Voice voice="../assets/002_char.wav" />
 </MotionSequence>
 ```
-
 
 #### `<MotionClip>`
 
 Used directly under `MotionSequence` to run child elements in parallel.
 
 ```tsx
-import { MotionSequence, MotionClip, Voice } from "../src/lib/character/character-unit"
-
-<MotionSequence>
+import {
+  MotionSequence,
+  MotionClip,
+  Voice,
+} from "../src/lib/character/character-unit"
+;<MotionSequence>
   <Voice voice="../assets/001_char.wav" />
   <MotionClip>
     <Voice voice="../assets/002_char.wav" />
@@ -159,7 +157,6 @@ import { MotionSequence, MotionClip, Voice } from "../src/lib/character/characte
 </MotionSequence>
 ```
 
-
 #### `<Voice>`
 
 Places an audio clip.
@@ -167,10 +164,8 @@ Internally, the audio is wrapped in a `<Clip>`.
 
 ```tsx
 import { Voice } from "../src/lib/character/character-unit"
-
-<Voice voice="../assets/001_char.wav" />
+;<Voice voice="../assets/001_char.wav" />
 ```
-
 
 #### `<MotionWithVars>`
 
@@ -187,9 +182,8 @@ Since hooks cannot be used under `PsdCharacter`, retrieve `Variable` values usin
 import { BEZIER_SMOOTH } from "../src/lib/animation/functions"
 import { seconds } from "../src/lib/frame"
 import { MotionWithVars } from "../src/lib/character/character-unit"
-
-<MotionWithVars
-  variables={{t: 0 as number}}
+;<MotionWithVars
+  variables={{ t: 0 as number }}
   animation={async (ctx, variables) => {
     await ctx.move(variables.t).to(1, seconds(1), BEZIER_SMOOTH)
   }}
@@ -198,7 +192,7 @@ import { MotionWithVars } from "../src/lib/character/character-unit"
     if (t > 0.5) {
       return {
         "表情/目/9": false,
-        "表情/目/17": true
+        "表情/目/17": true,
       }
     } else {
       return {}
@@ -206,7 +200,6 @@ import { MotionWithVars } from "../src/lib/character/character-unit"
   }}
 />
 ```
-
 
 #### `createSimpleLipSync`
 
@@ -216,18 +209,16 @@ It takes a dictionary that maps mouth states in the PSD to layers/options and re
 
 Dictionary format:
 
-* When using psd-tool-kit:
+- When using psd-tool-kit:
+  - Set `kind` to `enum`
+  - Specify the mouth layer in `Mouth`
+  - Specify the default option in `Default`
+  - Specify corresponding options in `Open` / `Closed`
 
-  * Set `kind` to `enum`
-  * Specify the mouth layer in `Mouth`
-  * Specify the default option in `Default`
-  * Specify corresponding options in `Open` / `Closed`
-
-* When not using psd-tool-kit:
-
-  * Set `kind` to `bool`
-  * Specify the default layer in `Default`
-  * Specify corresponding layers in `Open` / `Closed`
+- When not using psd-tool-kit:
+  - Set `kind` to `bool`
+  - Specify the default layer in `Default`
+  - Specify corresponding layers in `Open` / `Closed`
 
 ```tsx
 import { createSimpleLipSync } from "../src/lib/character/character-unit"
@@ -243,7 +234,6 @@ const SimpleLipSync = createSimpleLipSync({
 
 <SimpleLipSync voice="../assets/001_char.wav" />
 ```
-
 
 #### `createLipSync`
 
@@ -287,7 +277,6 @@ const lipsync = {
   <LipSync data={lipsync} />
 </PsdCharacter>
 ```
-
 
 #### `createBlink`
 
@@ -339,36 +328,30 @@ const blink = {
 </PsdCharacter>
 ```
 
-
 ### `<DialogueScenario>`
 
 Creates a dialogue-style scenario using PSD-based character images.
 
 Main child components:
 
-
 #### `<DeclareCharacters>`
 
 Declares characters to be used, with `<DeclareCharacter>` as children.
-
 
 #### `<DeclareCharacter>`
 
 Declares a character inside `<DeclareCharacters>`.
 Can accept the same child components as `<PsdCharacter>`, which will be used as behavior when the character is not speaking.
 
-
 #### `<Scenario>`
 
 Defines a conversation by arranging `<Chapter>` components.
-
 
 #### `<Chapter>`
 
 Defines a unit of dialogue inside `<Scenario>`.
 Use `<Speaker>` to declare the speaker.
 Other React components can also be placed.
-
 
 #### `<Speaker>`
 
@@ -377,18 +360,34 @@ Accepts the same child components as `<PsdCharacter>`.
 Specify the `name` declared in `<DeclareCharacter>` to display the corresponding PSD.
 
 ```tsx
-import { DialogueScenario, DeclareCharacters, DeclareCharacter, Scenario, Chapter, Speaker } from "../src/lib/character/character-manager"
+import {
+  DialogueScenario,
+  DeclareCharacters,
+  DeclareCharacter,
+  Scenario,
+  Chapter,
+  Speaker,
+} from "../src/lib/character/character-manager"
 import { Voice } from "../src/lib/character/character-unit"
-
-<DialogueSenario>
+;<DialogueSenario>
   <DeclareCharacters>
-    <DeclareCharacter idleClassName="akane" speakingClassName="akane" name="akane" psd="../assets/akane.psd" />
-    <DeclareCharacter idleClassName="aoi" speakingClassName="aoi" name="aoi" psd="../assets/aoi.psd" />
+    <DeclareCharacter
+      idleClassName="akane"
+      speakingClassName="akane"
+      name="akane"
+      psd="../assets/akane.psd"
+    />
+    <DeclareCharacter
+      idleClassName="aoi"
+      speakingClassName="aoi"
+      name="aoi"
+      psd="../assets/aoi.psd"
+    />
   </DeclareCharacters>
   <Scenario>
     <Chapter>
       <Speaker name="aoi">
-        <Voice voice="../assets/001_aoi.wav"/>
+        <Voice voice="../assets/001_aoi.wav" />
       </Speaker>
     </Chapter>
     <Chapter>
@@ -399,4 +398,3 @@ import { Voice } from "../src/lib/character/character-unit"
   </Scenario>
 </DialogueSenario>
 ```
-

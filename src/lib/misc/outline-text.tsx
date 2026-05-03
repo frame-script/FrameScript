@@ -52,7 +52,9 @@ export const OutlineText = ({
       >
         {text}
       </span>
-      <span style={{ position: "relative", color, whiteSpace: "nowrap" }}>{text}</span>
+      <span style={{ position: "relative", color, whiteSpace: "nowrap" }}>
+        {text}
+      </span>
     </span>
   )
 }

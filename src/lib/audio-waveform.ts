@@ -65,7 +65,9 @@ const buildWaveform = (buffer: AudioBuffer, bins: number) => {
  * const data = await loadWaveformData("assets/music.mp3")
  * ```
  */
-export const loadWaveformData = async (path: string): Promise<WaveformData | null> => {
+export const loadWaveformData = async (
+  path: string,
+): Promise<WaveformData | null> => {
   if (!path) return null
   if (waveformCache.has(path)) {
     return waveformCache.get(path) ?? null

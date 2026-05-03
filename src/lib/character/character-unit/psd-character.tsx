@@ -1,10 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import { PsdCharacterElement as PsdElm, type MotionClipNode, type CharacterNode, type DeclareAnimationNode, type DeclareVariableNode, type MotionNode, type MotionSequenceNode, type VoiceNode } from "./ast"
+import {
+  PsdCharacterElement as PsdElm,
+  type MotionClipNode,
+  type CharacterNode,
+  type DeclareAnimationNode,
+  type DeclareVariableNode,
+  type MotionNode,
+  type MotionSequenceNode,
+  type VoiceNode,
+} from "./ast"
 import { readPsd, type Psd } from "ag-psd"
 import { parsePsdCharacter } from "./parser"
 import { renderPsd } from "ag-psd-psdtool"
-import { useAnimation, useVariable, type Variable, type VariableType } from "../../animation"
+import {
+  useAnimation,
+  useVariable,
+  type Variable,
+  type VariableType,
+} from "../../animation"
 import { useCurrentFrame, useGlobalCurrentFrame } from "../../frame"
 import { Sound } from "../../sound/sound"
 import { Clip, ClipSequence } from "../../clip"
@@ -38,7 +52,6 @@ type OptionRegister = () => {
   unregister: () => void
 }
 
-
 /**
  * Create an animation system using PSD synchronized with audio.
  * Renders the PSD onto a canvas.
@@ -53,7 +66,7 @@ type OptionRegister = () => {
  * DSL内部ではReactフックは使用不可
  *
  * @example
- * ```typescript 
+ * ```typescript
  * <PsdCharacter psd="../assets/character.psd" className="character">
  *   <Voice voice="voice.wav"/>
  * </PsdCharacter>
@@ -62,7 +75,7 @@ type OptionRegister = () => {
 export const PsdCharacter = ({
   psd,
   className,
-  children
+  children,
 }: PsdCharacterProps) => {
   const [myPsd, setPsd] = useState<Psd | undefined>(undefined)
   const [ast, setAst] = useState<CharacterNode | undefined>(undefined)
@@ -97,7 +110,7 @@ export const PsdCharacter = ({
    * PSDのロードとDSLのAST変換
    */
   useEffect(() => {
-    fetchPsd(normalizePsdPath(psd)).then(p => setPsd(p))
+    fetchPsd(normalizePsdPath(psd)).then((p) => setPsd(p))
     setAst(parsePsdCharacter(children))
   }, [psd])
 
@@ -142,7 +155,7 @@ export const PsdCharacter = ({
 
     const unregister = () => {
       registry.current.delete(id)
-      order.current = order.current.filter(x => x !== id)
+      order.current = order.current.filter((x) => x !== id)
       recompute()
     }
 
@@ -155,7 +168,7 @@ export const PsdCharacter = ({
     const getter = () => {
       const index = order.current.indexOf(id)
       const prevIds = order.current.slice(0, index)
-      const prevOptions = prevIds.map(i => registry.current.get(i) ?? {})
+      const prevOptions = prevIds.map((i) => registry.current.get(i) ?? {})
       return Object.assign({}, ...prevOptions)
     }
 
@@ -175,13 +188,42 @@ export const PsdCharacter = ({
       {ast?.children.map((child, i) => {
         switch (child.type) {
           case PsdElm.MotionSequence:
-            return <MotionSequenceRuntime key={i} ast={child} variables={{}} register={register} />
+            return (
+              <MotionSequenceRuntime
+                key={i}
+                ast={child}
+                variables={{}}
+                register={register}
+              />
+            )
           case PsdElm.DeclareVariable:
-            return <DeclareVariableRuntime key={i} ast={child} variables={{}} initializingVariables={{}} register={register} />
+            return (
+              <DeclareVariableRuntime
+                key={i}
+                ast={child}
+                variables={{}}
+                initializingVariables={{}}
+                register={register}
+              />
+            )
           case PsdElm.Voice:
-            return <VoiceRuntime key={i} ast={child} variables={{}} register={register} />
+            return (
+              <VoiceRuntime
+                key={i}
+                ast={child}
+                variables={{}}
+                register={register}
+              />
+            )
           case PsdElm.Motion:
-            return <MotionRuntime key={i} ast={child} variables={{}} register={register} />
+            return (
+              <MotionRuntime
+                key={i}
+                ast={child}
+                variables={{}}
+                register={register}
+              />
+            )
           default:
             return null
         }
@@ -199,13 +241,13 @@ type MotionSequenceRuntimeProps = {
 const MotionSequenceRuntime = ({
   ast,
   variables,
-  register
+  register,
 }: MotionSequenceRuntimeProps) => {
   const reg = useRef<ReturnType<OptionRegister>>(undefined)
   if (!reg.current) {
     reg.current = register()
   }
-  const {update, getter, unregister} = reg.current
+  const { update, getter, unregister } = reg.current
 
   useEffect(() => {
     return () => unregister()
@@ -213,42 +255,54 @@ const MotionSequenceRuntime = ({
 
   // 直列のため同じregisterを使う
   const curRegister: OptionRegister = useCallback(() => {
-    return {update, getter, unregister: () => {}}
+    return { update, getter, unregister: () => {} }
   }, [])
 
   return (
     <ClipSequence>
-      {ast.children.map(child => {
-        switch (child.type) {
-          case PsdElm.DeclareVariable:
-            return <DeclareVariableRuntime
-              ast={child}
-              variables={variables}
-              initializingVariables={{}}
-              register={curRegister}
-            />
-          case PsdElm.MotionClip:
-            return <MotionClipRuntime
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
-          case PsdElm.Voice:
-            return <VoiceRuntime
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
-          case PsdElm.Motion:
-            return <MotionRuntime
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
-          default:
-            return null
-        }
-      }).map((child, i) => <Clip key={i}> {child} </Clip>)}
+      {ast.children
+        .map((child) => {
+          switch (child.type) {
+            case PsdElm.DeclareVariable:
+              return (
+                <DeclareVariableRuntime
+                  ast={child}
+                  variables={variables}
+                  initializingVariables={{}}
+                  register={curRegister}
+                />
+              )
+            case PsdElm.MotionClip:
+              return (
+                <MotionClipRuntime
+                  ast={child}
+                  variables={variables}
+                  register={curRegister}
+                />
+              )
+            case PsdElm.Voice:
+              return (
+                <VoiceRuntime
+                  ast={child}
+                  variables={variables}
+                  register={curRegister}
+                />
+              )
+            case PsdElm.Motion:
+              return (
+                <MotionRuntime
+                  ast={child}
+                  variables={variables}
+                  register={curRegister}
+                />
+              )
+            default:
+              return null
+          }
+        })
+        .map((child, i) => (
+          <Clip key={i}> {child} </Clip>
+        ))}
     </ClipSequence>
   )
 }
@@ -268,7 +322,11 @@ const useTypedVariable = (value: VariableType): Variable<VariableType> => {
     return useVariable(value as `#${string}`) as Variable<VariableType>
   }
   if ("z" in value && typeof value.z === "number") {
-    return useVariable({ x: value.x, y: value.y, z: value.z }) as Variable<VariableType>
+    return useVariable({
+      x: value.x,
+      y: value.y,
+      z: value.z,
+    }) as Variable<VariableType>
   }
   return useVariable({ x: value.x, y: value.y }) as Variable<VariableType>
 }
@@ -277,30 +335,37 @@ const DeclareVariableRuntime = ({
   ast,
   variables,
   initializingVariables,
-  register
+  register,
 }: DeclareVariableRuntimeProps) => {
   // T extends VariableTypeとして
   // DeclareVariableで受け取る型がTなので
   // ast.initValue: T
   // であり、これを使う限り問題ない
   const variable = useTypedVariable(ast.initValue)
-  const newInitVariables = {[ast.variableName]: variable, ...initializingVariables}
+  const newInitVariables = {
+    [ast.variableName]: variable,
+    ...initializingVariables,
+  }
 
   switch (ast.children.type) {
     case PsdElm.DeclareVariable:
-      return <DeclareVariableRuntime
-        ast={ast.children}
-        variables={variables}
-        initializingVariables={newInitVariables}
-        register={register}
-      />
+      return (
+        <DeclareVariableRuntime
+          ast={ast.children}
+          variables={variables}
+          initializingVariables={newInitVariables}
+          register={register}
+        />
+      )
     case PsdElm.DeclareAnimation:
-      return <DeclareAnimationRuntime
-        ast={ast.children}
-        variables={variables}
-        initializingVariables={newInitVariables}
-        register={register}
-      />
+      return (
+        <DeclareAnimationRuntime
+          ast={ast.children}
+          variables={variables}
+          initializingVariables={newInitVariables}
+          register={register}
+        />
+      )
     default:
       return null
   }
@@ -315,13 +380,13 @@ type MotionClipRuntimeProps = {
 const MotionClipRuntime = ({
   ast,
   variables,
-  register
+  register,
 }: MotionClipRuntimeProps) => {
   const reg = useRef<ReturnType<OptionRegister>>(undefined)
   if (!reg.current) {
     reg.current = register()
   }
-  const {update, getter: superGetter, unregister} = reg.current
+  const { update, getter: superGetter, unregister } = reg.current
 
   useEffect(() => {
     return () => unregister()
@@ -350,7 +415,7 @@ const MotionClipRuntime = ({
 
     const unregister = () => {
       curRegistry.current.delete(id)
-      order.current = order.current.filter(x => x !== id)
+      order.current = order.current.filter((x) => x !== id)
       recompute()
     }
 
@@ -359,7 +424,7 @@ const MotionClipRuntime = ({
 
       const prevIds = order.current.slice(0, index)
 
-      const prevOptions = prevIds.map(i => curRegistry.current.get(i) ?? {})
+      const prevOptions = prevIds.map((i) => curRegistry.current.get(i) ?? {})
 
       return Object.assign(superGetter(), ...prevOptions)
     }
@@ -376,40 +441,47 @@ const MotionClipRuntime = ({
     update(options.current)
   }, [frame])
 
-
   return (
     <>
       {ast.children.map((child, i) => {
         switch (child.type) {
           case PsdElm.MotionSequence:
-            return <MotionSequenceRuntime
-              key={i}
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
+            return (
+              <MotionSequenceRuntime
+                key={i}
+                ast={child}
+                variables={variables}
+                register={curRegister}
+              />
+            )
           case PsdElm.DeclareVariable:
-            return <DeclareVariableRuntime
-              key={i}
-              ast={child}
-              variables={variables}
-              initializingVariables={{}}
-              register={curRegister}
-            />
+            return (
+              <DeclareVariableRuntime
+                key={i}
+                ast={child}
+                variables={variables}
+                initializingVariables={{}}
+                register={curRegister}
+              />
+            )
           case PsdElm.Voice:
-            return <VoiceRuntime
-              key={i}
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
+            return (
+              <VoiceRuntime
+                key={i}
+                ast={child}
+                variables={variables}
+                register={curRegister}
+              />
+            )
           case PsdElm.Motion:
-            return <MotionRuntime
-              key={i}
-              ast={child}
-              variables={variables}
-              register={curRegister}
-            />
+            return (
+              <MotionRuntime
+                key={i}
+                ast={child}
+                variables={variables}
+                register={curRegister}
+              />
+            )
           default:
             return null
         }
@@ -429,20 +501,19 @@ const DeclareAnimationRuntime = ({
   ast,
   variables,
   initializingVariables,
-  register
+  register,
 }: DeclareAnimationRuntimeProps) => {
-
   useAnimation(async (ctx) => {
     await ast.animation(ctx, initializingVariables)
   }, [])
 
-  const curVariables = {...variables, ...initializingVariables}
+  const curVariables = { ...variables, ...initializingVariables }
 
   const reg = useRef<ReturnType<OptionRegister>>(undefined)
   if (!reg.current) {
     reg.current = register()
   }
-  const {update, getter: superGetter, unregister} = reg.current
+  const { update, getter: superGetter, unregister } = reg.current
 
   useEffect(() => {
     return () => unregister()
@@ -471,7 +542,7 @@ const DeclareAnimationRuntime = ({
 
     const unregister = () => {
       curRegistry.current.delete(id)
-      order.current = order.current.filter(x => x !== id)
+      order.current = order.current.filter((x) => x !== id)
       recompute()
     }
 
@@ -480,7 +551,7 @@ const DeclareAnimationRuntime = ({
 
       const prevIds = order.current.slice(0, index)
 
-      const prevOptions = prevIds.map(i => curRegistry.current.get(i) ?? {})
+      const prevOptions = prevIds.map((i) => curRegistry.current.get(i) ?? {})
 
       return Object.assign(superGetter(), ...prevOptions)
     }
@@ -502,34 +573,42 @@ const DeclareAnimationRuntime = ({
       {ast.children.map((child, i) => {
         switch (child.type) {
           case PsdElm.MotionSequence:
-            return <MotionSequenceRuntime
-              key={i}
-              ast={child}
-              variables={curVariables}
-              register={curRegister}
-            />
+            return (
+              <MotionSequenceRuntime
+                key={i}
+                ast={child}
+                variables={curVariables}
+                register={curRegister}
+              />
+            )
           case PsdElm.DeclareVariable:
-            return <DeclareVariableRuntime
-              key={i}
-              ast={child}
-              variables={curVariables}
-              initializingVariables={{}}
-              register={curRegister}
-            />
+            return (
+              <DeclareVariableRuntime
+                key={i}
+                ast={child}
+                variables={curVariables}
+                initializingVariables={{}}
+                register={curRegister}
+              />
+            )
           case PsdElm.Voice:
-            return <VoiceRuntime
-              key={i}
-              ast={child}
-              variables={curVariables}
-              register={curRegister}
-            />
+            return (
+              <VoiceRuntime
+                key={i}
+                ast={child}
+                variables={curVariables}
+                register={curRegister}
+              />
+            )
           case PsdElm.Motion:
-            return <MotionRuntime
-              key={i}
-              ast={child}
-              variables={curVariables}
-              register={curRegister}
-            />
+            return (
+              <MotionRuntime
+                key={i}
+                ast={child}
+                variables={curVariables}
+                register={curRegister}
+              />
+            )
           default:
             return null
         }
@@ -539,23 +618,24 @@ const DeclareAnimationRuntime = ({
 }
 
 type VoiceRuntimeProps = {
-  ast: VoiceNode,
+  ast: VoiceNode
   variables: Record<string, Variable<any>>
   register: OptionRegister
 }
 
 const VoiceRuntime = (props: VoiceRuntimeProps) => {
-    return <Clip> <VoiceRuntimeInner {...props} /> </Clip>
+  return (
+    <Clip>
+      {" "}
+      <VoiceRuntimeInner {...props} />{" "}
+    </Clip>
+  )
 }
 
-const VoiceRuntimeInner = ({
-  ast,
-  variables,
-  register
-}: VoiceRuntimeProps) => {
+const VoiceRuntimeInner = ({ ast, variables, register }: VoiceRuntimeProps) => {
   const reg = useRef<ReturnType<OptionRegister>>(undefined)
   if (!reg.current) {
-      reg.current = register()
+    reg.current = register()
   }
   const { update, unregister } = reg.current
 
@@ -568,21 +648,28 @@ const VoiceRuntimeInner = ({
   const frames = [localFrame, globalFrame]
   const audioSegments = useAudioSegments()
   const audioSegment = useMemo(() => {
-    return audioSegments.filter(seg => seg.source.path == ast.voice).at(0)
+    return audioSegments.filter((seg) => seg.source.path == ast.voice).at(0)
   }, [ast, audioSegments])
   const waveformData = useWaveformBank([ast.voice])
 
   useEffect(() => {
     if (audioSegment && ast.voiceMotion) {
-      update(ast.voiceMotion(audioSegment, waveformData.get(ast.voice) ?? null, variables, frames))
+      update(
+        ast.voiceMotion(
+          audioSegment,
+          waveformData.get(ast.voice) ?? null,
+          variables,
+          frames,
+        ),
+      )
     }
   }, [localFrame, audioSegment, waveformData])
-  
+
   const volume =
     typeof ast.volume === "function"
       ? ast.volume(variables, frames)
       : ast.volume
-  
+
   return (
     <Sound
       sound={ast.voice}
@@ -596,19 +683,15 @@ const VoiceRuntimeInner = ({
 }
 
 type MotionRuntimeProps = {
-  ast: MotionNode,
+  ast: MotionNode
   variables: Record<string, Variable<any>>
   register: OptionRegister
 }
 
-const MotionRuntime = ({
-  ast,
-  variables,
-  register
-}: MotionRuntimeProps) => {
+const MotionRuntime = ({ ast, variables, register }: MotionRuntimeProps) => {
   const reg = useRef<ReturnType<OptionRegister>>(undefined)
   if (!reg.current) {
-      reg.current = register()
+    reg.current = register()
   }
   const { update, unregister } = reg.current
 
@@ -626,7 +709,6 @@ const MotionRuntime = ({
   return null
 }
 
-
 const psdCache = new Map<string, Psd>()
 const psdPending = new Map<string, Promise<Psd>>()
 
@@ -642,7 +724,7 @@ const fetchPsd = async (psd: PsdPath): Promise<Psd> => {
     if (!res.ok) {
       throw new Error("failed to fetch psd file")
     }
-  
+
     const file = readPsd(await res.arrayBuffer())
     psdCache.set(psd.path, file)
     return file

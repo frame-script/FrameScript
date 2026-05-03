@@ -31,8 +31,8 @@ export const PROJECT = () => {
         {/* <Clip> is a timeline segment */}
         {/* Timeline length follows <Video/> by default (can be overridden) */}
         <Clip label="Clip Name">
-          { /* <Video/> loads a video file */ }
-          <Video video={{ path: "~/Videos/example.mp4" }}/>
+          {/* <Video/> loads a video file */}
+          <Video video={{ path: "~/Videos/example.mp4" }} />
         </Clip>
       </TimeLine>
     </Project>

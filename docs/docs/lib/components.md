@@ -14,11 +14,7 @@ Root of the render tree. Provides a fixed render surface.
 ```tsx
 import { Project } from "../src/lib/project"
 
-export const PROJECT = () => (
-  <Project>
-    {/* scenes/clips */}
-  </Project>
-)
+export const PROJECT = () => <Project>{/* scenes/clips */}</Project>
 ```
 
 ### `<TimeLine>`
@@ -30,9 +26,7 @@ import { TimeLine } from "../src/lib/timeline"
 
 export const PROJECT = () => (
   <Project>
-    <TimeLine>
-      {/* Clip / ClipSequence */}
-    </TimeLine>
+    <TimeLine>{/* Clip / ClipSequence */}</TimeLine>
   </Project>
 )
 ```
@@ -68,6 +62,7 @@ Chains multiple `<Clip>` on a single lane. Start positions are calculated automa
 ### Clip utilities
 
 #### `useClipStart()`
+
 Returns the start frame of the current clip.
 
 ```tsx
@@ -75,15 +70,17 @@ const start = useClipStart()
 ```
 
 #### `useClipRange()`
+
 Returns the frame range of the current clip.
 
 ```tsx
 const range = useClipRange()
 const start = range.start
-const end   = range.end
+const end = range.end
 ```
 
 #### `useClipId()`
+
 Returns the current clip ID.
 
 ```tsx
@@ -91,13 +88,17 @@ const id = useClipId()
 ```
 
 #### `useClipDepth()`
+
 Returns the nesting depth of the current clip.
+
 ```tsx
 const depth = useClipDepth()
 ```
 
 #### `useClipActive()`
+
 Returns true when the current clip is active and visible.
+
 ```tsx
 const active = useClipActive()
 ```
