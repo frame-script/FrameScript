@@ -12,7 +12,7 @@ import {
 } from "./ast"
 import { readPsd, type Psd } from "ag-psd"
 import { parsePsdCharacter } from "./parser"
-import { renderPsd } from "ag-psd-psdtool"
+import { getSchema } from "ag-psd-psdtool"
 import {
   useAnimation,
   useVariable,
@@ -36,6 +36,7 @@ type PsdPath = {
 }
 
 type PsdOptions = Record<string, any>
+const imageDataCanvasCache = new WeakMap<object, HTMLCanvasElement>()
 
 type PsdTracker = {
   pending: number
@@ -138,6 +139,192 @@ if (typeof window !== "undefined") {
   installPsdApi()
 }
 
+type PsdLayerLike = {
+  name?: string
+  hidden?: boolean
+  canvas?: HTMLCanvasElement
+  imageData?:
+    | ImageData
+    | { width: number; height: number; data: Uint8ClampedArray }
+  left?: number
+  top?: number
+  children?: PsdLayerLike[]
+}
+
+const parsePsdToolName = (rawName: string | undefined) => {
+  let name = rawName || ""
+  const tags = new Set<string>()
+  if (name.startsWith("!")) {
+    tags.add("fixed")
+    name = name.slice(1)
+  } else if (name.startsWith("*")) {
+    tags.add("option")
+    name = name.slice(1)
+  }
+  while (true) {
+    if (name.endsWith(":flipx")) {
+      tags.add("flipx")
+      name = name.slice(0, -":flipx".length)
+    } else if (name.endsWith(":flipy")) {
+      tags.add("flipy")
+      name = name.slice(0, -":flipy".length)
+    } else if (name.endsWith(":flipxy")) {
+      tags.add("flipxy")
+      name = name.slice(0, -":flipxy".length)
+    } else {
+      break
+    }
+  }
+  return { name, tags }
+}
+
+const optionMatchesFlip = (
+  tags: Set<string>,
+  flipx: boolean,
+  flipy: boolean,
+) => {
+  if (tags.has("flipxy") && flipx && flipy) return true
+  if (tags.has("flipx") && flipx && !flipy) return true
+  if (tags.has("flipy") && !flipx && flipy) return true
+  return (
+    !tags.has("flipxy") &&
+    !tags.has("flipx") &&
+    !tags.has("flipy") &&
+    !flipx &&
+    !flipy
+  )
+}
+
+const applyPsdDefaults = (psdFile: Psd, data: PsdOptions) => {
+  const schema = getSchema(psdFile) as {
+    properties?: Record<string, { default?: unknown }>
+  }
+  const properties = schema.properties ?? {}
+  for (const [key, value] of Object.entries(properties)) {
+    if (data[key] === undefined && value.default !== undefined) {
+      data[key] = value.default
+    }
+  }
+  return schema
+}
+
+const canvasFromImageData = (
+  imageData:
+    | ImageData
+    | { width: number; height: number; data: Uint8ClampedArray },
+) => {
+  const cached = imageDataCanvasCache.get(imageData)
+  if (cached) return cached
+
+  const canvasElement = document.createElement("canvas")
+  canvasElement.width = imageData.width
+  canvasElement.height = imageData.height
+  const ctx = canvasElement.getContext("2d")
+  if (!ctx) return canvasElement
+  const sourceData = new Uint8ClampedArray(imageData.data)
+  ctx.putImageData(
+    new ImageData(sourceData, imageData.width, imageData.height),
+    0,
+    0,
+  )
+  imageDataCanvasCache.set(imageData, canvasElement)
+  return canvasElement
+}
+
+const layerToCanvas = (layer: PsdLayerLike) => {
+  if (layer.canvas) return layer.canvas
+  if (layer.imageData) return canvasFromImageData(layer.imageData)
+  return null
+}
+
+const renderPsdImageData = (
+  psdFile: Psd,
+  data: PsdOptions,
+  canvasElement: HTMLCanvasElement,
+  renderOptions?: { flipx?: boolean; flipy?: boolean },
+) => {
+  applyPsdDefaults(psdFile, data)
+  const flipx = renderOptions?.flipx ?? false
+  const flipy = renderOptions?.flipy ?? false
+  const root = psdFile as PsdLayerLike
+  const queue: PsdLayerLike[] = [root]
+  const ancestors: PsdLayerLike[] = []
+  const visibleLeaves: PsdLayerLike[] = []
+
+  while (queue.length) {
+    const node = queue.shift()
+    if (!node) break
+    const info = parsePsdToolName(node.name)
+
+    if (node !== root) {
+      while (ancestors.length && !ancestors.at(-1)?.children?.includes(node)) {
+        ancestors.pop()
+      }
+      ancestors.push(node)
+    }
+
+    const currentPath = ancestors
+      .map((layer) => parsePsdToolName(layer.name).name)
+      .join("/")
+    const visible =
+      data[currentPath] !== false ||
+      info.tags.has("fixed") ||
+      info.tags.has("option") ||
+      node === root
+    if (!visible) continue
+
+    if (node.children?.length) {
+      const sameNameCounts = new Map<string, number>()
+      for (const child of node.children) {
+        const childName = parsePsdToolName(child.name).name
+        sameNameCounts.set(childName, (sameNameCounts.get(childName) ?? 0) + 1)
+      }
+      const duplicated = new Set(
+        Array.from(sameNameCounts.entries())
+          .filter(([, count]) => count > 1)
+          .map(([name]) => name),
+      )
+
+      queue.unshift(
+        ...node.children.filter((child) => {
+          const childInfo = parsePsdToolName(child.name)
+          if (
+            childInfo.tags.has("option") &&
+            data[currentPath] !== childInfo.name
+          ) {
+            return false
+          }
+          if (duplicated.has(childInfo.name)) {
+            return optionMatchesFlip(childInfo.tags, flipx, flipy)
+          }
+          return true
+        }),
+      )
+    } else {
+      visibleLeaves.push(node)
+    }
+  }
+
+  canvasElement.width = psdFile.width
+  canvasElement.height = psdFile.height
+  const ctx = canvasElement.getContext("2d")
+  if (!ctx) return canvasElement
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height)
+  ctx.save()
+  ctx.scale(flipx ? -1 : 1, flipy ? -1 : 1)
+  ctx.translate(
+    flipx ? -canvasElement.width : 0,
+    flipy ? -canvasElement.height : 0,
+  )
+  for (const layer of visibleLeaves) {
+    const source = layerToCanvas(layer)
+    if (!source) continue
+    ctx.drawImage(source, layer.left ?? 0, layer.top ?? 0)
+  }
+  ctx.restore()
+  return canvasElement
+}
+
 const usePsdPending = () => {
   const loadIdRef = useRef(0)
   const pendingFinishRef = useRef<(() => void) | null>(null)
@@ -208,6 +395,8 @@ export const PsdCharacter = ({
   const active = useClipActive()
   const { beginPending, endPending, loadIdRef } = usePsdPending()
   const waitPsdIdRef = useRef(`psd-${Math.random().toString(36).slice(2)}`)
+  const scheduledDrawRef = useRef<number | null>(null)
+  const renderBufferRef = useRef<HTMLCanvasElement | null>(null)
 
   /**
    * Registry storing per-node options.
@@ -241,9 +430,35 @@ export const PsdCharacter = ({
     const psdFile = myPsdRef.current
     const canvasElement = canvas.current
     if (!psdFile || !canvasElement) return false
-    renderPsd(psdFile, options.current, { canvas: canvasElement })
+
+    const buffer = renderBufferRef.current ?? document.createElement("canvas")
+    renderBufferRef.current = buffer
+    renderPsdImageData(psdFile, options.current, buffer)
+
+    canvasElement.width = buffer.width
+    canvasElement.height = buffer.height
+    const ctx = canvasElement.getContext("2d")
+    if (!ctx) return false
+    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height)
+    ctx.drawImage(buffer, 0, 0)
     return true
   }, [])
+
+  const cancelScheduledDraw = useCallback(() => {
+    if (scheduledDrawRef.current == null) return
+    window.cancelAnimationFrame(scheduledDrawRef.current)
+    scheduledDrawRef.current = null
+  }, [])
+
+  const scheduleDrawPsd = useCallback(() => {
+    cancelScheduledDraw()
+    scheduledDrawRef.current = window.requestAnimationFrame(() => {
+      scheduledDrawRef.current = window.requestAnimationFrame(() => {
+        scheduledDrawRef.current = null
+        drawPsd()
+      })
+    })
+  }, [cancelScheduledDraw, drawPsd])
 
   /**
    * Load PSD and parse DSL into AST.
@@ -284,16 +499,31 @@ export const PsdCharacter = ({
    */
   const frame = useCurrentFrame()
   useEffect(() => {
-    drawPsd()
-  }, [drawPsd, frame, myPsd])
+    if (!active) {
+      cancelScheduledDraw()
+      return
+    }
+
+    // Draw only after the hidden clip has become visible and Chromium has
+    // settled the canvas backing store. Rendering while display:none, or in
+    // the same commit that flips visibility, can leave the canvas blank.
+    scheduleDrawPsd()
+
+    return cancelScheduledDraw
+  }, [active, cancelScheduledDraw, frame, myPsd, scheduleDrawPsd])
 
   useEffect(() => {
     if (!active) return
     const id = waitPsdIdRef.current
     const waitForFrame = async (_targetFrame: number) => {
-      if (drawPsd()) return
+      await waitForAnimationTick()
+      if (drawPsd()) {
+        await waitForAnimationTick()
+        return
+      }
       await waitForAnimationTick()
       drawPsd()
+      await waitForAnimationTick()
     }
 
     psdFrameCallbacks.set(id, waitForFrame)
@@ -879,10 +1109,11 @@ const psdCache = new Map<string, Psd>()
 const psdPending = new Map<string, Promise<Psd>>()
 
 const fetchPsd = async (psd: PsdPath): Promise<Psd> => {
-  const cached = psdCache.get(psd.path)
+  const cacheKey = `image-data:${psd.path}`
+  const cached = psdCache.get(cacheKey)
   if (cached != null) return cached
 
-  const pending = psdPending.get(psd.path)
+  const pending = psdPending.get(cacheKey)
   if (pending) return pending
 
   const next = (async () => {
@@ -891,14 +1122,14 @@ const fetchPsd = async (psd: PsdPath): Promise<Psd> => {
       throw new Error("failed to fetch psd file")
     }
 
-    const file = readPsd(await res.arrayBuffer())
-    psdCache.set(psd.path, file)
+    const file = readPsd(await res.arrayBuffer(), { useImageData: true })
+    psdCache.set(cacheKey, file)
     return file
   })().finally(() => {
-    psdPending.delete(psd.path)
+    psdPending.delete(cacheKey)
   })
 
-  psdPending.set(psd.path, next)
+  psdPending.set(cacheKey, next)
   return next
 }
 
