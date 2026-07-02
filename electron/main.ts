@@ -38,10 +38,14 @@ const resolveBundledBinaryPath = (installer: unknown) => {
   return null
 }
 
-const resolvePuppeteerExecutablePath = () => {
+const resolvePuppeteerExecutablePath = async () => {
   try {
     if (typeof puppeteer?.executablePath === "function") {
-      return puppeteer.executablePath()
+      const executablePath = await puppeteer.executablePath()
+      return typeof executablePath === "string" &&
+        executablePath.trim().length > 0
+        ? executablePath
+        : null
     }
   } catch (_error) {
     // ignore
@@ -49,7 +53,7 @@ const resolvePuppeteerExecutablePath = () => {
   return null
 }
 
-function getBundledBinaryEnv(): NodeJS.ProcessEnv {
+async function getBundledBinaryEnv(): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = {}
   const ffmpegPath =
     process.env.FRAMESCRIPT_FFMPEG_PATH ??
@@ -60,7 +64,7 @@ function getBundledBinaryEnv(): NodeJS.ProcessEnv {
   const chromiumPath =
     process.env.FRAMESCRIPT_CHROMIUM_PATH ??
     process.env.PUPPETEER_EXECUTABLE_PATH ??
-    resolvePuppeteerExecutablePath()
+    (await resolvePuppeteerExecutablePath())
   if (ffmpegPath) {
     env.FRAMESCRIPT_FFMPEG_PATH = ffmpegPath
   }
@@ -140,7 +144,7 @@ function getRenderOutputDisplayPath() {
   return display.split(path.sep).join("/")
 }
 
-function startBackend(): Promise<void> {
+async function startBackend(): Promise<void> {
   if (backendProcess) {
     return Promise.resolve()
   }
@@ -153,7 +157,7 @@ function startBackend(): Promise<void> {
       stdio: "pipe",
       env: {
         ...process.env,
-        ...getBundledBinaryEnv(),
+        ...(await getBundledBinaryEnv()),
       },
     })
 
@@ -171,7 +175,7 @@ function startBackend(): Promise<void> {
       stdio: "pipe",
       env: {
         ...process.env,
-        ...getBundledBinaryEnv(),
+        ...(await getBundledBinaryEnv()),
       },
     })
 
@@ -281,9 +285,10 @@ function getRenderBinaryInfo() {
   return { platformKey, binName, binPath, candidates }
 }
 
-function startRenderProcess(payload: RenderStartPayload) {
+async function startRenderProcess(payload: RenderStartPayload) {
   const lowMemoryFlag = payload.ffmpegLowMemory ? 1 : 0
   const argsString = `${payload.width}:${payload.height}:${payload.fps}:${payload.totalFrames}:${payload.workers}:${payload.encode}:${payload.preset}:${payload.ffmpegThreads}:${lowMemoryFlag}`
+  const binaryEnv = await getBundledBinaryEnv()
 
   if (renderChild && !renderChild.killed) {
     console.log("[render] terminating previous render process")
@@ -298,7 +303,7 @@ function startRenderProcess(payload: RenderStartPayload) {
         cwd: renderCwd,
         env: {
           ...process.env,
-          ...getBundledBinaryEnv(),
+          ...binaryEnv,
           RENDER_PAGE_URL: getRenderPageUrl(),
           RENDER_OUTPUT_PATH: getRenderOutputPath(),
         },
@@ -337,7 +342,7 @@ function startRenderProcess(payload: RenderStartPayload) {
       renderChild = spawn(binPath, [argsString], {
         env: {
           ...process.env,
-          ...getBundledBinaryEnv(),
+          ...binaryEnv,
           RENDER_PAGE_URL: getRenderPageUrl(),
           RENDER_OUTPUT_PATH: getRenderOutputPath(),
         },
