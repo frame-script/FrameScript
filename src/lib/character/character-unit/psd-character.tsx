@@ -24,6 +24,7 @@ import { Sound } from "../../sound/sound"
 import { Clip, ClipSequence, useClipActive } from "../../clip"
 import { useAudioSegments } from "../../audio-plan"
 import { useWaveformBank } from "../../sound/character"
+import { useTimelineClips } from "../../timeline"
 
 type PsdCharacterProps = {
   psd: string
@@ -451,7 +452,7 @@ export const PsdCharacter = ({
   }, [])
 
   const scheduleDrawPsd = useCallback(() => {
-    cancelScheduledDraw()
+    if (scheduledDrawRef.current != null) return
     scheduledDrawRef.current = window.requestAnimationFrame(() => {
       scheduledDrawRef.current = window.requestAnimationFrame(() => {
         scheduledDrawRef.current = null
@@ -508,9 +509,11 @@ export const PsdCharacter = ({
     // settled the canvas backing store. Rendering while display:none, or in
     // the same commit that flips visibility, can leave the canvas blank.
     scheduleDrawPsd()
-
-    return cancelScheduledDraw
   }, [active, cancelScheduledDraw, frame, myPsd, scheduleDrawPsd])
+
+  useEffect(() => {
+    return cancelScheduledDraw
+  }, [cancelScheduledDraw])
 
   useEffect(() => {
     if (!active) return
@@ -1019,7 +1022,23 @@ type VoiceRuntimeProps = {
   register: OptionRegister
 }
 
+const getVoiceLabels = (ast: VoiceNode) => {
+  const labels = [
+    ...(Array.isArray(ast.voiceLabel)
+      ? ast.voiceLabel
+      : ast.voiceLabel
+        ? [ast.voiceLabel]
+        : []),
+    ...(ast.voiceLabels ?? []),
+  ]
+  return labels.filter((label) => label.trim().length > 0)
+}
+
 const VoiceRuntime = (props: VoiceRuntimeProps) => {
+  if (getVoiceLabels(props.ast).length > 0 && !props.ast.voice) {
+    return <VoiceRuntimeInner {...props} />
+  }
+
   return (
     <Clip>
       {" "}
@@ -1043,28 +1062,61 @@ const VoiceRuntimeInner = ({ ast, variables, register }: VoiceRuntimeProps) => {
   const globalFrame = useGlobalCurrentFrame()
   const frames = [localFrame, globalFrame]
   const audioSegments = useAudioSegments()
+  const clips = useTimelineClips()
+  const voiceLabels = useMemo(() => getVoiceLabels(ast), [ast])
   const audioSegment = useMemo(() => {
-    return audioSegments.filter((seg) => seg.source.path == ast.voice).at(0)
-  }, [ast, audioSegments])
-  const waveformData = useWaveformBank([ast.voice])
+    if (voiceLabels.length > 0) {
+      const clipIds = new Set(
+        clips
+          .filter((clip) => clip.label && voiceLabels.includes(clip.label))
+          .map((clip) => clip.id),
+      )
+      const labeledSegments = audioSegments
+        .filter((seg) => seg.clipId && clipIds.has(seg.clipId))
+        .sort((a, b) => a.projectStartFrame - b.projectStartFrame)
+      return (
+        labeledSegments.find(
+          (seg) =>
+            globalFrame >= seg.projectStartFrame &&
+            globalFrame < seg.projectStartFrame + seg.durationFrames,
+        ) ?? labeledSegments.at(0)
+      )
+    }
+
+    if (ast.voice) {
+      return audioSegments.filter((seg) => seg.source.path == ast.voice).at(0)
+    }
+
+    return undefined
+  }, [ast.voice, audioSegments, clips, globalFrame, voiceLabels])
+  const waveformPaths = useMemo(() => {
+    const path = audioSegment?.source.path ?? ast.voice
+    return path ? [path] : []
+  }, [ast.voice, audioSegment?.source.path])
+  const waveformData = useWaveformBank(waveformPaths)
 
   useEffect(() => {
     if (audioSegment && ast.voiceMotion) {
+      const waveformPath = audioSegment.source.path
       update(
         ast.voiceMotion(
           audioSegment,
-          waveformData.get(ast.voice) ?? null,
+          waveformData.get(waveformPath) ?? null,
           variables,
           frames,
         ),
       )
     }
-  }, [localFrame, audioSegment, waveformData])
+  }, [ast, localFrame, globalFrame, audioSegment, waveformData, variables])
 
   const volume =
     typeof ast.volume === "function"
       ? ast.volume(variables, frames)
       : ast.volume
+
+  if (!ast.voice) {
+    return null
+  }
 
   return (
     <Sound

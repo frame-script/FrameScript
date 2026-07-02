@@ -29,6 +29,7 @@ type ClipStaticProps = {
   label?: string
   children?: React.ReactNode
   laneId?: string
+  timelinePending?: boolean
 }
 
 type ClipContextValue = {
@@ -37,6 +38,7 @@ type ClipContextValue = {
   baseEnd: number
   depth: number
   active: boolean
+  timelinePending: boolean
 }
 
 const ClipContext = createContext<ClipContextValue | null>(null)
@@ -96,6 +98,7 @@ export const ClipStatic = ({
   label,
   children,
   laneId,
+  timelinePending = false,
 }: ClipStaticProps) => {
   const timeline = useTimelineRegistration()
   const registerClip = timeline?.registerClip
@@ -109,6 +112,7 @@ export const ClipStatic = ({
   const parentEnd = clipContext?.baseEnd ?? Number.POSITIVE_INFINITY
   const parentDepth = clipContext?.depth ?? -1
   const parentId = clipContext?.id ?? null
+  const pending = timelinePending || (clipContext?.timelinePending ?? false)
   const absoluteStart = parentBase + start
   const absoluteEnd = parentBase + end
   const clampedStart = Math.max(absoluteStart, parentBase)
@@ -132,6 +136,7 @@ export const ClipStatic = ({
         depth,
         parentId,
         laneId,
+        pending,
       })
       return () => {
         unregisterClip(id)
@@ -146,6 +151,7 @@ export const ClipStatic = ({
       depth,
       parentId,
       laneId,
+      pending,
     })
     return () => unregisterClipGlobal(id)
   }, [
@@ -159,6 +165,7 @@ export const ClipStatic = ({
     hasSpan,
     parentId,
     laneId,
+    pending,
   ])
 
   return (
@@ -169,6 +176,7 @@ export const ClipStatic = ({
         baseEnd: clampedEnd,
         depth,
         active: isActive,
+        timelinePending: pending,
       }}
     >
       <WithClipStart start={clampedStart}>
@@ -270,7 +278,8 @@ type ClipProps = {
   duration?: number // frames
   laneId?: string
   children?: React.ReactNode
-  onDurationChange?: (frames: number) => void
+  timelinePending?: boolean
+  onDurationChange?: (frames: number, resolved?: boolean) => void
 }
 
 const ClipAnimationSync = ({ children }: { children: React.ReactNode }) => {
@@ -397,9 +406,11 @@ export const Clip = ({
   duration,
   laneId,
   children,
+  timelinePending = false,
   onDurationChange,
 }: ClipProps) => {
   const [frames, setFrames] = useState<number>(Math.max(0, duration ?? 0))
+  const [reportCount, setReportCount] = useState(0)
   const durationsRef = useRef<Map<string, number>>(new Map())
 
   const resolveReported = useCallback(() => {
@@ -413,7 +424,11 @@ export const Clip = ({
 
   const handleReport = useCallback(
     (id: string, value: number) => {
+      const hadReport = durationsRef.current.has(id)
       durationsRef.current.set(id, Math.max(0, value))
+      if (!hadReport) {
+        setReportCount((prev) => prev + 1)
+      }
       resolveReported()
     },
     [resolveReported],
@@ -423,6 +438,7 @@ export const Clip = ({
     (id: string) => {
       if (!durationsRef.current.has(id)) return
       durationsRef.current.delete(id)
+      setReportCount((prev) => Math.max(0, prev - 1))
       resolveReported()
     },
     [resolveReported],
@@ -441,13 +457,15 @@ export const Clip = ({
     }
   }, [duration, resolveReported])
 
+  const durationResolved = duration != null || reportCount > 0
+
   useEffect(() => {
     if (onDurationChange) {
-      onDurationChange(frames)
+      onDurationChange(frames, durationResolved)
     }
-  }, [frames, onDurationChange])
+  }, [durationResolved, frames, onDurationChange])
 
-  useProvideClipDuration(frames)
+  useProvideClipDuration(durationResolved ? frames : null)
 
   const end = start + Math.max(0, frames) - 1
 
@@ -458,6 +476,7 @@ export const Clip = ({
         end={end < start ? start : end}
         label={label}
         laneId={laneId}
+        timelinePending={timelinePending}
       >
         <ClipAnimationSync>{children}</ClipAnimationSync>
       </ClipStatic>
@@ -510,6 +529,29 @@ export const Serial = ({ children }: { children: React.ReactNode }) => {
 }
 
 type ClipElementDyn = React.ReactElement<ClipProps>
+type SequenceElement = React.ReactElement<Record<string, unknown>>
+type ClipSequenceProps = {
+  children: React.ReactNode
+  start?: number
+  timelinePending?: boolean
+  onDurationChange?: (frames: number, resolved?: boolean) => void
+}
+
+type SequenceDuration = {
+  frames: number
+  resolved: boolean
+}
+
+const inferSequenceElementLabel = (el: SequenceElement) => {
+  const type = el.type
+  if (typeof type === "string") {
+    return typeof el.props.label === "string" ? el.props.label : type
+  }
+  return (
+    (type as { displayName?: string; name?: string }).displayName ??
+    (type as { displayName?: string; name?: string }).name
+  )
+}
 
 /**
  * Chains <Clip> elements back-to-back and behaves like a single clip.
@@ -527,61 +569,144 @@ type ClipElementDyn = React.ReactElement<ClipProps>
 export const ClipSequence = ({
   children,
   start = 0,
+  timelinePending = false,
   onDurationChange,
-}: {
-  children: React.ReactNode
-  start?: number
-  onDurationChange?: (frames: number) => void
-}) => {
+}: ClipSequenceProps) => {
   const laneId = useId()
-  const items = Children.toArray(children).filter(
-    (child) =>
-      isValidElement(child) &&
-      (child as ClipElementDyn).type &&
-      ((child as ClipElementDyn).type as any)._isClip,
-  ) as ClipElementDyn[]
-  const [durations, setDurations] = useState<Map<string, number>>(new Map())
+  const items = Children.toArray(children).filter(isValidElement) as (
+    | ClipElementDyn
+    | SequenceElement
+  )[]
+  const [durations, setDurations] = useState<Map<string, SequenceDuration>>(
+    new Map(),
+  )
 
   const handleDurationChange = useCallback(
-    (key: string) => (value: number) => {
-      setDurations((prev) => {
-        const next = new Map(prev)
-        next.set(key, Math.max(0, value))
-        // Avoid useless updates that can cause render loops when value is unchanged.
-        if (prev.get(key) === next.get(key)) return prev
-        return next
-      })
-    },
+    (key: string) =>
+      (value: number, resolved = true) => {
+        setDurations((prev) => {
+          const next = new Map(prev)
+          next.set(key, { frames: Math.max(0, value), resolved })
+          // Avoid useless updates that can cause render loops when value is unchanged.
+          const current = prev.get(key)
+          if (
+            current &&
+            current.frames === Math.max(0, value) &&
+            current.resolved === resolved
+          ) {
+            return prev
+          }
+          return next
+        })
+      },
     [],
   )
 
   let cursor = start
+  let maxCursor = start
+  let cursorResolved = true
+  let totalResolved = true
   const serialised = items.map((el, index) => {
     const key = (el.key ?? index).toString()
-    const knownDuration =
-      durations.get(key) ?? Math.max(0, el.props.duration ?? 0)
+    const isForkSequence = Boolean((el.type as any)?._isClipForkSequence)
+    const isClipElement = Boolean((el.type as any)?._isClip)
+    const propDuration =
+      typeof el.props.duration === "number" ? el.props.duration : 0
+    const duration = durations.get(key)
+    const durationResolved =
+      duration?.resolved ?? typeof el.props.duration === "number"
+    const knownDuration = duration?.frames ?? Math.max(0, propDuration)
     const nextStart = cursor
+    const startPending = timelinePending || !cursorResolved
+
+    if (isForkSequence) {
+      maxCursor = Math.max(maxCursor, nextStart + knownDuration)
+      totalResolved = totalResolved && durationResolved
+      return cloneElement(el, {
+        start: nextStart,
+        key,
+        timelinePending: startPending,
+        onDurationChange: handleDurationChange(key),
+      })
+    }
+
     cursor = cursor + knownDuration
+    maxCursor = Math.max(maxCursor, cursor)
+    totalResolved = totalResolved && durationResolved
+    cursorResolved = cursorResolved && durationResolved
+
+    if (!isClipElement) {
+      return (
+        <Clip
+          start={nextStart}
+          duration={
+            typeof el.props.duration === "number" ? propDuration : undefined
+          }
+          label={inferSequenceElementLabel(el)}
+          laneId={laneId}
+          timelinePending={startPending}
+          key={key}
+          onDurationChange={handleDurationChange(key)}
+        >
+          {el}
+        </Clip>
+      )
+    }
 
     return cloneElement(el, {
       start: nextStart,
       laneId,
       key,
+      timelinePending: startPending,
       onDurationChange: handleDurationChange(key),
     })
   })
 
-  const total = cursor - start
-  useProvideClipDuration(total)
+  const total = maxCursor - start
+  useProvideClipDuration(totalResolved ? total : null)
 
   if (items.length === 0) return null
 
   useEffect(() => {
     if (onDurationChange) {
-      onDurationChange(total)
+      onDurationChange(total, totalResolved)
     }
-  }, [onDurationChange, total])
+  }, [onDurationChange, total, totalResolved])
 
   return <>{serialised}</>
 }
 ;(ClipSequence as any)._isClip = true
+
+/**
+ * Starts a parallel branch inside <ClipSequence> without advancing the parent sequence.
+ *
+ * 親の <ClipSequence> の現在位置から並列の枝を開始します。
+ *
+ * @example
+ * ```tsx
+ * <ClipSequence>
+ *   <Clip label="A">...</Clip>
+ *   <ClipForkSequence>
+ *     <Clip label="Fork">...</Clip>
+ *   </ClipForkSequence>
+ *   <Clip label="B">...</Clip>
+ * </ClipSequence>
+ * ```
+ */
+export const ClipForkSequence = ({
+  children,
+  start = 0,
+  timelinePending = false,
+  onDurationChange,
+}: ClipSequenceProps) => {
+  return (
+    <ClipSequence
+      start={start}
+      timelinePending={timelinePending}
+      onDurationChange={onDurationChange}
+    >
+      {children}
+    </ClipSequence>
+  )
+}
+;(ClipForkSequence as any)._isClipForkSequence = true

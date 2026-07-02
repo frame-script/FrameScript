@@ -269,6 +269,8 @@ const parseDeclareAnimationChildren = (
 const parseVoice = (self: AnyElement): VoiceNode => {
   const {
     voice,
+    voiceLabel,
+    voiceLabels,
     voiceMotion,
     trim,
     fadeInFrames,
@@ -279,6 +281,8 @@ const parseVoice = (self: AnyElement): VoiceNode => {
   return {
     type: PsdElm.Voice,
     voice,
+    voiceLabel,
+    voiceLabels,
     voiceMotion,
     trim,
     fadeInFrames,

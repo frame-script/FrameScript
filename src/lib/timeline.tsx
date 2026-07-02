@@ -5,6 +5,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react"
+import { recordFrameScriptDebugLog } from "./debug-log"
 
 type TimeLineProps = {
   children?: React.ReactNode
@@ -28,6 +29,7 @@ export type TimelineClip = {
   depth?: number
   parentId?: string | null
   laneId?: string
+  pending?: boolean
 }
 
 type TimelineContextValue = {
@@ -56,6 +58,18 @@ const notifyGlobal = () => {
 
 const getGlobalClips = () => globalClips
 
+const installTimelineApi = () => {
+  if (typeof window === "undefined") return
+  ;(window as any).__frameScript = {
+    ...(window as any).__frameScript,
+    getTimelineClips: () => globalClips,
+  }
+}
+
+if (typeof window !== "undefined") {
+  installTimelineApi()
+}
+
 /**
  * Registers a clip in the global timeline store.
  *
@@ -68,6 +82,10 @@ const getGlobalClips = () => globalClips
  */
 export const registerClipGlobal = (clip: TimelineClip) => {
   globalClips = [...globalClips.filter((item) => item.id !== clip.id), clip]
+  if (clip.label) {
+    recordFrameScriptDebugLog("timeline", "registerClip", clip)
+  }
+  installTimelineApi()
   notifyGlobal()
 }
 
@@ -82,8 +100,13 @@ export const registerClipGlobal = (clip: TimelineClip) => {
  * ```
  */
 export const unregisterClipGlobal = (id: string) => {
+  const clip = globalClips.find((item) => item.id === id)
   globalClips = globalClips.filter((clip) => clip.id !== id)
   delete globalHidden[id]
+  if (clip?.label) {
+    recordFrameScriptDebugLog("timeline", "unregisterClip", clip)
+  }
+  installTimelineApi()
   notifyGlobal()
 }
 

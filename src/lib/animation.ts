@@ -9,6 +9,7 @@ import { useClipId, useClipStart, useProvideClipDuration } from "./clip"
 import { useCurrentFrame } from "./frame"
 import type { Easing } from "./animation/functions"
 import { useTimelineClips, type TimelineClip } from "./timeline"
+import { recordFrameScriptDebugLog } from "./debug-log"
 
 type Lerp<T> = (from: T, to: T, t: number) => T
 
@@ -98,6 +99,8 @@ export type AnimationContext = {
 type InternalContext = AnimationContext & {
   now: number
   maxFrame: number
+  cancelled: boolean
+  unresolvedClipLabels: Set<string>
   register: (variable: Variable<unknown>) => void
 }
 
@@ -461,32 +464,17 @@ export const useAnimation = (
       if (!clipId) return true
       return isDescendantOf(clip, clipId)
     }
-    for (const clip of clips) {
-      if (!clip.label) continue
-      const existing = map.get(clip.label)
-      if (!existing) {
-        map.set(clip.label, clip)
-        continue
-      }
-      const nextInScope = isInScope(clip)
-      const existingInScope = isInScope(existing)
-      if (nextInScope && !existingInScope) {
-        map.set(clip.label, clip)
-        continue
-      }
-      if (nextInScope === existingInScope) {
-        if (clip.start < existing.start) {
-          map.set(clip.label, clip)
-          continue
-        }
-        if (clip.start === existing.start) {
-          const clipDepth = clip.depth ?? 0
-          const existingDepth = existing.depth ?? 0
-          if (clipDepth < existingDepth) {
-            map.set(clip.label, clip)
-          }
-        }
-      }
+    const candidates = clips
+      .filter((clip) => clip.label && !clip.pending && isInScope(clip))
+      .sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start
+        const depthDelta = (a.depth ?? 0) - (b.depth ?? 0)
+        if (depthDelta !== 0) return depthDelta
+        return a.id.localeCompare(b.id)
+      })
+    for (const clip of candidates) {
+      if (!clip.label || map.has(clip.label)) continue
+      map.set(clip.label, clip)
     }
     return map
   }, [clips, clipId])
@@ -527,7 +515,10 @@ export const useAnimation = (
     const internal: InternalContext = {
       now: 0,
       maxFrame: 0,
+      cancelled: false,
+      unresolvedClipLabels: new Set(),
       register: (variable) => {
+        if (internal.cancelled) return
         if (
           variable._state.ownerId != null &&
           variable._state.ownerId !== ownerId
@@ -549,18 +540,77 @@ export const useAnimation = (
         return new AnimationHandle(internal, target)
       },
       waitUntilClip: (label: string) => {
+        if (internal.cancelled) {
+          return new AnimationHandle(internal, internal.now)
+        }
         const clip = clipLabelMap.get(label)
         if (!clip) {
+          internal.unresolvedClipLabels.add(label)
+          recordFrameScriptDebugLog("animation", "waitUntilClip:unresolved", {
+            label,
+            ownerId,
+            runId,
+            clipId,
+            clipStart,
+            now: internal.now,
+            labels: Array.from(clipLabelMap.keys()),
+            sameLabelClips: clips
+              .filter((item) => item.label === label)
+              .map((item) => ({
+                id: item.id,
+                start: item.start,
+                end: item.end,
+                depth: item.depth,
+                parentId: item.parentId,
+                pending: item.pending,
+              })),
+          })
           return new AnimationHandle(internal, internal.now)
         }
         const targetFrame = clip.start - clipStart
         const target = Math.max(internal.now, toFrames(targetFrame))
+        recordFrameScriptDebugLog("animation", "waitUntilClip:resolved", {
+          label,
+          ownerId,
+          runId,
+          clipId,
+          clipStart,
+          now: internal.now,
+          targetFrame,
+          target,
+          chosen: {
+            id: clip.id,
+            start: clip.start,
+            end: clip.end,
+            depth: clip.depth,
+            parentId: clip.parentId,
+            pending: clip.pending,
+          },
+          sameLabelClips: clips
+            .filter((item) => item.label === label)
+            .map((item) => ({
+              id: item.id,
+              start: item.start,
+              end: item.end,
+              depth: item.depth,
+              parentId: item.parentId,
+              pending: item.pending,
+            })),
+        })
         return new AnimationHandle(internal, target)
       },
       move: (variable) => {
+        if (internal.cancelled) {
+          return {
+            to: () => new AnimationHandle(internal, internal.now),
+          }
+        }
         internal.register(variable as Variable<unknown>)
         return {
           to: (value, durationFrames, easing) => {
+            if (internal.cancelled) {
+              return new AnimationHandle(internal, internal.now)
+            }
             if (isDev) {
               assertCompatibleValue(variable._state.kind, value)
             }
@@ -575,6 +625,16 @@ export const useAnimation = (
               from,
               to: value as VariableType,
               easing,
+            })
+            recordFrameScriptDebugLog("animation", "move", {
+              ownerId,
+              runId,
+              clipId,
+              clipStart,
+              start,
+              end,
+              from,
+              to: value,
             })
             return new AnimationHandle(internal, end + 1)
           },
@@ -592,6 +652,23 @@ export const useAnimation = (
     }
 
     const execute = async () => {
+      recordFrameScriptDebugLog("animation", "run:start", {
+        ownerId,
+        runId,
+        clipId,
+        clipStart,
+        clipStartContext,
+        clipCount: clips.length,
+        labels: Array.from(clipLabelMap.entries()).map(([label, clip]) => ({
+          label,
+          id: clip.id,
+          start: clip.start,
+          end: clip.end,
+          depth: clip.depth,
+          parentId: clip.parentId,
+          pending: clip.pending,
+        })),
+      })
       try {
         await run(internal)
       } finally {
@@ -599,10 +676,54 @@ export const useAnimation = (
       }
 
       if (runIdRef.current !== runId) {
+        recordFrameScriptDebugLog("animation", "run:stale", {
+          ownerId,
+          runId,
+          currentRunId: runIdRef.current,
+          clipId,
+          clipStart,
+          now: internal.now,
+          maxFrame: internal.maxFrame,
+        })
+        finalize()
+        return
+      }
+      if (internal.unresolvedClipLabels.size > 0) {
+        for (const variable of variablesRef.current) {
+          if (variable._state.ownerId === ownerId) {
+            variable._state.segments.length = 0
+          }
+        }
+        if (isDev) {
+          console.warn(
+            `useAnimation: waiting for clip label(s): ${Array.from(
+              internal.unresolvedClipLabels,
+            ).join(", ")}`,
+          )
+        }
+        setReady(false)
+        recordFrameScriptDebugLog("animation", "run:unresolved", {
+          ownerId,
+          runId,
+          clipId,
+          clipStart,
+          unresolvedClipLabels: Array.from(internal.unresolvedClipLabels),
+          now: internal.now,
+          maxFrame: internal.maxFrame,
+        })
         finalize()
         return
       }
       const nextDuration = Math.max(1, Math.round(internal.maxFrame))
+      recordFrameScriptDebugLog("animation", "run:finish", {
+        ownerId,
+        runId,
+        clipId,
+        clipStart,
+        now: internal.now,
+        maxFrame: internal.maxFrame,
+        durationFrames: nextDuration,
+      })
       setDurationFrames(nextDuration)
       setReady(true)
       finalize()
@@ -612,6 +733,7 @@ export const useAnimation = (
 
     return () => {
       runIdRef.current += 1
+      internal.cancelled = true
       for (const variable of variablesRef.current) {
         if (variable._state.ownerId === ownerId) {
           variable._state.ownerId = null

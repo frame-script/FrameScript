@@ -6,6 +6,8 @@ import {
 } from "../../sound/character"
 import { Motion, VoiceMotion } from "./psd-character-component"
 import type { Trim } from "../../trim"
+import type { AudioSegment } from "../../audio-plan"
+import type { WaveformData } from "../../audio-waveform"
 
 // ================================
 // 型定義（PSDパーツの指定方法）
@@ -207,14 +209,17 @@ const rhubarbTable: Record<string, MouthShapeVowel> = {
 // ================================
 
 type SimpleLipSyncProps = {
-  voice: string
   threshold?: number
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
   volume?: number
   showWaveform?: boolean
-}
+} & (
+  | { voice: string; voiceLabel?: never; voiceLabels?: never }
+  | { voice?: never; voiceLabel: string | string[]; voiceLabels?: never }
+  | { voice?: never; voiceLabel?: never; voiceLabels: string[] }
+)
 
 /**
  * Creates a simple lip-sync based on audio volume.
@@ -243,37 +248,52 @@ type SimpleLipSyncProps = {
  * ```
  */
 export const createSimpleLipSync = (mouthOptions: SimpleMouthOptions) => {
-  return ({
-    voice,
-    threshold = DEFAULT_THRESHOLD,
-    trim,
-    fadeInFrames,
-    fadeOutFrames,
-    volume,
-    showWaveform,
-  }: SimpleLipSyncProps) => {
+  return (props: SimpleLipSyncProps) => {
+    const { threshold = DEFAULT_THRESHOLD } = props
+    const voiceMotion = (
+      audioSegment: AudioSegment,
+      waveform: WaveformData | null,
+      _: Record<string, any>,
+      frames: number[],
+    ) => {
+      // 現在フレーム時点の音量を取得
+      const amp = resolveSegmentAmplitude(
+        audioSegment,
+        waveform,
+        frames[frames.length - 1],
+        PROJECT_SETTINGS.fps,
+      )
+
+      // 閾値で開閉を切り替え
+      return amp > threshold
+        ? applyOption(mouthOptions, "Open")
+        : applyOption(mouthOptions, "Closed")
+    }
+
+    if (props.voiceLabel) {
+      return (
+        <VoiceMotion voiceLabel={props.voiceLabel} voiceMotion={voiceMotion} />
+      )
+    }
+
+    if (props.voiceLabels) {
+      return (
+        <VoiceMotion
+          voiceLabels={props.voiceLabels}
+          voiceMotion={voiceMotion}
+        />
+      )
+    }
+
     return (
       <VoiceMotion
-        voice={voice}
-        voiceMotion={(audioSegment, waveform, _, frames) => {
-          // 現在フレーム時点の音量を取得
-          const amp = resolveSegmentAmplitude(
-            audioSegment,
-            waveform,
-            frames[frames.length - 1],
-            PROJECT_SETTINGS.fps,
-          )
-
-          // 閾値で開閉を切り替え
-          return amp > threshold
-            ? applyOption(mouthOptions, "Open")
-            : applyOption(mouthOptions, "Closed")
-        }}
-        trim={trim}
-        fadeInFrames={fadeInFrames}
-        fadeOutFrames={fadeOutFrames}
-        volume={volume}
-        showWaveform={showWaveform}
+        voice={props.voice}
+        voiceMotion={voiceMotion}
+        trim={props.trim}
+        fadeInFrames={props.fadeInFrames}
+        fadeOutFrames={props.fadeOutFrames}
+        volume={props.volume}
+        showWaveform={props.showWaveform}
       />
     )
   }

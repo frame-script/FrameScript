@@ -72,7 +72,9 @@ export interface DeclareAnimationNode {
 
 export interface VoiceNode {
   type: typeof PsdCharacterElement.Voice
-  voice: string
+  voice?: string
+  voiceLabel?: string | string[]
+  voiceLabels?: string[]
   voiceMotion?: (
     segment: AudioSegment,
     waveform: WaveformData | null,

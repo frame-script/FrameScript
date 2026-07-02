@@ -20,7 +20,7 @@ export type CharacterProps = {
   alt?: string
 }
 
-export const DEFAULT_THRESHOLD = 0.1
+export const DEFAULT_THRESHOLD = 0.05
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value))

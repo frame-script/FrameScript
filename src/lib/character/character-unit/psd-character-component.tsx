@@ -87,10 +87,12 @@ DeclareAnimation.__dslType = PsdCharacterElement.DeclareAnimation
  * @param voiceMotion 音声を利用したアニメーションをつける関数
  */
 export const Voice = defineDSL<{
-  voice: string
+  voice?: string
+  voiceLabel?: string | string[]
+  voiceLabels?: string[]
   voiceMotion?: (
     segment: AudioSegment,
-    waveform: WaveformData,
+    waveform: WaveformData | null,
     variables: Record<string, Variable<VariableType>>,
     frames: number[],
   ) => Record<string, any>
@@ -205,13 +207,15 @@ type MotionWithVarsProps<
 }
 
 type VoiceMotionProps<T extends Record<string, VariableType>> = {
-  voice: string
   voiceMotion: (
     segment: AudioSegment,
-    waveform: WaveformData,
+    waveform: WaveformData | null,
     variables: Variables<T>,
     frames: number[],
   ) => Record<string, any>
+  voice?: string
+  voiceLabel?: string | string[]
+  voiceLabels?: string[]
   trim?: Trim
   fadeInFrames?: number
   fadeOutFrames?: number
@@ -234,9 +238,11 @@ export const VoiceMotion = <T extends Record<string, VariableType> = any>(
   let result = (
     <Voice
       voice={props.voice}
+      voiceLabel={props.voiceLabel}
+      voiceLabels={props.voiceLabels}
       voiceMotion={(
         segment: AudioSegment,
-        waveform: WaveformData,
+        waveform: WaveformData | null,
         variables: Record<string, Variable<VariableType>>,
         frames: number[],
       ) =>
