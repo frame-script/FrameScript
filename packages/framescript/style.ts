@@ -133,6 +133,52 @@ export interface CSSProperties {
   /** `"center"`, `"left top"`, `"20% 80%"`, `"10px 0"`. */
   objectPosition?: string
   imageRendering?: "auto" | "pixelated"
+
+  // Shapes in an `<svg>`, which also take these as attributes. They go down to what is inside.
+  /** A color, `"none"`, `"currentColor"`, a CSS `linear-gradient(…)` / `radial-gradient(…)`, or a `Gradient`. */
+  fill?: Paint
+  /** As `fill`. */
+  stroke?: Paint
+  strokeWidth?: number | string
+  fillOpacity?: number | string
+  strokeOpacity?: number | string
+  fillRule?: "nonzero" | "evenodd"
+  strokeLinecap?: "butt" | "round" | "square"
+  strokeLinejoin?: "miter" | "round" | "bevel"
+  strokeMiterlimit?: number
+  /** `"8 4"`, `[8, 4]` or `"none"`. */
+  strokeDasharray?: string | number | readonly number[]
+  strokeDashoffset?: number | string
+  vectorEffect?: "none" | "non-scaling-stroke"
+}
+
+/** What the inside or the outline of a shape is painted with. */
+export type Paint = string | Gradient
+
+/** A stop of a gradient: a color evenly placed, or with where it is, from 0 to 1. */
+export type GradientStop = string | readonly [number, string] | { offset: number; color: string }
+
+/**
+ * A gradient, as SVG has them: from (x1, y1) to (x2, y2), or out from (fx, fy) to the circle at
+ * (cx, cy) of radius r. The numbers are fractions of the box of the shape unless `units` is
+ * `"userSpaceOnUse"`. `linearGradient` and `radialGradient` make them.
+ */
+export interface Gradient {
+  readonly type: "linear" | "radial"
+  readonly x1?: number
+  readonly y1?: number
+  readonly x2?: number
+  readonly y2?: number
+  readonly cx?: number
+  readonly cy?: number
+  readonly r?: number
+  readonly fx?: number
+  readonly fy?: number
+  readonly stops: readonly GradientStop[]
+  readonly units?: "objectBoundingBox" | "userSpaceOnUse"
+  readonly spread?: "pad" | "reflect" | "repeat"
+  /** As the `transform` of SVG, or the six numbers of a matrix. */
+  readonly transform?: string | readonly number[]
 }
 
 export type StyleProps = {
@@ -150,6 +196,7 @@ const KIND_ENUM = 3
 const KIND_BOOL = 4
 const KIND_SHADOWS = 5
 const KIND_STRING = 6
+const KIND_NUMBERS = 7
 
 interface Prop {
   id: number
@@ -229,6 +276,8 @@ function write(node: number, name: string, value: Value) {
     case KIND_STRING:
       cmd.setString(node, p.id, String(value))
       return
+    case KIND_NUMBERS:
+      return invalid(name, value)
   }
 }
 
@@ -341,6 +390,190 @@ function strokes(value: unknown): cmd.Shadow[] | null {
     out.push({ x: 0, y: 0, blur: 0, spread: width, color, inset: false })
   }
   return out
+}
+
+// --- Paint for shapes ---------------------------------------------------------------------------
+
+/** The numbers of a paint (see `props::paint` in Rust), or null if it isn't one. */
+export function paint(value: unknown): number[] | null {
+  if (typeof value === "object" && value !== null && "stops" in value) return gradient(value as Gradient)
+  if (typeof value !== "string") return null
+  const v = value.trim()
+  if (v === "none") return [0]
+  if (v.toLowerCase() === "currentcolor") return [2]
+  if (/gradient\(/.test(v)) {
+    const g = cssGradient(v)
+    return g && gradient(g)
+  }
+  const c = parseColor(v)
+  return c === null ? null : [1, ...rgba(c)]
+}
+
+function rgba(c: number): number[] {
+  return [(c >>> 24) / 255, ((c >>> 16) & 0xff) / 255, ((c >>> 8) & 0xff) / 255, (c & 0xff) / 255]
+}
+
+function gradient(g: Gradient): number[] | null {
+  const spread = g.spread === "reflect" ? 1 : g.spread === "repeat" ? 2 : 0
+  const units = g.units === "userSpaceOnUse" ? 1 : 0
+  const out =
+    g.type === "radial"
+      ? [4, spread, units, g.cx ?? 0.5, g.cy ?? 0.5, g.r ?? 0.5, g.fx ?? g.cx ?? 0.5, g.fy ?? g.cy ?? 0.5]
+      : [3, spread, units, g.x1 ?? 0, g.y1 ?? 0, g.x2 ?? 1, g.y2 ?? 0]
+  const m = g.transform === undefined ? IDENTITY : typeof g.transform === "string" ? svgMatrix(g.transform) : g.transform
+  if (m === null || m.length !== 6) return null
+  out.push(...m)
+  const stops = placeStops(g.stops)
+  if (stops === null) return null
+  for (const [offset, color] of stops) out.push(offset, ...rgba(color))
+  return out
+}
+
+/** The stops with their offsets: those not given are spread evenly between those that are. */
+function placeStops(stops: readonly GradientStop[]): [number, number][] | null {
+  const list: [number | null, number][] = []
+  for (const s of stops) {
+    const [offset, color] = typeof s === "string" ? [null, s] : Array.isArray(s) ? s : [(s as { offset: number }).offset, (s as { color: string }).color]
+    const c = parseColor(color as string)
+    if (c === null) return null
+    list.push([offset as number | null, c])
+  }
+  if (list.length === 0) return null
+  if (list[0][0] === null) list[0][0] = 0
+  if (list[list.length - 1][0] === null) list[list.length - 1][0] = 1
+  let last = 0
+  for (let i = 1; i < list.length; i++) {
+    if (list[i][0] !== null) {
+      const from = list[last][0]!
+      const to = Math.max(from, list[i][0]!)
+      for (let k = last + 1; k < i; k++) list[k][0] = from + ((to - from) * (k - last)) / (i - last)
+      list[i][0] = to
+      last = i
+    }
+  }
+  return list as [number, number][]
+}
+
+const SIDES: Record<string, number> = {
+  "to top": 0,
+  "to top right": 45,
+  "to right top": 45,
+  "to right": 90,
+  "to bottom right": 135,
+  "to right bottom": 135,
+  "to bottom": 180,
+  "to bottom left": 225,
+  "to left bottom": 225,
+  "to left": 270,
+  "to top left": 315,
+  "to left top": 315,
+}
+
+/**
+ * `linear-gradient(90deg, #f00, #00f 60%)` or `radial-gradient(circle at 30% 40%, #fff, #000)`,
+ * across the box of the shape.
+ */
+function cssGradient(value: string): Gradient | null {
+  const m = /^(repeating-)?(linear|radial)-gradient\((.*)\)$/s.exec(value)
+  if (!m) return null
+  const args = split(m[3], ",")
+  const spread = m[1] ? "repeat" : "pad"
+  let first = args[0] ?? ""
+  const stopOf = (s: string): GradientStop => {
+    const parts = split(s, " ")
+    const at = parts.length > 1 ? parts[parts.length - 1] : null
+    if (at !== null && at.endsWith("%")) return [Number.parseFloat(at) / 100, parts.slice(0, -1).join(" ")]
+    return s
+  }
+  if (m[2] === "linear") {
+    let angle = 180
+    if (first in SIDES) angle = SIDES[first]
+    else if (/^-?[\d.]+(deg|turn|rad|grad)$/.test(first)) angle = first.endsWith("grad") ? Number.parseFloat(first) * 0.9 : number(first)!
+    else first = ""
+    const stops = (first ? args.slice(1) : args).map(stopOf)
+    const a = (angle * Math.PI) / 180
+    const [dx, dy] = [Math.sin(a), -Math.cos(a)]
+    const half = 0.5 * (Math.abs(dx) + Math.abs(dy))
+    return { type: "linear", x1: 0.5 - dx * half, y1: 0.5 - dy * half, x2: 0.5 + dx * half, y2: 0.5 + dy * half, stops, spread }
+  }
+  let cx = 0.5
+  let cy = 0.5
+  const shape = /^(circle|ellipse)?\s*(closest-side|farthest-side|closest-corner|farthest-corner)?\s*(at\s+(.+))?$/.exec(first)
+  if (shape && first) {
+    if (shape[4]) {
+      const [x, y] = objectPosition(shape[4])
+      cx = Number.parseFloat(x) / 100
+      cy = Number.parseFloat(y) / 100
+    }
+    first = ""
+  }
+  const stops = (first ? args : args.slice(1)).map(stopOf)
+  return { type: "radial", cx, cy, r: 0.5, stops, spread }
+}
+
+/** `"8 4"`, `[8, 4]`, `8` or `"none"`: no numbers for none. */
+export function dashes(value: unknown): number[] | null {
+  if (typeof value === "number") return [value]
+  if (Array.isArray(value)) return value.every((n) => typeof n === "number") ? value : null
+  if (typeof value !== "string") return null
+  if (value.trim() === "none") return []
+  const list = value.split(/[\s,]+/).filter(Boolean).map(Number.parseFloat)
+  return list.some(Number.isNaN) ? null : list
+}
+
+const IDENTITY = [1, 0, 0, 1, 0, 0]
+
+function multiply(m: readonly number[], n: readonly number[]): number[] {
+  return [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ]
+}
+
+/**
+ * The matrix `a b c d e f` of an SVG `transform`: `translate(10 20) rotate(45 50 50) scale(2)
+ * skewX(10) matrix(…)`, applied right to left as in SVG.
+ */
+export function svgMatrix(value: string): number[] | null {
+  let m = IDENTITY
+  for (const f of value.matchAll(/([a-zA-Z]+)\s*\(([^)]*)\)/g)) {
+    const a = f[2].split(/[\s,]+/).filter(Boolean).map(Number.parseFloat)
+    if (a.some(Number.isNaN)) return null
+    const rad = (d: number) => (d * Math.PI) / 180
+    let n: number[]
+    switch (f[1]) {
+      case "matrix":
+        if (a.length !== 6) return null
+        n = a
+        break
+      case "translate":
+        n = [1, 0, 0, 1, a[0] ?? 0, a[1] ?? 0]
+        break
+      case "scale":
+        n = [a[0] ?? 1, 0, 0, a[1] ?? a[0] ?? 1, 0, 0]
+        break
+      case "rotate": {
+        const [cos, sin] = [Math.cos(rad(a[0] ?? 0)), Math.sin(rad(a[0] ?? 0))]
+        const [x, y] = [a[1] ?? 0, a[2] ?? 0]
+        n = [cos, sin, -sin, cos, x - cos * x + sin * y, y - sin * x - cos * y]
+        break
+      }
+      case "skewX":
+        n = [1, 0, Math.tan(rad(a[0] ?? 0)), 1, 0, 0]
+        break
+      case "skewY":
+        n = [1, Math.tan(rad(a[0] ?? 0)), 0, 1, 0, 0]
+        break
+      default:
+        return null
+    }
+    m = multiply(m, n)
+  }
+  return m
 }
 
 const ALIGN_ALIASES: Record<string, string> = {
@@ -664,6 +897,24 @@ export function setStyle(node: number, key: string, value: unknown): void {
       const fill = parts.indexOf("fill")
       return write(node, key, stroke >= 0 && (fill < 0 || stroke < fill) ? "stroke" : "normal")
     }
+    case "fill":
+    case "stroke": {
+      if (value === null || value === undefined || value === "") return write(node, key, null)
+      const p = paint(value)
+      if (p === null) return invalid(key, v)
+      cmd.setNumbers(node, prop(key).id, p)
+      return
+    }
+    case "strokeDasharray": {
+      if (value === null || value === undefined || value === "") return write(node, key, null)
+      const list = dashes(value)
+      if (list === null) return invalid(key, v)
+      cmd.setNumbers(node, prop(key).id, list)
+      return
+    }
+    case "fillOpacity":
+    case "strokeOpacity":
+      return write(node, key, typeof v === "string" && v.endsWith("%") ? Number.parseFloat(v) / 100 : v)
     case "position":
       if (v === "fixed" || v === "sticky") {
         warn(`position: ${v} is not supported; absolute is used instead`)

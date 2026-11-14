@@ -664,3 +664,37 @@ fn bloom_spreads_what_is_bright() {
     assert_eq!(without, 0);
     assert!(with > 20, "the light spreads: {with}");
 }
+
+#[test]
+fn shapes_are_drawn_trimmed_painted_and_moved_as_their_attributes_say() {
+    let Some(mut gpu) = gpu() else { return };
+    let main = r##"import { linearGradient } from "framescript"
+export default function Main() {
+  return (
+    <svg viewBox="0 0 64 48" style={{ width: "100%", height: "100%", background: "#ffffff" }}>
+      <rect width={32} height={24} fill={linearGradient(["#ff0000", "#0000ff"])} />
+      <path d="M0 40H64" stroke="#00ff00" strokeWidth={4} trim={[0.25, 0.75]} />
+      <path d="M0 32H64" stroke="#00ff00" strokeWidth={4} strokeLinecap="round" trim={[0.75, 1.25]} />
+      <g transform="translate(48 12)">
+        <circle r={6} fill="#000000" />
+      </g>
+    </svg>
+  )
+}
+"##;
+    let dir = project("svg", main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    let (left, right) = (px(&p, 2, 12), px(&p, 29, 12));
+    assert!(left[0] > 200 && left[2] < 60, "the gradient starts red: {left:?}");
+    assert!(right[2] > 200 && right[0] < 60, "and ends blue: {right:?}");
+    assert_eq!(px(&p, 8, 40), [255, 255, 255, 255], "trimmed off at the start");
+    assert_eq!(px(&p, 32, 40), [0, 255, 0, 255], "the middle is stroked");
+    assert_eq!(px(&p, 56, 40), [255, 255, 255, 255], "trimmed off at the end");
+    // Past the end, a trim goes on from the start.
+    assert_eq!(px(&p, 8, 32), [0, 255, 0, 255], "the part after the start");
+    assert_eq!(px(&p, 32, 32), [255, 255, 255, 255]);
+    assert_eq!(px(&p, 56, 32), [0, 255, 0, 255], "the part before the end");
+    assert_eq!(px(&p, 48, 12), [0, 0, 0, 255], "the circle is where its group put it");
+    assert_eq!(px(&p, 40, 12), [255, 255, 255, 255], "and not wider than it");
+}

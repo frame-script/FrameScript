@@ -93,6 +93,18 @@ pub mod param {
     /// The index of a texture of an effect (as [`super::text_param::EFFECT_TEXTURE`] says), then
     /// the handle of a video node whose frames it is.
     pub const EFFECT_VIDEO: u32 = 57;
+
+    // An `<svg>` and the shapes in it, which are nodes of the document.
+    /// `x, y, width, height`, or nothing for none.
+    pub const VIEW_BOX: u32 = 60;
+    /// `x, y` of the alignment (NaN for none: stretched), and 1 to slice.
+    pub const ASPECT: u32 = 61;
+    /// `a, b, c, d, e, f`, as in SVG.
+    pub const SHAPE_TRANSFORM: u32 = 62;
+    /// The length dashes are measured in, or nothing for the real one.
+    pub const PATH_LENGTH: u32 = 63;
+    /// `x, y, width, height` of the rectangle a group cuts what is in it to, or nothing.
+    pub const CLIP: u32 = 64;
 }
 
 /// The parameters given as text, with [`crate::commands::op::PARAM_TEXT`]: an index, then a file.

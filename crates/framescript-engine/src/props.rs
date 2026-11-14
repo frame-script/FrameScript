@@ -6,9 +6,11 @@
 //! (see [`crate::commands`]).
 
 use anti_webui_style::{
-    AlignContent, AlignItems, BoxShadow, Color, Display, FlexDirection, FlexWrap, FontFamily,
-    FontStyle, FontWeight, ImageRendering, JustifyContent, Length, LineHeight, ObjectFit, Overflow,
-    PaintOrder, Position, Style, TextAlign, TextShadow, TextStroke, WhiteSpace,
+    AlignContent, AlignItems, BoxShadow, Color, Display, FillRule, FlexDirection, FlexWrap,
+    FontFamily, FontStyle, FontWeight, Gradient, GradientShape, GradientSpread, GradientStop,
+    GradientUnits, ImageRendering, JustifyContent, Length, LineCap, LineHeight, LineJoin,
+    ObjectFit, Overflow, PaintOrder, Position, Style, SvgPaint, TextAlign, TextShadow, TextStroke,
+    WhiteSpace,
 };
 
 /// How the value of a property is encoded in the command buffer.
@@ -28,6 +30,8 @@ pub enum Kind {
     Shadows,
     /// A string, sent with its own op.
     String,
+    /// Any number of `f32`s: dashes, or a paint (see [`paint`]).
+    Numbers,
 }
 
 impl Kind {
@@ -41,6 +45,7 @@ impl Kind {
             Kind::Bool => 4,
             Kind::Shadows => 5,
             Kind::String => 6,
+            Kind::Numbers => 7,
         }
     }
 }
@@ -64,6 +69,7 @@ pub enum Value<'a> {
     Enum(u32),
     Shadows(Vec<BoxShadow>),
     String(&'a str),
+    Numbers(Vec<f32>),
 }
 
 impl Value<'_> {
@@ -100,6 +106,61 @@ impl Value<'_> {
 
     fn flag(&self) -> Option<bool> {
         self.number().map(|v| v != 0.0)
+    }
+
+    fn numbers(&self) -> Option<&[f32]> {
+        match self {
+            Value::Numbers(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+/// What a shape is painted with, from its numbers: `[0]` nothing, `[1, r, g, b, a]` a color (from
+/// 0 to 1, not premultiplied), `[2]` the color of text, and gradients, `[3, spread, units, x1, y1,
+/// x2, y2, …]` along a line and `[4, spread, units, cx, cy, r, fx, fy, …]` out from a point, then
+/// the six numbers of their transform and, for each stop, its offset and color.
+pub fn paint(v: &[f32]) -> Option<SvgPaint> {
+    let color = |c: &[f32]| Color::new(c[0], c[1], c[2], c[3]);
+    match *v.first()? as u32 {
+        0 => Some(SvgPaint::None),
+        1 if v.len() == 5 => Some(SvgPaint::Color(color(&v[1..]))),
+        2 => Some(SvgPaint::CurrentColor),
+        kind @ (3 | 4) => {
+            let (spread, units) = (*v.get(1)?, *v.get(2)?);
+            let (shape, rest) = match kind {
+                3 => {
+                    let [x1, y1, x2, y2] = *v.get(3..7)? else { return None };
+                    (GradientShape::Linear { x1, y1, x2, y2 }, v.get(7..)?)
+                }
+                _ => {
+                    let [cx, cy, r, fx, fy] = *v.get(3..8)? else { return None };
+                    (GradientShape::Radial { cx, cy, r, fx, fy }, v.get(8..)?)
+                }
+            };
+            let (transform, stops) = (rest.get(..6)?, rest.get(6..)?);
+            if stops.len() % 5 != 0 {
+                return None;
+            }
+            Some(SvgPaint::from(Gradient {
+                shape,
+                stops: stops
+                    .chunks_exact(5)
+                    .map(|s| GradientStop { offset: s[0], color: color(&s[1..]) })
+                    .collect(),
+                spread: match spread as u32 {
+                    1 => GradientSpread::Reflect,
+                    2 => GradientSpread::Repeat,
+                    _ => GradientSpread::Pad,
+                },
+                units: match units as u32 {
+                    1 => GradientUnits::UserSpace,
+                    _ => GradientUnits::ObjectBoundingBox,
+                },
+                transform: std::array::from_fn(|i| transform[i] as f64),
+            }))
+        }
+        _ => None,
     }
 }
 
@@ -394,6 +455,38 @@ pub static PROPS: &[Prop] = &[
     choice!("imageRendering", image_rendering, [
         "auto" => ImageRendering::Auto,
         "pixelated" => ImageRendering::Pixelated,
+    ]),
+    // The shapes of an `<svg>`.
+    Prop { name: "fill", kind: Kind::Numbers, apply: |s, v| s.fill_paint = v.numbers().and_then(paint) },
+    Prop { name: "stroke", kind: Kind::Numbers, apply: |s, v| s.stroke_paint = v.numbers().and_then(paint) },
+    number!("strokeWidth", stroke_width),
+    number!("fillOpacity", fill_opacity),
+    number!("strokeOpacity", stroke_opacity),
+    choice!("fillRule", fill_rule, [
+        "nonzero" => FillRule::NonZero,
+        "evenodd" => FillRule::EvenOdd,
+    ]),
+    choice!("strokeLinecap", line_cap, [
+        "butt" => LineCap::Butt,
+        "round" => LineCap::Round,
+        "square" => LineCap::Square,
+    ]),
+    choice!("strokeLinejoin", line_join, [
+        "miter" => LineJoin::Miter,
+        "round" => LineJoin::Round,
+        "bevel" => LineJoin::Bevel,
+    ]),
+    number!("strokeMiterlimit", miter_limit),
+    // No numbers is `none`.
+    Prop {
+        name: "strokeDasharray",
+        kind: Kind::Numbers,
+        apply: |s, v| s.dash_array = v.numbers().map(|n| (!n.is_empty()).then(|| n.into())),
+    },
+    number!("strokeDashoffset", dash_offset),
+    choice!("vectorEffect", non_scaling_stroke, [
+        "none" => false,
+        "non-scaling-stroke" => true,
     ]),
 ];
 

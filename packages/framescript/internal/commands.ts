@@ -20,6 +20,9 @@ export const KIND_CAMERA = 8
 export const KIND_LIGHT = 9
 export const KIND_MODEL = 10
 export const KIND_PANEL = 11
+export const KIND_SVG = 12
+export const KIND_SHAPE = 13
+export const KIND_SVG_GROUP = 14
 
 /** The node the composition makes for the frame itself. */
 export const STAGE = 0
@@ -38,6 +41,8 @@ const SOURCE = 11
 const VIDEO_TIME = 12
 const PARAM = 13
 const PARAM_TEXT = 14
+const NUMBERS = 15
+const PATH = 16
 
 /** The parameters of `<Shader>` boxes, scenes and things in 3D (`crate::space::param` in Rust). */
 export const P = {
@@ -87,6 +92,11 @@ export const P = {
   EFFECT_UNIFORM: 55,
   EFFECT_COUNT: 56,
   EFFECT_VIDEO: 57,
+  VIEW_BOX: 60,
+  ASPECT: 61,
+  SHAPE_TRANSFORM: 62,
+  PATH_LENGTH: 63,
+  CLIP: 64,
 } as const
 
 /** The parameters given as a file (`crate::space::text_param`). */
@@ -196,6 +206,25 @@ export function setShadows(node: number, prop: number, shadows: Shadow[]): void 
     words[len + 5] = s.inset ? 1 : 0
     len += 6
   }
+}
+
+export function setNumbers(node: number, prop: number, values: ArrayLike<number>): void {
+  reserve(4 + values.length)
+  words[len] = NUMBERS
+  words[len + 1] = node
+  words[len + 2] = prop
+  words[len + 3] = values.length
+  len += 4
+  for (let i = 0; i < values.length; i++) floats[len++] = values[i]
+}
+
+/** The outline of a shape in an `<svg>`, as the `d` of SVG. */
+export function setPath(node: number, d: string): void {
+  reserve(3 + ((d.length + 1) >> 1))
+  words[len] = PATH
+  words[len + 1] = node
+  len += 2
+  writeString(d)
 }
 
 export function setChildren(node: number, children: number[]): void {

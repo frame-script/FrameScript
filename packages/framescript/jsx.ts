@@ -14,6 +14,8 @@
 
 import * as cmd from "./internal/commands.ts"
 import { bindStyle, type StyleProp } from "./style.ts"
+import type * as svg from "./svg.ts"
+import { SVG_ELEMENTS, svgElement } from "./svg.ts"
 import {
   type Accessor,
   type Context,
@@ -244,7 +246,8 @@ function element(type: string, props: Record<string, unknown>): number {
     case "video":
       return videoElement(props as unknown as VideoElementProps)
     default:
-      throw new TypeError(`<${type}> is not an element of FrameScript; use <div>, <text> or <img>`)
+      if (SVG_ELEMENTS.has(type)) return svgElement(type, props)
+      throw new TypeError(`<${type}> is not an element of FrameScript; use <div>, <text>, <img> or <svg>`)
   }
   const node = cmd.createNode(cmd.KIND_ELEMENT)
   onCleanup(() => cmd.removeNode(node))
@@ -393,6 +396,15 @@ declare global {
       span: TextProps
       img: ImageProps
       video: VideoElementProps
+      svg: svg.SvgProps
+      g: svg.GroupProps
+      path: svg.PathProps
+      circle: svg.CircleProps
+      ellipse: svg.EllipseProps
+      rect: svg.RectProps
+      line: svg.LineProps
+      polyline: svg.PolyProps
+      polygon: svg.PolyProps
     }
     interface ElementChildrenAttribute {
       children: unknown

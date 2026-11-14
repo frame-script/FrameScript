@@ -22,6 +22,8 @@
 //! | [`op::VIDEO_TIME`] | node, shown (0 or 1), then the `f64` of the seconds as two words, low first |
 //! | [`op::PARAM`] | node, param, count, then that many f32: a parameter of a `<Shader>`, a scene or a thing in 3D (see [`crate::space::param`]) |
 //! | [`op::PARAM_TEXT`] | node, param, index, length, then the UTF-16 code units: a picture of one (see [`crate::space::text_param`]) |
+//! | [`op::NUMBERS`] | node, prop, count, then that many f32 |
+//! | [`op::PATH`] | node, length, then the UTF-16 code units: the path data of a shape in an `<svg>`, as its `d` |
 //!
 //! Handles are of nodes of the document or of things in 3D ([`crate::space`]), which are not in the
 //! document: the children of a thing are things, and those of a scene can be both (the things are
@@ -40,6 +42,10 @@ use anti_webui_core::video::VideoFrame;
 use crate::space::model::ModelData;
 use crate::space::{self, Spaces, param, text_param};
 use anti_webui_core::canvas::CanvasData;
+use anti_webui_core::geometry::Affine;
+use anti_webui_core::scene::PathGeometry;
+use anti_webui_core::svg::kurbo::BezPath;
+use anti_webui_core::svg::{ShapeData, SvgAspect};
 use anti_webui_core::style::{BoxShadow, Color};
 use anti_webui_core::text::TextLayout;
 use anti_webui_core::tree::{Document, ImageData, Node, NodeId, NodeKind, TextData, with_doc};
@@ -63,6 +69,8 @@ pub mod op {
     pub const VIDEO_TIME: u32 = 12;
     pub const PARAM: u32 = 13;
     pub const PARAM_TEXT: u32 = 14;
+    pub const NUMBERS: u32 = 15;
+    pub const PATH: u32 = 16;
 }
 
 /// What a node is made as (`op_fs_create`).
@@ -83,6 +91,12 @@ pub mod kind {
     pub const MODEL: u32 = 10;
     /// What shows nodes of the document on a plane in a scene: `<Panel>`.
     pub const PANEL: u32 = 11;
+    /// Vector drawing: `<svg>`.
+    pub const SVG: u32 = 12;
+    /// A shape in an `<svg>`: `<path>`, `<circle>`…
+    pub const SHAPE: u32 = 13;
+    /// A group of shapes: `<g>`.
+    pub const SVG_GROUP: u32 = 14;
 }
 
 /// What a handle is of.
@@ -305,6 +319,12 @@ impl Nodes {
                 ..Default::default()
             }))),
             kind::VIDEO => Node::new(NodeKind::Video(Box::<VideoData>::default())),
+            kind::SVG => Node::new(NodeKind::Svg(Box::default())),
+            kind::SHAPE => Node::new(NodeKind::SvgShape(Box::new(ShapeData {
+                geometry: Some(PathGeometry::new(BezPath::new())),
+                ..ShapeData::default()
+            }))),
+            kind::SVG_GROUP => Node::new(NodeKind::SvgShape(Box::default())),
             kind::SHADER | kind::SCENE => Node::new(NodeKind::Canvas(Box::new(CanvasData::portable(
                 anti_webui_wgpu::canvas::next_canvas_id(),
                 // Given what it shows once the commands of the frame are in.
@@ -350,7 +370,7 @@ impl Nodes {
             while !r.done() {
                 let code = r.next()?;
                 match code {
-                    op::NUMBER | op::LENGTH | op::COLOR | op::ENUM | op::UNSET | op::SHADOWS => {
+                    op::NUMBER | op::LENGTH | op::COLOR | op::ENUM | op::UNSET | op::SHADOWS | op::NUMBERS => {
                         let node = r.next()?;
                         let prop = r.next()?;
                         let value = match code {
@@ -372,6 +392,10 @@ impl Nodes {
                                     });
                                 }
                                 Value::Shadows(list)
+                            }
+                            op::NUMBERS => {
+                                let count = r.next()?;
+                                Value::Numbers((0..count).map(|_| r.number()).collect::<Result<_, _>>()?)
                             }
                             _ => Value::Unset,
                         };
@@ -492,6 +516,13 @@ impl Nodes {
                             set_text(d, id, text);
                         }
                     }
+                    op::PATH => {
+                        let node = r.next()?;
+                        let data = r.string()?;
+                        if let Some(id) = self.get(node) {
+                            set_path(d, id, &data);
+                        }
+                    }
                     other => return Err(format!("unknown command {other}")),
                 }
             }
@@ -506,6 +537,10 @@ impl Nodes {
             Some(Entry::Thing(id)) => drawn.spaces.set(id, param, values, &drawn.shaders),
             Some(Entry::Node(id)) if param == param::OFFSCREEN => {
                 d.set_offscreen(id, values.first().is_some_and(|&v| v != 0.0));
+                Ok(())
+            }
+            Some(Entry::Node(id)) if (param::VIEW_BOX..=param::CLIP).contains(&param) => {
+                set_vector(d, id, param, values);
                 Ok(())
             }
             Some(Entry::Node(_)) => {
@@ -560,6 +595,75 @@ fn set_text(d: &mut Document, id: NodeId, text: String) {
         t.version += 1;
         d.invalidate_layout(id);
     }
+}
+
+/// A shape's path data, as the `d` of SVG. What can't be read is drawn as far as it can be, as in
+/// a browser.
+fn set_path(d: &mut Document, id: NodeId, data: &str) {
+    if let Some(n) = d.get_mut(id)
+        && let NodeKind::SvgShape(s) = &mut n.kind
+    {
+        s.geometry = Some(PathGeometry::new(read_path(data)));
+        d.invalidate_layout(id);
+    }
+}
+
+fn read_path(data: &str) -> BezPath {
+    if let Ok(path) = BezPath::from_svg(data) {
+        return path;
+    }
+    // Up to the command that is wrong.
+    let starts: Vec<usize> = data
+        .char_indices()
+        .filter(|(_, c)| c.is_ascii_alphabetic() && !matches!(c, 'e' | 'E'))
+        .map(|(i, _)| i)
+        .collect();
+    for &end in starts.iter().rev() {
+        if let Ok(path) = BezPath::from_svg(&data[..end]) {
+            return path;
+        }
+    }
+    BezPath::new()
+}
+
+/// A parameter of an `<svg>` or a shape in it (see [`param::VIEW_BOX`] and after).
+fn set_vector(d: &mut Document, id: NodeId, param: u32, v: &[f32]) {
+    let Some(n) = d.get_mut(id) else {
+        return;
+    };
+    match (&mut n.kind, param) {
+        (NodeKind::Svg(svg), param::VIEW_BOX) => {
+            svg.view_box = <[f32; 4]>::try_from(v).ok();
+        }
+        (NodeKind::Svg(svg), param::ASPECT) => {
+            if let [x, y, slice] = *v {
+                svg.aspect = SvgAspect {
+                    align: (!x.is_nan()).then_some((x, y)),
+                    slice: slice != 0.0,
+                };
+            }
+        }
+        (NodeKind::SvgShape(s), param::SHAPE_TRANSFORM) => {
+            if let [a, b, c, dd, e, f] = *v {
+                let [a, b, c, d, e, f] = [a, b, c, dd, e, f].map(f64::from);
+                s.transform = Affine { a, b, c, d, e, f };
+            }
+        }
+        (NodeKind::SvgShape(s), param::PATH_LENGTH) => {
+            s.path_length = v.first().copied().filter(|l| *l > 0.0);
+        }
+        (NodeKind::SvgShape(s), param::CLIP) => {
+            s.clip = match *v {
+                [x, y, w, h] => {
+                    let [x, y, w, h] = [x, y, w, h].map(f64::from);
+                    Some([(x, y), (x + w, y), (x + w, y + h), (x, y + h)])
+                }
+                _ => None,
+            };
+        }
+        _ => return,
+    }
+    d.invalidate_layout(id);
 }
 
 fn set_prop(d: &mut Document, id: NodeId, prop: &props::Prop, value: &Value) {

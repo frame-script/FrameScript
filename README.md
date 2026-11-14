@@ -162,6 +162,32 @@ and any `sampler`s. A `.wgsl` file imports as its code. The code is compiled wit
 project loads, and what is wrong with it is an error of the project, at its file and line, as is a
 uniform that isn't there.
 
+### Vector drawing
+
+```tsx
+import { linearGradient } from "framescript"
+
+<svg viewBox="0 0 400 400" style={{ width: 800, height: 800 }}>
+  <g transform={() => `rotate(${spin()} 200 200)`} fill="none" stroke="#ff4f4f" strokeWidth={12}>
+    <circle cx={200} cy={200} r={radius} strokeLinecap="round" trim={() => [0, drawn()]} />
+    <path d={() => star(5, 160, 70)} fill="linear-gradient(90deg, #ffc23d, #ee4231)" />
+  </g>
+  <rect x={40} y={340} width={320} height={24} rx={12} fill={linearGradient(["#2a5bd7", "#3ad6a6"])} />
+</svg>
+```
+
+`<svg>` (with `viewBox` and `preserveAspectRatio`), `<g>`, `<path>`, `<circle>`, `<ellipse>`,
+`<rect>`, `<line>`, `<polyline>` and `<polygon>` are drawn by AntiWebUI as shapes, not as a
+picture: every attribute can be a function, `d` included, so a shape can change from frame to
+frame. `fill` and `stroke` take colors, `"none"`, `"currentColor"`, CSS `linear-gradient(…)` /
+`radial-gradient(…)` or `linearGradient` / `radialGradient` (SVG's, with `units`, `spread` and
+`transform`); `strokeWidth`, `strokeLinecap`, `strokeLinejoin`, `strokeDasharray`,
+`strokeDashoffset`, `pathLength`, `fillRule`, `opacity`, `vectorEffect` and `transform` are SVG's,
+and go down from a group as they do there. They can be in `style` too. `trim={[start, end]}` is
+FrameScript's own: only that part of the outline, in fractions of its length, is stroked (Trim
+Paths); past 1 it goes on from the start. `clip={[x, y, width, height]}` on a `<g>` cuts what is
+in it to a rectangle. Text goes over an `<svg>` in a `<text>`, as anywhere else.
+
 ### 3D
 
 ```tsx
@@ -243,7 +269,7 @@ CSS properties in camelCase; numbers are pixels. Shorthands (`padding: "8px 16px
 `borderRadius`, `gap`, `flex`, `inset`), `transform` (`translate`, `scale`, `rotate`) and the
 separate `translate` / `scale` / `rotate`, `boxShadow`, `filter: blur()`, colors (`#hex`,
 `rgb()`, `hsl()`, names), `objectFit` / `objectPosition` for pictures and videos. Elements are
-`<div>`, `<text>` (one run of text) and `<img>`. What goes over what is as in CSS: what is
+`<div>`, `<text>` (one run of text), `<img>` and `<svg>`. What goes over what is as in CSS: what is
 positioned (`position: "relative"` or `"absolute"`) or translucent or transformed goes over the
 rest in the order it is written, and `zIndex` (for what is positioned and for flex items) orders
 it further. `relative` doesn't move anything with `top` / `left`.
@@ -266,5 +292,6 @@ as they are painted, strokes included; a transparent `color` with a stroke leave
 | `examples/media` | pictures, videos and sound (run `./make-assets.sh` first) |
 | `examples/3d`, `examples/model` | WGSL and scenes in 3D; a glTF model (run `./get-assets.sh` first) |
 | `examples/showcase` | 40 s of all of it, cut to music made in code (run `./make-assets.sh` first) |
+| `examples/motion` | 44 s of motion graphics in SVG and type, cut to music made in code (run `./make-assets.sh` first) |
 
 How it works, and why, is in [docs/design](docs/design/00-overview.md).

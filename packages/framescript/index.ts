@@ -34,7 +34,8 @@ export {
   Show,
   type VideoElementProps,
 } from "./jsx.ts"
-export type { CSSProperties, StyleProp, StyleProps } from "./style.ts"
+export type { CSSProperties, Gradient, GradientStop, Paint, StyleProp, StyleProps } from "./style.ts"
+export { linearGradient, radialGradient } from "./svg.ts"
 export {
   type ClipScope,
   framesToSeconds,

@@ -1,0 +1,8 @@
+{
+  "name": "motion",
+  "width": 1920,
+  "height": 1080,
+  "fps": 60,
+  "entry": "main.tsx",
+  "background": "#f2ede4"
+}
