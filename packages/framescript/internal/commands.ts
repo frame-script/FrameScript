@@ -55,6 +55,8 @@ export const P = {
   TRANSPARENT: 17,
   SHADER: 18,
   UNIFORM: 19,
+  CAST_SHADOW: 20,
+  RECEIVE_SHADOW: 21,
   FOV: 30,
   NEAR: 31,
   FAR: 32,

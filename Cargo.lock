@@ -1144,6 +1144,7 @@ dependencies = [
  "anti-webui-md3e",
  "bytemuck",
  "framescript-engine",
+ "log",
 ]
 
 [[package]]

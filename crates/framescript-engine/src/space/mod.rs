@@ -41,6 +41,9 @@ pub mod param {
     pub const SHADER: u32 = 18;
     /// The number of a uniform, then its numbers.
     pub const UNIFORM: u32 = 19;
+    /// Of a mesh (1 if not given) and of a light (0 if not given).
+    pub const CAST_SHADOW: u32 = 20;
+    pub const RECEIVE_SHADOW: u32 = 21;
     // Cameras.
     pub const FOV: u32 = 30;
     pub const NEAR: u32 = 31;
@@ -123,6 +126,8 @@ pub struct Material {
     pub emissive: [f32; 3],
     pub double_sided: bool,
     pub transparent: bool,
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
     pub map: Option<Arc<Picture>>,
     pub shader: Option<Arc<Shader>>,
     pub uniforms: Arc<Vec<u8>>,
@@ -139,6 +144,8 @@ impl Default for Material {
             emissive: [0.0; 3],
             double_sided: false,
             transparent: false,
+            cast_shadow: true,
+            receive_shadow: true,
             map: None,
             shader: None,
             uniforms: Arc::default(),
@@ -165,6 +172,7 @@ struct Light {
     angle: f32,
     penumbra: f32,
     ground: Vec3,
+    cast_shadow: bool,
 }
 
 impl Thing {
@@ -195,6 +203,7 @@ impl Thing {
                 angle: 30.0,
                 penumbra: 0.0,
                 ground: Vec3::splat(0.25),
+                cast_shadow: false,
             },
         }
     }
@@ -357,6 +366,9 @@ impl Spaces {
             param::OPACITY => m.opacity = one(1.0),
             param::DOUBLE_SIDED => m.double_sided = one(0.0) != 0.0,
             param::TRANSPARENT => m.transparent = one(0.0) != 0.0,
+            param::CAST_SHADOW if t.kind == Kind::Light => t.light.cast_shadow = one(0.0) != 0.0,
+            param::CAST_SHADOW => m.cast_shadow = one(1.0) != 0.0,
+            param::RECEIVE_SHADOW => m.receive_shadow = one(1.0) != 0.0,
             param::SHADER => {
                 let shader = v.first().and_then(|&i| shaders.get(i as usize)).cloned();
                 if shader.as_ref().map(|s| s.id) != m.shader.as_ref().map(|s| s.id) {
@@ -458,6 +470,7 @@ impl Spaces {
                 range: 0.0,
                 cos_outer: 0.0,
                 cos_inner: 0.0,
+                cast_shadow: false,
             });
         }
         v
@@ -518,6 +531,8 @@ impl Spaces {
                             range: l.range.max(0.0),
                             cos_outer: outer.cos(),
                             cos_inner: inner.cos().max(outer.cos() + 1e-4),
+                            // Not yet from a point, which takes six pictures of the scene.
+                            cast_shadow: l.cast_shadow && kind != LightKind::Point,
                         });
                     }
                 }
@@ -594,6 +609,7 @@ pub struct LightView {
     pub range: f32,
     pub cos_outer: f32,
     pub cos_inner: f32,
+    pub cast_shadow: bool,
 }
 
 pub struct ObjectView {
@@ -651,6 +667,10 @@ struct FsLight {
     direction: vec3f,
     cos_outer: f32,
     cos_inner: f32,
+    /// The layer of its shadow map, or -1.
+    shadow: i32,
+    /// How far a texel of its shadow map is across: in the scene, or at a distance of 1 for a spot.
+    shadow_texel: f32,
 }
 
 struct FsObject {
@@ -660,11 +680,18 @@ struct FsObject {
     emissive: vec3f,
     metalness: f32,
     roughness: f32,
+    /// 1: it receives shadows.
+    flags: u32,
 }
 
 @group(0) @binding(0) var<uniform> fs: FrameScript;
 @group(0) @binding(1) var<storage, read> fs_lights: array<FsLight>;
 @group(0) @binding(2) var<storage, read> fs_objects: array<FsObject>;
+/// Where the scene is seen from by the light whose shadow map is being drawn.
+@group(0) @binding(3) var<uniform> fs_shadow_pass: mat4x4f;
+@group(0) @binding(4) var<storage, read> fs_shadow_matrices: array<mat4x4f>;
+@group(0) @binding(5) var fs_shadow_map: texture_depth_2d_array;
+@group(0) @binding(6) var fs_shadow_sampler: sampler_comparison;
 @group(2) @binding(0) var fs_map: texture_2d<f32>;
 @group(2) @binding(1) var fs_map_sampler: sampler;
 
@@ -728,10 +755,51 @@ fn fs_vertex_main(
     return out;
 }
 
+/// Draws a thing into a shadow map: only how far it is.
+@vertex
+fn fs_shadow_vertex(
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
+    @builtin(instance_index) object: u32,
+) -> @builtin(position) vec4f {
+    let v = fs_vertex_hook(Vertex(position, normal, uv));
+    return fs_shadow_pass * (fs_objects[object].model * vec4f(v.position, 1.0));
+}
+
+/// How much of the light `l` reaches `p` (from 0 to 1), by its shadow map: nine samples around the
+/// point, for soft edges.
+fn fs_shadow(l: FsLight, p: vec3f, n: vec3f) -> f32 {
+    if l.shadow < 0 {
+        return 1.0;
+    }
+    // Off the surface along its normal by a texel and a half, so that it doesn't shadow itself.
+    var texel = l.shadow_texel;
+    if l.kind == 3u {
+        texel *= length(l.position - p);
+    }
+    let c = fs_shadow_matrices[l.shadow] * vec4f(p + n * texel * 1.5, 1.0);
+    let ndc = c.xyz / c.w;
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)) || ndc.z > 1.0 || ndc.z < 0.0 {
+        return 1.0;
+    }
+    let step = 1.0 / f32(textureDimensions(fs_shadow_map).x);
+    var lit = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let at = uv + vec2f(f32(x), f32(y)) * step;
+            lit += textureSampleCompareLevel(fs_shadow_map, fs_shadow_sampler, at, l.shadow, ndc.z);
+        }
+    }
+    return lit / 9.0;
+}
+
 const FS_PI: f32 = 3.14159265;
 
-/// The light that leaves a surface toward the camera.
-fn fs_shade(s: Surface, p: vec3f) -> vec3f {
+/// The light that leaves a surface of the thing `object` toward the camera.
+fn fs_shade(s: Surface, p: vec3f, object: u32) -> vec3f {
+    let receives = (fs_objects[object].flags & 1u) != 0u;
     let n = normalize(s.normal);
     let v = normalize(fs.camera_position - p);
     let rough = clamp(s.roughness, 0.04, 1.0);
@@ -763,6 +831,9 @@ fn fs_shade(s: Surface, p: vec3f) -> vec3f {
         let nl = dot(n, dir);
         if nl <= 0.0 {
             continue;
+        }
+        if receives {
+            radiance *= fs_shadow(l, p, n);
         }
         let h = normalize(v + dir);
         let nh = max(dot(n, h), 0.0);
@@ -820,7 +891,7 @@ fn fs_fragment_main(in: SurfaceInput, @builtin(front_facing) front: bool) -> @lo
     }
     let s = fs_surface_hook(seen);
     let a = clamp(s.alpha, 0.0, 1.0);
-    return vec4f(fs_tone_map(fs_shade(s, seen.world_position)) * a, a);
+    return vec4f(fs_tone_map(fs_shade(s, seen.world_position, seen.object)) * a, a);
 }
 "#;
 

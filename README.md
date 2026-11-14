@@ -185,6 +185,11 @@ that are `active` is used), and `AmbientLight`, `HemisphereLight`, `DirectionalL
 and `SpotLight`. Without a camera the scene is seen from `[0, 0, 5]`; without lights, by a soft
 default light. A `<Clip>` in a scene is a group that shows while the clip does.
 
+A `DirectionalLight` or a `SpotLight` with `castShadow` casts shadows (up to four lights of a
+scene); every mesh casts and receives them unless it says `castShadow={false}` or
+`receiveShadow={false}`. A directional light's shadow map covers what casts shadows, wherever it
+is, so there is nothing to tune; its edges are softened over a few texels.
+
 Materials are physically based (`color`, `metalness`, `roughness`, `emissive`, `opacity`, `map`),
 and lit surfaces are tone mapped (`toneMapping`: `"neutral"`, the default, `"aces"` or `"none"`);
 the background and colors a material gives itself come out as they are given. A material can be

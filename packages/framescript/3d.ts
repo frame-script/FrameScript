@@ -105,13 +105,16 @@ export interface GeometryData {
   indices?: ArrayLike<number>
 }
 
-export interface MeshProps extends Object3DProps {
-  geometry: MaybeAccessor<GeometryData>
-  material?: Material
-}
-
 interface ShapeProps extends Object3DProps {
   material?: Material
+  /** Whether it casts shadows from lights that cast them. Yes if not given. */
+  castShadow?: MaybeAccessor<boolean>
+  /** Whether shadows fall on it. Yes if not given. */
+  receiveShadow?: MaybeAccessor<boolean>
+}
+
+export interface MeshProps extends ShapeProps {
+  geometry: MaybeAccessor<GeometryData>
 }
 
 // --- The scene ---------------------------------------------------------------------------------
@@ -267,6 +270,8 @@ function mesh<T>(props: ShapeProps, size: MaybeAccessor<T>, shape: (size: T) => 
     bind(m.opacity, (v) => cmd.setParam(node, cmd.P.OPACITY, [v]))
     bind(m.doubleSided, (v) => cmd.setParam(node, cmd.P.DOUBLE_SIDED, [v ? 1 : 0]))
     bind(m.transparent, (v) => cmd.setParam(node, cmd.P.TRANSPARENT, [v ? 1 : 0]))
+    bind(props.castShadow, (v) => cmd.setParam(node, cmd.P.CAST_SHADOW, [v ? 1 : 0]))
+    bind(props.receiveShadow, (v) => cmd.setParam(node, cmd.P.RECEIVE_SHADOW, [v ? 1 : 0]))
     bind(m.map, (src) => cmd.setParamText(node, cmd.TEXT_MAP, 0, src))
     if (shader) {
       cmd.setParam(node, cmd.P.SHADER, [shader.id])
@@ -334,11 +339,20 @@ interface LightProps extends Object3DProps {
   intensity?: MaybeAccessor<number>
 }
 
+interface ShadowProps {
+  /**
+   * Whether what it lights casts shadows. A directional light's shadows cover what casts them,
+   * wherever it is; a spot's, its cone. Up to four lights of a scene cast shadows.
+   */
+  castShadow?: MaybeAccessor<boolean>
+}
+
 const LIGHT = { AMBIENT: 0, DIRECTIONAL: 1, POINT: 2, SPOT: 3, HEMISPHERE: 4 } as const
 
-function light(kind: number, props: LightProps, more: (node: number) => void = () => {}): JSXNode {
+function light(kind: number, props: LightProps & ShadowProps, more: (node: number) => void = () => {}): JSXNode {
   return thing(cmd.KIND_LIGHT, props, (node) => {
     cmd.setParam(node, cmd.P.LIGHT, [kind])
+    bind(props.castShadow, (v) => cmd.setParam(node, cmd.P.CAST_SHADOW, [v ? 1 : 0]))
     bind(props.color, (c) => cmd.setParam(node, cmd.P.LIGHT_COLOR, linearColor(c).slice(0, 3)))
     bind(props.intensity, (v) => cmd.setParam(node, cmd.P.INTENSITY, [v]))
     more(node)
@@ -358,7 +372,7 @@ export function HemisphereLight(props: LightProps & { groundColor?: MaybeAccesso
 }
 
 /** Light from far away, from `position` toward `lookAt` (the middle of the scene if not given). */
-export function DirectionalLight(props: LightProps): JSXNode {
+export function DirectionalLight(props: LightProps & ShadowProps): JSXNode {
   return light(LIGHT.DIRECTIONAL, props)
 }
 
@@ -372,7 +386,7 @@ export function PointLight(props: LightProps & { range?: MaybeAccessor<number> }
 
 /** A point light that shines in a cone toward `lookAt`: `angle` degrees from its middle to its edge. */
 export function SpotLight(
-  props: LightProps & {
+  props: LightProps & ShadowProps & {
     range?: MaybeAccessor<number>
     angle?: MaybeAccessor<number>
     /** How much of the cone fades toward its edge, from 0 to 1. */

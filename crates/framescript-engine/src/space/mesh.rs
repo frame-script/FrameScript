@@ -16,15 +16,26 @@ pub struct MeshData {
     pub id: u64,
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
+    /// The corners of the box all of it is in, in its own space.
+    pub bounds: (Vec3, Vec3),
 }
 
 impl MeshData {
     fn new(vertices: Vec<f32>, indices: Vec<u32>) -> Arc<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(1);
+        let mut bounds = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+        for v in vertices.chunks_exact(STRIDE) {
+            let p = Vec3::new(v[0], v[1], v[2]);
+            bounds = (bounds.0.min(p), bounds.1.max(p));
+        }
+        if vertices.is_empty() {
+            bounds = (Vec3::ZERO, Vec3::ZERO);
+        }
         Arc::new(Self {
             id: NEXT.fetch_add(1, Ordering::Relaxed),
             vertices,
             indices,
+            bounds,
         })
     }
 }

@@ -63,7 +63,7 @@ function Shapes() {
     <Scene3D style={FULL} background="#0b1020">
       <PerspectiveCamera position={() => orbit({ radius: 7, angle: 20 + frame() * 0.3, height: 3 })} lookAt={[0, 0.5, 0]} fov={45} />
       <HemisphereLight color="#bfdbfe" groundColor="#1e293b" intensity={0.4} />
-      <DirectionalLight position={[4, 6, 3]} intensity={1.2} />
+      <DirectionalLight position={[4, 6, 3]} intensity={1.2} castShadow />
       <PointLight position={[-2, 1.5, 2]} color="#f472b6" intensity={3} range={6} />
 
       <Plane size={20} rotation={[-90, 0, 0]} material={{ color: "#1e293b", roughness: 0.9 }} />

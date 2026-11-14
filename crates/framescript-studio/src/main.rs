@@ -30,7 +30,29 @@ render writes FILE (default frame-N.png; with several frames, {} in FILE is the 
 export writes FILE (default <project>/out/<name>.mp4), drawing frames on N threads at once;
 the frames are F up to (not with) F of --to";
 
+/// What goes wrong where nothing else can say it (a shader of the composition that fails on the
+/// GPU, say) goes to the standard error: errors from anywhere, warnings from AntiWebUI and FrameScript.
+struct Stderr;
+
+impl log::Log for Stderr {
+    fn enabled(&self, m: &log::Metadata<'_>) -> bool {
+        let ours = m.target().starts_with("anti_webui") || m.target().starts_with("framescript");
+        m.level() <= if ours { log::Level::Warn } else { log::Level::Error }
+    }
+
+    fn log(&self, r: &log::Record<'_>) {
+        if self.enabled(r.metadata()) {
+            eprintln!("framescript: {}: {}", r.level().as_str().to_lowercase(), r.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 fn main() -> ExitCode {
+    if log::set_logger(&Stderr).is_ok() {
+        log::set_max_level(log::LevelFilter::Warn);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("render") => render(&args[1..]),

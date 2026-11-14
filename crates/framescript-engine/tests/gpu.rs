@@ -256,3 +256,42 @@ export default function Main() {
     assert!(left[0] > 100 && left[2] < 60, "{left:?}");
     assert!(right[2] > 100 && right[0] < 60, "{right:?}");
 }
+
+/// Seen from above: a floor, a box hanging over its middle, and a light from the side at 45°, so
+/// that the box's shadow falls 1.5 units to one side of the middle and nothing to the other.
+/// Returns how bright the floor is on each side.
+fn shadow_sides(name: &str, light: &str, floor: &str) -> Option<(u8, u8)> {
+    let mut gpu = gpu()?;
+    let main = format!(
+        r##"import {{ Box, DirectionalLight, OrthographicCamera, Plane, Scene3D }} from "framescript/3d"
+export default function Main() {{
+  return (
+    <Scene3D style={{{{ width: "100%", height: "100%" }}}}>
+      <OrthographicCamera position={{[0, 10, 0]}} lookAt={{[0, 0, 0]}} height={{4}} />
+      <DirectionalLight position={{[1, 1, 0]}} {light} />
+      <Plane size={{10}} rotation={{[-90, 0, 0]}} material={{{{ color: "#ffffff" }}}} {floor} />
+      <Box size={{1}} position={{[0, 1.5, 0]}} />
+    </Scene3D>
+  )
+}}
+"##
+    );
+    let dir = project(name, &main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    // 12 pixels to a unit: 1.5 units to either side of the middle.
+    Some((px(&p, 32 - 18, 24)[0], px(&p, 32 + 18, 24)[0]))
+}
+
+#[test]
+fn what_casts_shadows_darkens_what_receives_them() {
+    let Some((a, b)) = shadow_sides("shadow", "castShadow", "") else { return };
+    let (dark, lit) = (a.min(b), a.max(b));
+    assert!(lit > 200 && dark < lit / 2, "one side in the shadow: {a} and {b}");
+
+    // Alike but for the highlight, which is seen from a point.
+    let (a, b) = shadow_sides("no-shadow", "", "").unwrap();
+    assert!(a.abs_diff(b) <= 4, "no shadows from a light that doesn't cast them: {a} and {b}");
+    let (a, b) = shadow_sides("not-received", "castShadow", "receiveShadow={false}").unwrap();
+    assert!(a.abs_diff(b) <= 4, "none on what doesn't receive them: {a} and {b}");
+}

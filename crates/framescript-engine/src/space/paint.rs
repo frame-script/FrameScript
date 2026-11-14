@@ -14,6 +14,7 @@ use anti_webui_wgpu::canvas::{GpuFrame, GpuInit, GpuPaint};
 use anti_webui_wgpu::wgpu;
 use bytemuck::{Pod, Zeroable};
 use glam::camera::rh::proj::directx as proj;
+use glam::camera::rh::view;
 use glam::{Mat4, Vec3};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Weak};
@@ -28,6 +29,12 @@ impl PartialEq for SpaceProps {
 }
 
 const SAMPLES: u32 = 4;
+/// How many texels a shadow map is across.
+const SHADOW_SIZE: u32 = 2048;
+/// How many lights can cast shadows at once.
+const MAX_SHADOWS: usize = 4;
+/// Where the matrix of each shadow pass is in its buffer: as far apart as dynamic offsets go.
+const SHADOW_STRIDE: u64 = 256;
 const LIGHT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -65,7 +72,9 @@ struct GpuLight {
     direction: [f32; 3],
     cos_outer: f32,
     cos_inner: f32,
-    _pad: [f32; 3],
+    shadow: i32,
+    shadow_texel: f32,
+    _pad: f32,
 }
 
 #[repr(C)]
@@ -77,7 +86,8 @@ struct GpuObject {
     emissive: [f32; 3],
     metalness: f32,
     roughness: f32,
-    _pad: [f32; 3],
+    flags: u32,
+    _pad: [f32; 2],
 }
 
 /// What a scene is drawn into: as big as its box.
@@ -100,8 +110,24 @@ struct Mesh {
 struct Material {
     of: Weak<Shader>,
     user: wgpu::BindGroupLayout,
-    /// By whether it is seen through, and whether both of its sides are drawn.
-    pipelines: HashMap<(bool, bool), wgpu::RenderPipeline>,
+    /// By what it draws.
+    pipelines: HashMap<Variant, wgpu::RenderPipeline>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Variant {
+    /// Its colors, by whether it is seen through and whether both of its sides are drawn.
+    Color { see_through: bool, both_sides: bool },
+    /// How far it is from a light.
+    Shadow,
+}
+
+/// The shadow maps of the lights that cast shadows, one layer each.
+struct ShadowMap {
+    layers: u32,
+    size: u32,
+    array: wgpu::TextureView,
+    each: Vec<wgpu::TextureView>,
 }
 
 pub struct SpacePaint {
@@ -114,7 +140,6 @@ pub struct SpacePaint {
     /// The uniforms of the materials of all things, each at an offset of its own.
     uniforms: Growing,
     align: u32,
-    frame_bind: Option<wgpu::BindGroup>,
     materials: HashMap<u64, Material>,
     meshes: HashMap<u64, Mesh>,
     pictures: Pictures,
@@ -124,6 +149,12 @@ pub struct SpacePaint {
     targets: Option<Targets>,
     finish_layout: wgpu::BindGroupLayout,
     finish_pipeline: wgpu::RenderPipeline,
+    shadow_pass: wgpu::Buffer,
+    shadow_matrices: Growing,
+    shadow_map: Option<ShadowMap>,
+    /// What is bound in its place while it is drawn.
+    no_shadows: ShadowMap,
+    shadow_sampler: wgpu::Sampler,
 }
 
 impl GpuPaint for SpacePaint {
@@ -143,7 +174,38 @@ impl GpuPaint for SpacePaint {
         };
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene3d frame"),
-            entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT), storage(1), storage(2)],
+            entries: &[
+                uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT),
+                storage(1),
+                storage(2),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
+                },
+                storage(4),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
         });
         let map_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene3d map"),
@@ -199,7 +261,6 @@ impl GpuPaint for SpacePaint {
             objects: Growing::new(device, "scene3d objects", wgpu::BufferUsages::STORAGE),
             uniforms: Growing::new(device, "scene3d uniforms", wgpu::BufferUsages::UNIFORM),
             align: device.limits().min_uniform_buffer_offset_alignment.max(16),
-            frame_bind: None,
             materials: HashMap::new(),
             meshes: HashMap::new(),
             pictures: Pictures::new(device, gpu.queue),
@@ -208,6 +269,23 @@ impl GpuPaint for SpacePaint {
             targets: None,
             finish_layout,
             finish_pipeline,
+            shadow_pass: buffer(
+                "scene3d shadow pass",
+                SHADOW_STRIDE * MAX_SHADOWS as u64,
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            shadow_matrices: Growing::new(device, "scene3d shadow matrices", wgpu::BufferUsages::STORAGE),
+            shadow_map: None,
+            no_shadows: make_shadow_map(device, 1, 1),
+            shadow_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("scene3d shadows"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..Default::default()
+            }),
         }
     }
 
@@ -258,10 +336,23 @@ impl GpuPaint for SpacePaint {
             ..Zeroable::zeroed()
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+        // Which lights cast shadows, and from where they see the scene.
+        let mut shadows: Vec<(Mat4, f32)> = Vec::new();
+        let mut shadow_of = Vec::with_capacity(view.lights.len());
+        for l in &view.lights {
+            let made = (l.cast_shadow && shadows.len() < MAX_SHADOWS)
+                .then(|| shadow_view(l, &view.objects))
+                .flatten();
+            shadow_of.push(made.map(|m| {
+                shadows.push(m);
+                shadows.len() as i32 - 1
+            }));
+        }
         let mut lights: Vec<GpuLight> = view
             .lights
             .iter()
-            .map(|l| GpuLight {
+            .zip(&shadow_of)
+            .map(|(l, shadow)| GpuLight {
                 color: l.color.to_array(),
                 kind: match l.kind {
                     super::LightKind::Directional => 1,
@@ -274,7 +365,9 @@ impl GpuPaint for SpacePaint {
                 direction: l.direction.to_array(),
                 cos_outer: l.cos_outer,
                 cos_inner: l.cos_inner,
-                _pad: [0.0; 3],
+                shadow: shadow.unwrap_or(-1),
+                shadow_texel: shadow.map_or(0.0, |i| shadows[i as usize].1),
+                _pad: 0.0,
             })
             .collect();
         // A storage buffer can't be bound empty.
@@ -291,33 +384,67 @@ impl GpuPaint for SpacePaint {
                     emissive: m.emissive,
                     metalness: m.metalness,
                     roughness: m.roughness,
-                    _pad: [0.0; 3],
+                    flags: m.receive_shadow as u32,
+                    _pad: [0.0; 2],
                 }
             })
             .collect();
         objects.push(Zeroable::zeroed());
-        let mut remade = self.lights.write(device, queue, bytemuck::cast_slice(&lights));
-        remade |= self.objects.write(device, queue, bytemuck::cast_slice(&objects));
-        if remade || self.frame_bind.is_none() {
-            self.frame_bind = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("scene3d frame"),
-                layout: &self.frame_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.globals.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.lights.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.objects.buffer().as_entire_binding(),
-                    },
-                ],
-            }));
+        self.lights.write(device, queue, bytemuck::cast_slice(&lights));
+        self.objects.write(device, queue, bytemuck::cast_slice(&objects));
+        let mut matrices: Vec<[f32; 16]> = shadows.iter().map(|(m, _)| m.to_cols_array()).collect();
+        matrices.push([0.0; 16]);
+        self.shadow_matrices.write(device, queue, bytemuck::cast_slice(&matrices));
+        for (i, (m, _)) in shadows.iter().enumerate() {
+            queue.write_buffer(&self.shadow_pass, i as u64 * SHADOW_STRIDE, bytemuck::cast_slice(&m.to_cols_array()));
         }
+        let layers = shadows.len().max(1) as u32;
+        let size = if shadows.is_empty() { 1 } else { SHADOW_SIZE };
+        if self.shadow_map.as_ref().is_none_or(|m| m.layers != layers || m.size != size) {
+            self.shadow_map = Some(make_shadow_map(device, layers, size));
+        }
+        let frame_bind = |shadow_map: &wgpu::TextureView| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene3d frame"),
+            layout: &self.frame_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.globals.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.lights.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.objects.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.shadow_pass,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(64),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.shadow_matrices.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(shadow_map),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
+                },
+            ],
+        })
+        };
+        let shadow_map = self.shadow_map.as_ref().expect("just made");
+        let (frame_bind, shadow_bind) = (frame_bind(&shadow_map.array), frame_bind(&self.no_shadows.array));
 
         // The uniforms of every material, each at an offset of its own.
         let mut uniform_bytes = Vec::new();
@@ -355,6 +482,8 @@ impl GpuPaint for SpacePaint {
         struct Draw<'a> {
             index: u32,
             pipeline: wgpu::RenderPipeline,
+            /// What draws it into shadow maps, if it casts shadows and something takes them.
+            shadow: Option<wgpu::RenderPipeline>,
             user: Option<wgpu::BindGroup>,
             map: u64,
             mesh: &'a Arc<MeshData>,
@@ -365,7 +494,15 @@ impl GpuPaint for SpacePaint {
             let o = &view.objects[i];
             let m = &o.material;
             let shader = m.shader.clone().unwrap_or_else(|| STANDARD.clone());
-            let pipeline = self.pipeline(device, &shader, see_through(o), m.double_sided);
+            let pipeline = self.pipeline(
+                device,
+                &shader,
+                Variant::Color {
+                    see_through: see_through(o),
+                    both_sides: m.double_sided,
+                },
+            );
+            let shadow = (m.cast_shadow && !shadows.is_empty()).then(|| self.pipeline(device, &shader, Variant::Shadow));
             let user = shader.uniforms.is_some() || !shader.textures.is_empty();
             let user = match user {
                 true => {
@@ -403,6 +540,7 @@ impl GpuPaint for SpacePaint {
             draws.push(Draw {
                 index: i as u32,
                 pipeline,
+                shadow,
                 user,
                 map,
                 mesh: &o.mesh,
@@ -414,6 +552,33 @@ impl GpuPaint for SpacePaint {
             layout: &self.materials[&STANDARD.id].user,
             entries: &[],
         });
+
+        // What each light that casts shadows sees, how far.
+        let shadow_map = self.shadow_map.as_ref().expect("just made");
+        for (layer, target) in shadow_map.each.iter().enumerate().take(shadows.len()) {
+            let mut pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scene3d shadow"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: target,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, &shadow_bind, &[layer as u32 * SHADOW_STRIDE as u32]);
+            for d in &draws {
+                let Some(pipeline) = &d.shadow else {
+                    continue;
+                };
+                self.draw(&mut pass, d.mesh, pipeline, d.user.as_ref(), &empty, d.offset, d.map, d.index, &view.objects);
+            }
+        }
 
         let targets = self.targets.as_ref().expect("just made");
         let [r, g, b, a] = view.background;
@@ -446,25 +611,9 @@ impl GpuPaint for SpacePaint {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_bind_group(0, self.frame_bind.as_ref(), &[]);
+            pass.set_bind_group(0, &frame_bind, &[0]);
             for d in &draws {
-                let mesh = &self.meshes[&d.mesh.id];
-                pass.set_pipeline(&d.pipeline);
-                match &d.user {
-                    Some(user) => {
-                        let offsets: &[u32] = if user_has_uniforms(&view.objects[d.index as usize]) {
-                            &[d.offset]
-                        } else {
-                            &[]
-                        };
-                        pass.set_bind_group(1, user, offsets);
-                    }
-                    None => pass.set_bind_group(1, &empty, &[]),
-                }
-                pass.set_bind_group(2, &self.maps[&d.map], &[]);
-                pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-                pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.count, 0, d.index..d.index + 1);
+                self.draw(&mut pass, d.mesh, &d.pipeline, d.user.as_ref(), &empty, d.offset, d.map, d.index, &view.objects);
             }
         }
 
@@ -475,11 +624,140 @@ impl GpuPaint for SpacePaint {
     }
 }
 
+/// Where a light that casts shadows sees the scene from, and how far a texel of its shadow map is
+/// across (at a distance of 1, for a spot). A directional light sees just what casts shadows, and
+/// as deep as everything goes; `None` if nothing casts a shadow.
+fn shadow_view(l: &super::LightView, objects: &[super::ObjectView]) -> Option<(Mat4, f32)> {
+    fn corners(o: &super::ObjectView) -> [Vec3; 8] {
+        let (lo, hi) = o.mesh.bounds;
+        // A little more, for what a material's `vertex` moves.
+        let (lo, hi) = (lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05);
+        std::array::from_fn(|i| {
+            let c = Vec3::new(
+                if i & 1 == 0 { lo.x } else { hi.x },
+                if i & 2 == 0 { lo.y } else { hi.y },
+                if i & 4 == 0 { lo.z } else { hi.z },
+            );
+            o.model.transform_point3(c)
+        })
+    }
+    if !objects.iter().any(|o| o.material.cast_shadow) {
+        return None;
+    }
+    let up = |d: Vec3| if d.cross(Vec3::Y).length_squared() < 1e-6 { Vec3::Z } else { Vec3::Y };
+    let d = l.direction;
+    match l.kind {
+        super::LightKind::Spot => {
+            let view = view::look_to_mat4(l.position, d, up(d));
+            let far = if l.range > 0.0 {
+                l.range
+            } else {
+                objects
+                    .iter()
+                    .flat_map(corners)
+                    .map(|c| c.distance(l.position))
+                    .fold(0.0f32, f32::max)
+                    * 1.05
+            };
+            let fov = (2.0 * l.cos_outer.clamp(-1.0, 1.0).acos() + 0.1).min(3.0);
+            let near = (far * 1e-3).max(1e-3);
+            let texel = 2.0 * (fov / 2.0).tan() / SHADOW_SIZE as f32;
+            Some((proj::perspective(fov, 1.0, near, far.max(near * 2.0)) * view, texel))
+        }
+        _ => {
+            let view = view::look_to_mat4(Vec3::ZERO, d, up(d));
+            let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+            let mut deep = (f32::INFINITY, f32::NEG_INFINITY);
+            for o in objects {
+                for c in corners(o) {
+                    let p = view.transform_point3(c);
+                    deep = (deep.0.min(p.z), deep.1.max(p.z));
+                    if o.material.cast_shadow {
+                        (lo, hi) = (lo.min(p), hi.max(p));
+                    }
+                }
+            }
+            let margin = (hi - lo).max_element() * 0.02 + 1e-3;
+            let (lo, hi) = (lo - margin, hi + margin);
+            let texel = (hi.x - lo.x).max(hi.y - lo.y) / SHADOW_SIZE as f32;
+            // Down -Z: the nearest is the highest z.
+            let projection = proj::orthographic(lo.x, hi.x, lo.y, hi.y, -deep.1 - margin, -deep.0 + margin);
+            Some((projection * view, texel))
+        }
+    }
+}
+
+fn make_shadow_map(device: &wgpu::Device, layers: u32, size: u32) -> ShadowMap {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scene3d shadow map"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let array = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let each = (0..layers)
+        .map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+    ShadowMap {
+        layers,
+        size,
+        array,
+        each,
+    }
+}
+
 fn user_has_uniforms(o: &super::ObjectView) -> bool {
     o.material.shader.as_ref().is_some_and(|s| s.uniforms.is_some())
 }
 
 impl SpacePaint {
+    /// Draws the thing `index` with `pipeline`, its group 0 already set.
+    #[allow(clippy::too_many_arguments)]
+    fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        mesh: &MeshData,
+        pipeline: &wgpu::RenderPipeline,
+        user: Option<&wgpu::BindGroup>,
+        empty: &wgpu::BindGroup,
+        offset: u32,
+        map: u64,
+        index: u32,
+        objects: &[super::ObjectView],
+    ) {
+        let mesh = &self.meshes[&mesh.id];
+        pass.set_pipeline(pipeline);
+        match user {
+            Some(user) => {
+                let offsets: &[u32] = if user_has_uniforms(&objects[index as usize]) { &[offset] } else { &[] };
+                pass.set_bind_group(1, user, offsets);
+            }
+            None => pass.set_bind_group(1, empty, &[]),
+        }
+        pass.set_bind_group(2, &self.maps[&map], &[]);
+        pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..mesh.count, 0, index..index + 1);
+    }
+
     /// Lets go of what was made for meshes, shaders and pictures nobody has any more.
     fn retain(&mut self) {
         self.meshes.retain(|_, m| m.of.strong_count() > 0);
@@ -507,17 +785,21 @@ impl SpacePaint {
         });
     }
 
-    fn pipeline(&mut self, device: &wgpu::Device, shader: &Arc<Shader>, see_through: bool, both_sides: bool) -> wgpu::RenderPipeline {
+    fn pipeline(&mut self, device: &wgpu::Device, shader: &Arc<Shader>, variant: Variant) -> wgpu::RenderPipeline {
         // The standard material is there for the empty `@group(1)` of the others.
+        let opaque = Variant::Color {
+            see_through: false,
+            both_sides: false,
+        };
         if !self.materials.contains_key(&STANDARD.id) && shader.id != STANDARD.id {
-            self.pipeline(device, &STANDARD.clone(), false, false);
+            self.pipeline(device, &STANDARD.clone(), opaque);
         }
         let material = self.materials.entry(shader.id).or_insert_with(|| Material {
             of: Arc::downgrade(shader),
             user: gpu::user_layout(device, shader),
             pipelines: HashMap::new(),
         });
-        if let Some(p) = material.pipelines.get(&(see_through, both_sides)) {
+        if let Some(p) = material.pipelines.get(&variant) {
             return p.clone();
         }
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -529,49 +811,81 @@ impl SpacePaint {
             bind_group_layouts: &[Some(&self.frame_layout), Some(&material.user), Some(&self.map_layout)],
             immediate_size: 0,
         });
-        let blend = wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("scene3d material"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("fs_vertex_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: (STRIDE * 4) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
-                })],
+        let vertices = [Some(wgpu::VertexBufferLayout {
+            array_stride: (STRIDE * 4) as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+        })];
+        let targets = [Some(wgpu::ColorTargetState {
+            format: LIGHT_FORMAT,
+            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let descriptor = match variant {
+            Variant::Color { see_through, both_sides } => wgpu::RenderPipelineDescriptor {
+                label: Some("scene3d material"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("fs_vertex_main"),
+                    compilation_options: Default::default(),
+                    buffers: &vertices,
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs_fragment_main"),
+                    compilation_options: Default::default(),
+                    targets: &targets,
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: (!both_sides).then_some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(!see_through),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: SAMPLES,
+                    ..Default::default()
+                },
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_fragment_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: LIGHT_FORMAT,
-                    blend: Some(blend),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: (!both_sides).then_some(wgpu::Face::Back),
-                ..Default::default()
+            // Both sides, so that a plane casts a shadow whichever way it faces; pushed back a
+            // little more where the surface slopes away from the light.
+            Variant::Shadow => wgpu::RenderPipelineDescriptor {
+                label: Some("scene3d shadow"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("fs_shadow_vertex"),
+                    compilation_options: Default::default(),
+                    buffers: &vertices,
+                },
+                fragment: None,
+                primitive: Default::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 1,
+                        slope_scale: 1.5,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(!see_through),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: SAMPLES,
-                ..Default::default()
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        material.pipelines.insert((see_through, both_sides), pipeline.clone());
+        };
+        let pipeline = device.create_render_pipeline(&descriptor);
+        material.pipelines.insert(variant, pipeline.clone());
         pipeline
     }
 
