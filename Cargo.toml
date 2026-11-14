@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = ["crates/framescript-engine", "crates/framescript-studio"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["bea4dev"]
+
+[workspace.dependencies]
+framescript-engine = { path = "crates/framescript-engine" }
+anti-webui = { path = "../AntiWebUI/src/anti-webui" }
+anti-webui-md3e = { path = "../AntiWebUI/src/anti-webui-md3e" }
+anti-webui-core = { path = "../AntiWebUI/src/anti-webui-core" }
+anti-webui-style = { path = "../AntiWebUI/src/anti-webui-style" }
+anti-webui-wgpu = { path = "../AntiWebUI/src/anti-webui-wgpu" }
+anti-webui-app = { path = "../AntiWebUI/src/anti-webui-app", default-features = false }
+anti-webui-video = { path = "../AntiWebUI/src/anti-webui-video" }
+# V8 through deno_core directly, for the ops (op2) and the runtime. rustyscript, which wraps it,
+# is on deno_core 0.380 (V8 142) at its latest, whose Temporal can't be built with the ICU that
+# AntiWebUI's text needs (see docs/design/00-overview.md).
+deno_core = "=0.413.0"
+# The transpiler for TS and TSX.
+deno_ast = { version = "=0.53.3", features = ["transpiling"] }
+deno_error = "=0.7.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "time"] }
+png = "0.18"
+bytemuck = { version = "1.25", features = ["derive"] }
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# AntiWebUI is built on its fork of wgpu (see AntiWebUI's Cargo.toml); the patch has to be repeated
+# in every workspace that depends on it.
+[patch.crates-io]
+naga = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+naga-types = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-core = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-core-deps-apple = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-core-deps-emscripten = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-core-deps-windows-linux-android = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-hal = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-naga-bridge = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }
+wgpu-types = { git = "https://github.com/bea4dev/wgpu", branch = "adapter-filter" }

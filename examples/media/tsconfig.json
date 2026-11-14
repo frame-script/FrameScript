@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2022"],
+    "types": [],
+    "paths": { "framescript": ["../../packages/framescript/index.ts"] }
+  },
+  "include": ["*.tsx", "*.ts", "../../packages/framescript/**/*.ts"]
+}

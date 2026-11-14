@@ -1,0 +1,8 @@
+{
+  "name": "hello",
+  "width": 1920,
+  "height": 1080,
+  "fps": 60,
+  "entry": "main.tsx",
+  "background": "#0b1020"
+}

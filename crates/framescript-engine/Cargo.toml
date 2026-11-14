@@ -1,0 +1,19 @@
+[package]
+name = "framescript-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anti-webui-core.workspace = true
+anti-webui-style.workspace = true
+anti-webui-wgpu.workspace = true
+anti-webui-video.workspace = true
+deno_core.workspace = true
+deno_ast.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+serde.workspace = true
+deno_error.workspace = true
+png.workspace = true
