@@ -51,5 +51,13 @@ export interface ShaderInfo {
  */
 export const shader: (code: string, path: string, stage: number) => ShaderInfo = core.ops.op_fs_shader
 
+export interface ModelInfo {
+  /** Per animation: its name and how long it is, in seconds. */
+  animations: [string, number][]
+}
+
+/** What the glTF model in a file of the project has. Throws if it can't be read. */
+export const modelInfo: (src: string) => ModelInfo = core.ops.op_fs_model_info
+
 /** Runs every queued microtask now. */
 export const runMicrotasks: () => void = () => core.runMicrotasks()

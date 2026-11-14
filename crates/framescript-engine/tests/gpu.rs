@@ -176,6 +176,17 @@ fn clips_in_a_scene_come_and_go_with_their_time() {
 }
 
 #[test]
+fn an_empty_scene_is_its_background() {
+    let Some(mut gpu) = gpu() else { return };
+    let main = r##"import { Scene3D } from "framescript/3d"
+export default function Main() { return <Scene3D style={{ width: "100%", height: "100%" }} background="#0000ff" /> }
+"##;
+    let dir = project("empty", main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    assert_eq!(px(&frame(&mut c, &mut gpu, 0), 32, 24), [0, 0, 255, 255]);
+}
+
+#[test]
 fn a_thing_in_3d_out_of_a_scene_is_refused() {
     let main = r#"import { Box } from "framescript/3d"
 export default function Main() { return <div><Box /></div> }
@@ -294,4 +305,297 @@ fn what_casts_shadows_darkens_what_receives_them() {
     assert!(a.abs_diff(b) <= 4, "no shadows from a light that doesn't cast them: {a} and {b}");
     let (a, b) = shadow_sides("not-received", "castShadow", "receiveShadow={false}").unwrap();
     assert!(a.abs_diff(b) <= 4, "none on what doesn't receive them: {a} and {b}");
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= c.len() {
+                out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// A red square 2 units across in the XY plane, facing +Z, with an animation "move" of a second
+/// that takes `moved` (node 0, the square itself, or node 1, a joint the square is skinned to)
+/// from where it is to `to`.
+fn square_gltf(skinned: bool, to: [f32; 3]) -> String {
+    let mut bin: Vec<u8> = Vec::new();
+    let mut put = |floats: &[f32]| {
+        let at = bin.len();
+        for f in floats {
+            bin.extend_from_slice(&f.to_le_bytes());
+        }
+        (at, bin.len() - at)
+    };
+    let positions = put(&[-1., -1., 0., 1., -1., 0., 1., 1., 0., -1., 1., 0.]);
+    let normals = put(&[0., 0., 1., 0., 0., 1., 0., 0., 1., 0., 0., 1.]);
+    let times = put(&[0., 1.]);
+    let moves = put(&[0., 0., 0., to[0], to[1], to[2]]);
+    let weights = put(&[1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.]);
+    let indices = {
+        let at = bin.len();
+        for i in [0u16, 1, 2, 0, 2, 3, 0, 0] {
+            bin.extend_from_slice(&i.to_le_bytes());
+        }
+        (at, 12)
+    };
+    let joints = {
+        let at = bin.len();
+        bin.extend_from_slice(&[0u8; 32]);
+        (at, 32)
+    };
+    let view = |(at, len): (usize, usize)| format!(r#"{{ "buffer": 0, "byteOffset": {at}, "byteLength": {len} }}"#);
+    let (skin, nodes, attributes, target) = if skinned {
+        (
+            r#", "skins": [{ "joints": [1] }]"#,
+            r#"[{ "mesh": 0, "skin": 0 }, { "name": "joint" }]"#,
+            r#", "JOINTS_0": 5, "WEIGHTS_0": 6"#,
+            1,
+        )
+    } else {
+        ("", r#"[{ "mesh": 0 }]"#, "", 0)
+    };
+    format!(
+        r#"{{
+  "asset": {{ "version": "2.0" }},
+  "scene": 0,
+  "scenes": [{{ "nodes": [{roots}] }}],
+  "nodes": {nodes}{skin},
+  "meshes": [{{ "primitives": [{{ "attributes": {{ "POSITION": 0, "NORMAL": 1{attributes} }}, "indices": 2, "material": 0 }}] }}],
+  "materials": [{{ "pbrMetallicRoughness": {{ "baseColorFactor": [1, 0, 0, 1], "metallicFactor": 0, "roughnessFactor": 1 }} }}],
+  "animations": [{{ "name": "move", "channels": [{{ "sampler": 0, "target": {{ "node": {target}, "path": "translation" }} }}],
+                   "samplers": [{{ "input": 3, "output": 4, "interpolation": "LINEAR" }}] }}],
+  "accessors": [
+    {{ "bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3", "min": [-1, -1, 0], "max": [1, 1, 0] }},
+    {{ "bufferView": 1, "componentType": 5126, "count": 4, "type": "VEC3" }},
+    {{ "bufferView": 2, "componentType": 5123, "count": 6, "type": "SCALAR" }},
+    {{ "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR", "min": [0], "max": [1] }},
+    {{ "bufferView": 4, "componentType": 5126, "count": 2, "type": "VEC3" }},
+    {{ "bufferView": 5, "componentType": 5123, "count": 4, "type": "VEC4" }},
+    {{ "bufferView": 6, "componentType": 5126, "count": 4, "type": "VEC4" }}
+  ],
+  "bufferViews": [{}, {}, {}, {}, {}, {}, {}],
+  "buffers": [{{ "byteLength": {len}, "uri": "data:application/octet-stream;base64,{data}" }}]
+}}"#,
+        view(positions),
+        view(normals),
+        view(indices),
+        view(times),
+        view(moves),
+        view(joints),
+        view(weights),
+        roots = if skinned { "0, 1" } else { "0" },
+        len = bin.len(),
+        data = base64(&bin),
+    )
+}
+
+/// Whether the model in `gltf` covers the points (in units) at frames 0 and 15, half a second in.
+fn model_covers(name: &str, gltf: &str, points: &[(f32, f32)]) -> Option<Vec<[bool; 2]>> {
+    let mut gpu = gpu()?;
+    let main = r##"import { AmbientLight, Model, OrthographicCamera, Scene3D } from "framescript/3d"
+export default function Main() {
+  return (
+    <Scene3D style={{ width: "100%", height: "100%" }} background="#00ff00">
+      <OrthographicCamera position={[0, 0, 10]} height={4} />
+      <AmbientLight intensity={1} />
+      <Model src="square.gltf" animation="move" />
+    </Scene3D>
+  )
+}
+"##;
+    let dir = project(name, main, &[("square.gltf", gltf)]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let frames = [frame(&mut c, &mut gpu, 0), frame(&mut c, &mut gpu, 15)];
+    let covered = |p: &[u8], (x, y): (f32, f32)| {
+        let at = px(p, (32.0 + x * 12.0) as u32, (24.0 - y * 12.0) as u32);
+        assert!(at == [0, 255, 0, 255] || (at[0] > 150 && at[1] < 80), "neither: {at:?}");
+        at[0] > 150
+    };
+    Some(points.iter().map(|&q| [covered(&frames[0], q), covered(&frames[1], q)]).collect())
+}
+
+#[test]
+fn a_model_is_where_its_animation_puts_it_at_the_time() {
+    // Half a second in, it has gone 1 to the right.
+    let Some(c) = model_covers("model", &square_gltf(false, [2.0, 0.0, 0.0]), &[(-0.75, 0.0), (1.5, 0.0)]) else {
+        return;
+    };
+    assert_eq!(c, [[true, false], [false, true]]);
+    // Its joint goes up, and the skin with it.
+    let c = model_covers("skinned", &square_gltf(true, [0.0, 1.5, 0.0]), &[(0.0, -0.75), (0.0, 1.25)]).unwrap();
+    assert_eq!(c, [[true, false], [false, true]]);
+}
+
+#[test]
+fn an_animation_that_isnt_there_is_said_so() {
+    let main = r#"import { Model, Scene3D } from "framescript/3d"
+export default function Main() { return <Scene3D><Model src="square.gltf" animation="walk" /></Scene3D> }
+"#;
+    let dir = project("no-animation", main, &[("square.gltf", &square_gltf(false, [1.0, 0.0, 0.0]))]);
+    let e = Composition::load(&dir).err().expect("it doesn't load").to_string();
+    assert!(e.contains("no animation \"walk\"") && e.contains("it has move"), "{e}");
+}
+
+/// A video of 2 s at 30 fps: red for the first second, blue for the next. `None` without ffmpeg.
+fn red_then_blue(dir: &std::path::Path) -> Option<()> {
+    let made = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=64x48:r=30:d=1", "-f", "lavfi"])
+        .args(["-i", "color=c=blue:s=64x48:r=30:d=1", "-filter_complex", "[0][1]concat=n=2:v=1"])
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "15"])
+        .arg(dir.join("rb.mp4"))
+        .status()
+        .is_ok_and(|s| s.success());
+    if !made {
+        eprintln!("no ffmpeg; skipped");
+    }
+    made.then_some(())
+}
+
+#[test]
+fn videos_are_given_to_textures_frame_by_frame() {
+    let Some(mut gpu) = gpu() else { return };
+    let bindings = "@group(1) @binding(0) var picture: texture_2d<f32>;\n@group(1) @binding(1) var linear: sampler;\n";
+    let flat = format!("{bindings}fn shade(uv: vec2f) -> vec4f {{ return textureSample(picture, linear, uv); }}");
+    let unlit = format!("{bindings}fn fragment(in: SurfaceInput) -> vec4f {{ return textureSample(picture, linear, in.uv); }}");
+    // The left half a <Shader> from the start; the right half a plane in a scene, in a clip that
+    // starts at frame 30, so that its video is half a second in at frame 45.
+    let main = r##"import { Clip, Shader } from "framescript"
+import { OrthographicCamera, Plane, Scene3D } from "framescript/3d"
+import flat from "./flat.wgsl"
+import unlit from "./unlit.wgsl"
+const video = { video: "rb.mp4", muted: true }
+export default function Main() {
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "row" }}>
+      <Shader wgsl={flat} textures={{ picture: video }} style={{ width: 32, height: 48 }} />
+      <Scene3D style={{ width: 32, height: 48 }}>
+        <OrthographicCamera position={[0, 0, 10]} height={4} />
+        <Clip start={30} duration={60}>
+          <Plane size={10} material={{ wgsl: unlit, textures: { picture: video } }} />
+        </Clip>
+      </Scene3D>
+    </div>
+  )
+}
+"##;
+    let dir = project("video", main, &[("flat.wgsl", &flat), ("unlit.wgsl", &unlit)]);
+    if red_then_blue(&dir).is_none() {
+        return;
+    }
+    let mut c = Composition::load(&dir).expect("loads");
+    let red = |p: [u8; 4]| p[0] > 200 && p[2] < 50;
+    let blue = |p: [u8; 4]| p[2] > 200 && p[0] < 50;
+    let p = frame(&mut c, &mut gpu, 15);
+    assert!(red(px(&p, 16, 24)), "the box, half a second in: {:?}", px(&p, 16, 24));
+    let p = frame(&mut c, &mut gpu, 45);
+    assert!(blue(px(&p, 16, 24)), "the box, a second and a half in: {:?}", px(&p, 16, 24));
+    assert!(red(px(&p, 48, 24)), "the plane, half a second into its clip: {:?}", px(&p, 48, 24));
+    let p = frame(&mut c, &mut gpu, 75);
+    assert!(blue(px(&p, 48, 24)), "the plane, later: {:?}", px(&p, 48, 24));
+    // Back again.
+    let p = frame(&mut c, &mut gpu, 15);
+    assert!(red(px(&p, 16, 24)), "{:?}", px(&p, 16, 24));
+}
+
+#[test]
+fn a_panel_shows_its_2d_in_the_scene_and_only_there() {
+    let Some(mut gpu) = gpu() else { return };
+    // 100 by 50 pixels at 25 to a unit: 4 by 2 units, 48 by 24 pixels of the frame, in the middle.
+    let main = r##"import { useCurrentFrame } from "framescript"
+import { OrthographicCamera, Panel, Scene3D } from "framescript/3d"
+export default function Main() {
+  const frame = useCurrentFrame()
+  return (
+    <Scene3D style={{ width: "100%", height: "100%" }} background="#00ff00">
+      <OrthographicCamera position={[0, 0, 10]} height={4} />
+      <Panel pixelsPerUnit={25}>
+        <div style={{ width: 100, height: 50, background: () => (frame() < 10 ? "#ff0000" : "#0000ff") }} />
+      </Panel>
+    </Scene3D>
+  )
+}
+"##;
+    let dir = project("panel", main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    assert_eq!(px(&p, 32, 24), [255, 0, 0, 255], "on the panel");
+    assert_eq!(px(&p, 10, 15), [255, 0, 0, 255], "near its left edge");
+    assert_eq!(px(&p, 6, 24), [0, 255, 0, 255], "beside it");
+    assert_eq!(px(&p, 32, 10), [0, 255, 0, 255], "above it");
+    // What it shows changes with the frame.
+    let p = frame(&mut c, &mut gpu, 20);
+    assert_eq!(px(&p, 32, 24), [0, 0, 255, 255]);
+    // Not over the scene where it is laid out.
+    let p = frame(&mut c, &mut gpu, 0);
+    assert_eq!(px(&p, 1, 1), [0, 255, 0, 255]);
+}
+
+#[test]
+fn effects_are_done_to_the_scene_in_order() {
+    let Some(mut gpu) = gpu() else { return };
+    let invert = r#"
+struct U { amount: f32 }
+@group(1) @binding(0) var<uniform> u: U;
+fn effect(uv: vec2f) -> vec4f {
+    let c = scene(uv);
+    return vec4f(mix(c.rgb, vec3f(1.0) - c.rgb, u.amount), 1.0);
+}
+"#;
+    let main = r##"import { useCurrentFrame } from "framescript"
+import { Scene3D } from "framescript/3d"
+import invert from "./invert.wgsl"
+export default function Main() {
+  const frame = useCurrentFrame()
+  return (
+    <Scene3D style={{ width: "100%", height: "100%" }} background="#00ff00"
+      effects={[{ wgsl: invert, uniforms: { amount: () => (frame() < 10 ? 1 : 0) } }]} />
+  )
+}
+"##;
+    let dir = project("effect", main, &[("invert.wgsl", invert)]);
+    let mut c = Composition::load(&dir).expect("loads");
+    assert_eq!(px(&frame(&mut c, &mut gpu, 0), 32, 24), [255, 0, 255, 255], "turned over");
+    assert_eq!(px(&frame(&mut c, &mut gpu, 20), 32, 24), [0, 255, 0, 255], "as it is");
+}
+
+/// How bright the frame is just beside a small white disc on black, with `effects`.
+fn beside_a_light(name: &str, effects: &str) -> Option<u8> {
+    let mut gpu = gpu()?;
+    let main = format!(
+        r##"import {{ bloom, OrthographicCamera, Scene3D, Sphere }} from "framescript/3d"
+import white from "./white.wgsl"
+export default function Main() {{
+  return (
+    <Scene3D style={{{{ width: "100%", height: "100%" }}}} background="#000000" effects={{{effects}}}>
+      <OrthographicCamera position={{[0, 0, 10]}} height={{4}} />
+      <Sphere radius={{0.5}} material={{{{ wgsl: white }}}} />
+    </Scene3D>
+  )
+}}
+"##
+    );
+    let white = "fn fragment(in: SurfaceInput) -> vec4f { return vec4f(1.0); }";
+    let dir = project(name, &main, &[("white.wgsl", white)]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    assert_eq!(px(&p, 32, 24), [255, 255, 255, 255], "the disc");
+    // Half a unit out from its edge.
+    Some(px(&p, 32 + 12, 24)[0])
+}
+
+#[test]
+fn bloom_spreads_what_is_bright() {
+    let Some(without) = beside_a_light("no-bloom", "[]") else { return };
+    let with = beside_a_light("bloom", "[bloom({ strength: 1 })]").unwrap();
+    assert_eq!(without, 0);
+    assert!(with > 20, "the light spreads: {with}");
 }

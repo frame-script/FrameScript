@@ -229,46 +229,64 @@ fn custom(args: &[f32]) -> Result<Arc<MeshData>, String> {
         at += len;
         Ok(part)
     };
-    let positions = take(n * 3)?;
-    let normals = if has_normals { Some(take(n * 3)?) } else { None };
-    let uvs = if has_uvs { Some(take(n * 2)?) } else { None };
-    let indices: Vec<u32> = if ni > 0 {
-        take(ni)?.iter().map(|&i| i as u32).collect()
+    let positions: Vec<Vec3> = take(n * 3)?.chunks_exact(3).map(Vec3::from_slice).collect();
+    let normals: Option<Vec<Vec3>> = if has_normals {
+        Some(take(n * 3)?.chunks_exact(3).map(Vec3::from_slice).collect())
     } else {
-        (0..n as u32).collect()
+        None
     };
+    let uvs: Option<Vec<[f32; 2]>> = if has_uvs {
+        Some(take(n * 2)?.chunks_exact(2).map(|u| [u[0], u[1]]).collect())
+    } else {
+        None
+    };
+    let indices: Option<Vec<u32>> = (ni > 0).then(|| take(ni)).transpose()?.map(|i| i.iter().map(|&i| i as u32).collect());
+    build(&positions, normals.as_deref(), uvs.as_deref(), indices)
+}
+
+/// A shape from its vertices: without `normals`, they are made from the faces; without `indices`,
+/// each three vertices are a triangle.
+pub fn build(
+    positions: &[Vec3],
+    normals: Option<&[Vec3]>,
+    uvs: Option<&[[f32; 2]]>,
+    indices: Option<Vec<u32>>,
+) -> Result<Arc<MeshData>, String> {
+    let n = positions.len();
+    let indices = indices.unwrap_or_else(|| (0..n as u32).collect());
     if let Some(bad) = indices.iter().find(|&&i| i as usize >= n) {
         return Err(format!("the index {bad} is past the {n} vertices"));
     }
     if !indices.len().is_multiple_of(3) {
         return Err(format!("{} indices aren't triangles", indices.len()));
     }
-    let p = |i: usize| Vec3::new(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
-    let made: Vec<Vec3> = match normals {
-        Some(_) => Vec::new(),
-        None => {
-            let mut sum = vec![Vec3::ZERO; n];
-            for t in indices.chunks_exact(3) {
-                let [a, b, c] = [t[0], t[1], t[2]].map(|i| i as usize);
-                let face = (p(b) - p(a)).cross(p(c) - p(a));
-                for i in [a, b, c] {
-                    sum[i] += face;
-                }
-            }
-            sum.into_iter().map(|s| s.normalize_or(Vec3::Y)).collect()
+    let made: Vec<Vec3>;
+    let normals = match normals {
+        Some(given) if given.len() == n => given,
+        _ => {
+            made = face_normals(positions, &indices);
+            &made
         }
     };
     let mut vertices = Vec::with_capacity(n * STRIDE);
     for i in 0..n {
-        let normal = match normals {
-            Some(ns) => Vec3::new(ns[i * 3], ns[i * 3 + 1], ns[i * 3 + 2]),
-            None => made[i],
-        };
-        let uv = uvs.map_or([0.0, 0.0], |u| [u[i * 2], u[i * 2 + 1]]);
-        let q = p(i);
-        vertices.extend_from_slice(&[q.x, q.y, q.z, normal.x, normal.y, normal.z, uv[0], uv[1]]);
+        let (p, q) = (positions[i], normals[i]);
+        let uv = uvs.and_then(|u| u.get(i)).copied().unwrap_or([0.0, 0.0]);
+        vertices.extend_from_slice(&[p.x, p.y, p.z, q.x, q.y, q.z, uv[0], uv[1]]);
     }
     Ok(MeshData::new(vertices, indices))
+}
+
+fn face_normals(positions: &[Vec3], indices: &[u32]) -> Vec<Vec3> {
+    let mut sum = vec![Vec3::ZERO; positions.len()];
+    for t in indices.chunks_exact(3) {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| i as usize);
+        let face = (positions[b] - positions[a]).cross(positions[c] - positions[a]);
+        for i in [a, b, c] {
+            sum[i] += face;
+        }
+    }
+    sum.into_iter().map(|s| s.normalize_or(Vec3::Y)).collect()
 }
 
 #[cfg(test)]

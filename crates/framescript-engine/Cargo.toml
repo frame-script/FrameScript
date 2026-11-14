@@ -21,4 +21,6 @@ bytemuck.workspace = true
 # WGSL that compositions write is parsed and validated, and its uniforms read, with naga.
 naga = { version = "30", features = ["wgsl-in"] }
 glam = { version = "0.33", features = ["bytemuck"] }
+# glTF models: the documents, their buffers and their pictures.
+gltf = { version = "1", default-features = false, features = ["import", "utils", "names", "KHR_materials_emissive_strength"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

@@ -17,8 +17,9 @@
 import { addSound, placeSpan, type SoundProps } from "./audio.ts"
 import { project, useClip, useCurrentFrame, useGlobalCurrentFrame } from "./frame.ts"
 import { createElement, type JSXNode } from "./jsx.ts"
-import { createMemo } from "./reactive.ts"
+import { type Accessor, createMemo, createRenderEffect, onCleanup, untrack } from "./reactive.ts"
 import type { StyleProp } from "./style.ts"
+import * as cmd from "./internal/commands.ts"
 import * as ops from "./internal/ops.ts"
 
 export type { VideoInfo } from "./internal/ops.ts"
@@ -49,12 +50,19 @@ const OFF = 0
 const SOON = 1
 const SHOWN = 2
 
+/** Where a video is at the current frame, and whether it shows. */
+export interface VideoClock {
+  /** Seconds into the file; NaN while it is far from its clip. */
+  time: Accessor<number>
+  /** Whether it shows now, rather than being about to (and decoding ahead). */
+  shown: Accessor<boolean>
+}
+
 /**
- * A video that plays from the start of the clip it is in, with its sound unless `muted`. The clip
- * lasts as long as the video (from `trimStart` to `trimEnd`, at `playbackRate`) unless it is given
- * a duration; its last frame stays after that.
+ * Where a video placed as `props` say is at the current frame of the clip it is in, and its sound
+ * unless `muted`. The clip lasts as long as the video unless it is given a duration.
  */
-export function Video(props: VideoProps): JSXNode {
+export function videoClock(props: SoundProps & { muted?: boolean }): VideoClock {
   const info = videoInfo(props.src)
   const clip = useClip()
   const frame = useCurrentFrame()
@@ -76,12 +84,45 @@ export function Video(props: VideoProps): JSXNode {
     const f = s === SOON ? 0 : frame()
     return Math.min(from + (f / project.fps) * rate, to)
   })
+  return { time, shown: () => state() === SHOWN }
+}
 
+/**
+ * A video that plays from the start of the clip it is in, with its sound unless `muted`. The clip
+ * lasts as long as the video (from `trimStart` to `trimEnd`, at `playbackRate`) unless it is given
+ * a duration; its last frame stays after that.
+ */
+export function Video(props: VideoProps): JSXNode {
+  const clock = videoClock(props)
   return createElement("video", {
     src: props.src,
-    time,
-    shown: () => state() === SHOWN,
+    time: clock.time,
+    shown: clock.shown,
     style: props.style,
     ref: props.ref,
   })
+}
+
+/** A video as a texture: placed and heard as a `<Video>` where it is, with `video` its file. */
+export type VideoTexture = Omit<SoundProps, "src"> & { video: string; muted?: boolean }
+
+export function isVideoTexture(value: unknown): value is VideoTexture {
+  return typeof value === "object" && value !== null && "video" in value
+}
+
+/**
+ * A node of its own for the frames of a video that a texture shows: in no box, it decodes the
+ * frame of its time like any other. Made under the current owner, and gone with it.
+ */
+export function videoTextureNode(v: VideoTexture): number {
+  const clock = videoClock({ ...v, src: v.video })
+  const node = cmd.createNode(cmd.KIND_VIDEO)
+  onCleanup(() => cmd.removeNode(node))
+  cmd.setSource(node, v.video)
+  createRenderEffect(() => {
+    const time = clock.time()
+    const shown = clock.shown()
+    untrack(() => cmd.setVideoTime(node, time, shown))
+  })
+  return node
 }

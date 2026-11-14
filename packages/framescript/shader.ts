@@ -22,6 +22,7 @@ import { project, useCurrentFrame } from "./frame.ts"
 import { Host, type JSXNode, nodeChild } from "./jsx.ts"
 import { type Accessor, createRenderEffect, onCleanup, untrack } from "./reactive.ts"
 import { bindStyle, type StyleProp } from "./style.ts"
+import { isVideoTexture, type VideoTexture, videoTextureNode } from "./media.ts"
 import * as cmd from "./internal/commands.ts"
 import * as ops from "./internal/ops.ts"
 
@@ -39,8 +40,11 @@ export type UniformValue =
   | readonly (number | readonly number[])[]
 
 export type Uniforms = Record<string, MaybeAccessor<UniformValue>>
-/** Pictures for the textures of a shader, by their names: files of the project. */
-export type Textures = Record<string, MaybeAccessor<string>>
+/**
+ * What the textures of a shader show, by their names: pictures (files of the project), or videos
+ * (`{ video: "assets/clip.mp4", trimStart: 2 }`, placed and heard as a `<Video>` where it is).
+ */
+export type Textures = Record<string, MaybeAccessor<string> | VideoTexture>
 
 export interface ShaderProps {
   /** The code: a string, or what a `.wgsl` file imports as. */
@@ -56,6 +60,7 @@ export interface ShaderProps {
 /** The stages of `op_fs_shader`. */
 export const STAGE_FLAT = 0
 export const STAGE_MATERIAL = 1
+export const STAGE_EFFECT = 2
 
 /** Compiles `wgsl` (once), throwing what is wrong with it at the line of its file. */
 export function compileShader(wgsl: string, stage: number): ops.ShaderInfo {
@@ -93,8 +98,17 @@ export function bindTime(node: number, frame: Accessor<number>): void {
   })
 }
 
-/** Gives the uniforms of `info` their values, and again whenever those that are functions change. */
-export function bindUniforms(node: number, info: ops.ShaderInfo, uniforms: Uniforms | undefined): void {
+/**
+ * Gives the uniforms of `info` their values, and again whenever those that are functions change:
+ * with `param`, after `prefix` (what the shader is to the node, if it has several).
+ */
+export function bindUniforms(
+  node: number,
+  info: ops.ShaderInfo,
+  uniforms: Uniforms | undefined,
+  param: number = cmd.P.UNIFORM,
+  prefix: number[] = [],
+): void {
   if (!uniforms) return
   for (const [name, value] of Object.entries(uniforms)) {
     const index = info.uniforms.findIndex(([n]) => n === name)
@@ -103,7 +117,7 @@ export function bindUniforms(node: number, info: ops.ShaderInfo, uniforms: Unifo
       throw new Error(`uniforms.${name} is not in the WGSL${suggest(name, names)}`)
     }
     const [, type, size] = info.uniforms[index]
-    const send = (v: UniformValue) => cmd.setParam(node, cmd.P.UNIFORM, [index, ...numbers(name, v, type, size)])
+    const send = (v: UniformValue) => cmd.setParam(node, param, [...prefix, index, ...numbers(name, v, type, size)])
     if (typeof value === "function") {
       createRenderEffect(() => {
         const v = value()
@@ -115,21 +129,33 @@ export function bindUniforms(node: number, info: ops.ShaderInfo, uniforms: Unifo
   }
 }
 
-/** Gives the textures of `info` their pictures. */
-export function bindTextures(node: number, info: ops.ShaderInfo, textures: Textures | undefined): void {
+/**
+ * Gives the textures of `info` their pictures or videos: `at` is what the texture of an index is
+ * to the node, and `text` and `video` the parameters they are given with.
+ */
+export function bindTextures(
+  node: number,
+  info: ops.ShaderInfo,
+  textures: Textures | undefined,
+  at: (index: number) => number = (i) => i,
+  text: number = cmd.TEXT_TEXTURE,
+  video: number = cmd.P.VIDEO_TEXTURE,
+): void {
   if (!textures) return
   for (const [name, src] of Object.entries(textures)) {
     const index = info.textures.indexOf(name)
     if (index < 0) {
       throw new Error(`textures.${name} is not a texture of the WGSL${suggest(name, info.textures)}`)
     }
-    if (typeof src === "function") {
+    if (isVideoTexture(src)) {
+      cmd.setParam(node, video, [at(index), videoTextureNode(src)])
+    } else if (typeof src === "function") {
       createRenderEffect(() => {
         const s = src()
-        untrack(() => cmd.setParamText(node, cmd.TEXT_TEXTURE, index, s))
+        untrack(() => cmd.setParamText(node, text, at(index), s))
       })
     } else {
-      cmd.setParamText(node, cmd.TEXT_TEXTURE, index, src)
+      cmd.setParamText(node, text, at(index), src)
     }
   }
 }

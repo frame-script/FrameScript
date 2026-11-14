@@ -359,11 +359,7 @@ impl Composition {
         };
         let bridge = &self.bridge;
         let complete = in_window(self.ui.window(), || {
-            with_doc(|d| {
-                let mut bridge = bridge.borrow_mut();
-                bridge.drawn.sync(d);
-                bridge.media.show_frames(d, wait_for)
-            })
+            with_doc(|d| bridge.borrow_mut().media.show_frames(d, wait_for))
         });
         timings.script = t.elapsed();
 
@@ -375,8 +371,20 @@ impl Composition {
         }
         timings.layout = t.elapsed();
 
-        let t = Instant::now();
         let at = self.epoch + Duration::from_secs_f64(frame as f64 / self.settings.fps.max(1.0));
+        // What the GPU draws for the composition: after the videos have their frames and the
+        // document is laid out, as textures show both.
+        let t = Instant::now();
+        in_window(self.ui.window(), || {
+            with_doc(|d| {
+                let mut bridge = bridge.borrow_mut();
+                let bridge = &mut *bridge;
+                bridge.drawn.sync(d, &bridge.nodes, at);
+            })
+        });
+        timings.layout += t.elapsed();
+
+        let t = Instant::now();
         let scene = self.ui.paint(at);
         timings.paint = t.elapsed();
         Ok(Rendered {

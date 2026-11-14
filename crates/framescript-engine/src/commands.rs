@@ -33,7 +33,11 @@
 use crate::flat::{FlatBox, FlatProps};
 use crate::media::MediaNodes;
 use crate::props::{self, Value};
-use crate::shader::{Picture, Shader};
+use crate::shader::{Now, Painted, Picture, Shader, Source};
+use anti_webui_core::paint::paint_node;
+use std::time::Instant;
+use anti_webui_core::video::VideoFrame;
+use crate::space::model::ModelData;
 use crate::space::{self, Spaces, param, text_param};
 use anti_webui_core::canvas::CanvasData;
 use anti_webui_core::style::{BoxShadow, Color};
@@ -75,6 +79,10 @@ pub mod kind {
     pub const MESH: u32 = 7;
     pub const CAMERA: u32 = 8;
     pub const LIGHT: u32 = 9;
+    /// A glTF model in a scene: `<Model>`.
+    pub const MODEL: u32 = 10;
+    /// What shows nodes of the document on a plane in a scene: `<Panel>`.
+    pub const PANEL: u32 = 11;
 }
 
 /// What a handle is of.
@@ -91,20 +99,110 @@ pub struct Drawn {
     /// By the number the scripts know them by.
     pub shaders: Vec<Arc<Shader>>,
     pictures: HashMap<PathBuf, Arc<Picture>>,
+    models: HashMap<PathBuf, Arc<ModelData>>,
     /// By handle.
     flats: HashMap<u32, (NodeId, FlatBox)>,
     spaces: Spaces,
+    /// The frame each video given to a texture showed when it was last handed on, by its handle.
+    shown: HashMap<u32, Option<u64>>,
+    /// How each node that a panel shows looked when it was last handed on, by its handle.
+    painted: HashMap<u32, Painted>,
+}
+
+/// What videos and panels show at the frame being made.
+#[derive(Default)]
+struct Current {
+    frames: HashMap<u32, Arc<VideoFrame>>,
+    painted: HashMap<u32, Painted>,
+}
+
+impl Now for Current {
+    fn frame(&self, video: u32) -> Option<Arc<VideoFrame>> {
+        self.frames.get(&video).cloned()
+    }
+
+    fn painted(&self, node: u32) -> Option<Painted> {
+        self.painted.get(&node).cloned()
+    }
 }
 
 impl Drawn {
-    /// Hands what changed to the boxes that show it. Run after a frame's commands, before the
-    /// document is painted.
-    pub fn sync(&mut self, doc: &mut Document) {
+    /// Hands what changed to the boxes that show it. Run once the document is laid out (panels are
+    /// painted as they are then) and the videos have their frames, before it is painted; `now` is
+    /// the time it is painted at.
+    pub fn sync(&mut self, doc: &mut Document, nodes: &Nodes, now: Instant) {
+        let sources: Vec<Source> = self
+            .flats
+            .values()
+            .flat_map(|(_, f)| f.textures.iter().flatten())
+            .chain(self.spaces.sources())
+            .filter(|s| !matches!(s, Source::Picture(_)))
+            .cloned()
+            .collect();
+        let mut current = Current::default();
+        let mut moved: Vec<u32> = Vec::new();
+        for s in &sources {
+            match *s {
+                Source::Video(h) => {
+                    let frame = nodes.get(h).and_then(|id| match &doc.get(id)?.kind {
+                        NodeKind::Video(v) => v.frame.clone(),
+                        _ => None,
+                    });
+                    let id = frame.as_ref().map(|f| f.id);
+                    if self.shown.insert(h, id) != Some(id) {
+                        moved.push(h);
+                    }
+                    if let Some(f) = frame {
+                        current.frames.insert(h, f);
+                    }
+                }
+                Source::Painted(h) => {
+                    if current.painted.contains_key(&h) {
+                        continue;
+                    }
+                    let Some((scene, rect)) = nodes.get(h).and_then(|id| paint_node(doc, id, now)) else {
+                        continue;
+                    };
+                    // The same as before is kept, so that it isn't drawn again.
+                    let same = self
+                        .painted
+                        .get(&h)
+                        .is_some_and(|p| p.rect == rect && p.scene.primitives == scene.primitives);
+                    if !same {
+                        self.painted.insert(
+                            h,
+                            Painted {
+                                key: h,
+                                scene,
+                                rect,
+                                scale: doc.scale.pxf(1.0),
+                            },
+                        );
+                        moved.push(h);
+                    }
+                    current.painted.insert(h, self.painted[&h].clone());
+                }
+                Source::Picture(_) => {}
+            }
+        }
+        self.painted.retain(|h, _| current.painted.contains_key(h));
+        if !moved.is_empty() {
+            for (_, flat) in self.flats.values_mut() {
+                let shows = |s: &Source| matches!(*s, Source::Video(h) | Source::Painted(h) if moved.contains(&h));
+                if flat.textures.iter().flatten().any(shows) {
+                    flat.changed = true;
+                }
+            }
+            if self.spaces.sources().any(|s| matches!(*s, Source::Video(h) | Source::Painted(h) if moved.contains(&h))) {
+                self.spaces.touch();
+            }
+        }
+
         for (node, flat) in self.flats.values_mut() {
             if !std::mem::take(&mut flat.changed) {
                 continue;
             }
-            let Some(frame) = flat.frame() else {
+            let Some(frame) = flat.frame(&current) else {
                 continue;
             };
             if let Some(NodeKind::Canvas(c)) = doc.get_mut(*node).map(|n| &mut n.kind) {
@@ -114,7 +212,17 @@ impl Drawn {
                 doc.mark_shader_of(*node);
             }
         }
-        self.spaces.sync(doc);
+        self.spaces.sync(doc, &current);
+    }
+
+    /// The model in the glTF file `path`, read the first time it is asked for.
+    pub fn model(&mut self, path: PathBuf) -> Result<Arc<ModelData>, String> {
+        if let Some(m) = self.models.get(&path) {
+            return Ok(m.clone());
+        }
+        let m = ModelData::load(&path)?;
+        self.models.insert(path, m.clone());
+        Ok(m)
     }
 
     fn picture(&mut self, path: PathBuf) -> Result<Arc<Picture>, String> {
@@ -174,6 +282,8 @@ impl Nodes {
             kind::MESH => Some(space::Kind::Mesh),
             kind::CAMERA => Some(space::Kind::Camera),
             kind::LIGHT => Some(space::Kind::Light),
+            kind::MODEL => Some(space::Kind::Model),
+            kind::PANEL => Some(space::Kind::Panel),
             _ => None,
         };
         if let Some(thing) = thing {
@@ -314,19 +424,32 @@ impl Nodes {
                         let param = r.next()?;
                         let count = r.next()? as usize;
                         let values: Vec<f32> = (0..count).map(|_| r.number()).collect::<Result<_, _>>()?;
-                        self.set_param(drawn, node, param, &values)?;
+                        self.set_param(d, drawn, node, param, &values)?;
                     }
                     op::PARAM_TEXT => {
                         let node = r.next()?;
                         let param = r.next()?;
                         let index = r.next()?;
                         let src = r.string()?;
+                        if param == text_param::MODEL {
+                            let model = match src.is_empty() {
+                                true => None,
+                                false => Some(drawn.model(media.resolve(&src))?),
+                            };
+                            if let Some(Entry::Thing(id)) = self.entry(node) {
+                                drawn.spaces.set_model(id, model);
+                            }
+                            continue;
+                        }
                         let picture = match src.is_empty() {
                             true => None,
-                            false => Some(drawn.picture(media.resolve(&src))?),
+                            false => Some(Source::Picture(drawn.picture(media.resolve(&src))?)),
                         };
                         match self.entry(node) {
                             Some(Entry::Thing(id)) => drawn.spaces.set_picture(id, param, index, picture),
+                            Some(Entry::Node(_)) if param == text_param::EFFECT_TEXTURE => {
+                                drawn.spaces.set_effect_texture(node, index, picture);
+                            }
                             Some(Entry::Node(_)) => {
                                 if let Some((_, flat)) = drawn.flats.get_mut(&node)
                                     && let Some(slot) = flat.textures.get_mut(index as usize)
@@ -378,11 +501,15 @@ impl Nodes {
 }
 
 impl Nodes {
-    fn set_param(&mut self, drawn: &mut Drawn, node: u32, param: u32, values: &[f32]) -> Result<(), String> {
+    fn set_param(&mut self, d: &mut Document, drawn: &mut Drawn, node: u32, param: u32, values: &[f32]) -> Result<(), String> {
         match self.entry(node) {
             Some(Entry::Thing(id)) => drawn.spaces.set(id, param, values, &drawn.shaders),
+            Some(Entry::Node(id)) if param == param::OFFSCREEN => {
+                d.set_offscreen(id, values.first().is_some_and(|&v| v != 0.0));
+                Ok(())
+            }
             Some(Entry::Node(_)) => {
-                if drawn.spaces.set_world(node, param, values) {
+                if drawn.spaces.set_world(node, param, values, &drawn.shaders)? {
                     return Ok(());
                 }
                 let Some((_, flat)) = drawn.flats.get_mut(&node) else {
@@ -397,6 +524,14 @@ impl Nodes {
                     param::UNIFORM => {
                         if let (Some(shader), Some((&member, v))) = (&flat.shader, values.split_first()) {
                             shader.write_uniform(&mut flat.uniforms, member as usize, v)?;
+                            flat.changed = true;
+                        }
+                    }
+                    param::VIDEO_TEXTURE => {
+                        if let [index, handle] = *values
+                            && let Some(slot) = flat.textures.get_mut(index as usize)
+                        {
+                            *slot = Some(Source::Video(handle as u32));
                             flat.changed = true;
                         }
                     }

@@ -21,6 +21,8 @@ pub enum Stage {
     Flat,
     /// The surface of a thing in 3D: `surface`, `fragment` and `vertex`, all of them optional.
     Material,
+    /// What is done to all of a scene once it is drawn: `fn effect(uv: vec2f) -> vec4f`.
+    Effect,
 }
 
 impl Stage {
@@ -28,6 +30,7 @@ impl Stage {
         match code {
             0 => Some(Stage::Flat),
             1 => Some(Stage::Material),
+            2 => Some(Stage::Effect),
             _ => None,
         }
     }
@@ -37,6 +40,7 @@ impl Stage {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Hooks {
     pub shade: bool,
+    pub effect: bool,
     pub surface: bool,
     pub fragment: bool,
     pub vertex: bool,
@@ -100,6 +104,7 @@ impl Shader {
     pub fn compile(source: &str, path: &str, stage: Stage) -> Result<Self, String> {
         let hooks = Hooks {
             shade: declares(source, "shade"),
+            effect: declares(source, "effect"),
             surface: declares(source, "surface"),
             fragment: declares(source, "fragment"),
             vertex: declares(source, "vertex"),
@@ -117,6 +122,9 @@ impl Shader {
             return Err(format!(
                 "{path}: a <Shader> needs `fn shade(uv: vec2f) -> vec4f`, or a @fragment of its own"
             ));
+        }
+        if stage == Stage::Effect && !hooks.effect {
+            return Err(format!("{path}: an effect needs `fn effect(uv: vec2f) -> vec4f`"));
         }
 
         let mut uniforms = None;
@@ -385,8 +393,49 @@ fn added(stage: Stage, hooks: Hooks) -> String {
             s
         }
         Stage::Material => crate::space::material_code(hooks),
+        Stage::Effect => EFFECT.into(),
     }
 }
+
+/// What every effect of a scene has: `fs`, the scene so far, and the triangle that covers it.
+const EFFECT: &str = r#"
+// ---- FrameScript (effect) ----
+struct FrameScript {
+    /// The size of the scene, in its pixels.
+    resolution: vec2f,
+    /// Seconds into the clip.
+    time: f32,
+    /// The frame of the clip.
+    frame: f32,
+}
+@group(0) @binding(0) var<uniform> fs: FrameScript;
+@group(0) @binding(1) var fs_scene: texture_2d<f32>;
+@group(0) @binding(2) var fs_scene_sampler: sampler;
+
+/// The scene as it is before this effect, at `uv` ((0, 0) at the top left): light, premultiplied.
+fn scene(uv: vec2f) -> vec4f {
+    return textureSampleLevel(fs_scene, fs_scene_sampler, uv, 0.0);
+}
+
+struct FsVarying {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+}
+
+@vertex
+fn fs_vertex(@builtin(vertex_index) i: u32) -> FsVarying {
+    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+    var out: FsVarying;
+    out.position = vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
+    out.uv = uv;
+    return out;
+}
+
+@fragment
+fn fs_fragment(in: FsVarying) -> @location(0) vec4f {
+    return effect(in.uv);
+}
+"#;
 
 /// What every `<Shader>` has: `fs`, and the triangle that covers the box.
 const FLAT: &str = r#"
@@ -439,6 +488,55 @@ fn fs_fragment(in: FsVarying) -> @location(0) vec4f {
 /// The size of [`FLAT`]'s `FrameScript`.
 pub const FLAT_GLOBALS: u64 = 16;
 
+/// What a texture is given, as the composition keeps it: a picture, or a video (a node of its own,
+/// out of the document, by its handle) whose frame changes with the time.
+#[derive(Clone)]
+pub enum Source {
+    Picture(Arc<Picture>),
+    Video(u32),
+    /// A node of the document (by its handle) and what is in it, as they look: a `<Panel>`.
+    Painted(u32),
+}
+
+/// What a texture shows when it is drawn: a picture, or the frame a video shows then.
+#[derive(Clone)]
+pub enum Texture {
+    Picture(Arc<Picture>),
+    Video(Arc<anti_webui_core::video::VideoFrame>),
+    /// What a node of the document looks like (see [`Painted`]).
+    Painted(Painted),
+}
+
+/// A node of the document painted on its own (`anti_webui_core::paint::paint_node`).
+#[derive(Clone)]
+pub struct Painted {
+    /// The same for as long as the node is there: what is drawn of it is kept by this.
+    pub key: u32,
+    /// In the coordinates of the document. Another one when what it shows changes.
+    pub scene: Arc<anti_webui_core::scene::Scene>,
+    /// The box of the node, in them.
+    pub rect: anti_webui_core::geometry::RectI,
+    /// How many of their pixels make a pixel of the composition.
+    pub scale: f32,
+}
+
+/// What the sources a composition gave are now: the frames of videos, and how nodes look.
+pub trait Now {
+    fn frame(&self, video: u32) -> Option<Arc<anti_webui_core::video::VideoFrame>>;
+    fn painted(&self, node: u32) -> Option<Painted>;
+}
+
+impl Source {
+    /// What it shows now.
+    pub fn texture(&self, now: &impl Now) -> Option<Texture> {
+        match self {
+            Source::Picture(p) => Some(Texture::Picture(p.clone())),
+            Source::Video(handle) => now.frame(*handle).map(Texture::Video),
+            Source::Painted(handle) => now.painted(*handle).map(Texture::Painted),
+        }
+    }
+}
+
 /// A picture for a shader, decoded once.
 pub struct Picture {
     pub id: u64,
@@ -452,13 +550,18 @@ impl Picture {
     pub fn load(path: &std::path::Path) -> Result<Arc<Self>, String> {
         let image = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let rgba = image.to_rgba8();
+        Ok(Self::from_rgba(rgba.width(), rgba.height(), rgba.into_raw()))
+    }
+
+    /// `pixels` are RGBA, sRGB, not premultiplied, row after row.
+    pub fn from_rgba(width: u32, height: u32, pixels: Vec<u8>) -> Arc<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(1);
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             id: NEXT.fetch_add(1, Ordering::Relaxed),
-            width: rgba.width(),
-            height: rgba.height(),
-            pixels: rgba.into_raw(),
-        }))
+            width,
+            height,
+            pixels,
+        })
     }
 }
 

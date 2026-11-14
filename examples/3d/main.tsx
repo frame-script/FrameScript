@@ -2,12 +2,14 @@
 import { BEZIER_SMOOTH, Clip, seconds, Sequence, Shader, Timeline, useAnimation, useCurrentFrame, useVariable } from "framescript"
 import {
   AmbientLight,
+  bloom,
   Box,
   Cone,
   DirectionalLight,
   Group,
   HemisphereLight,
   orbit,
+  Panel,
   PerspectiveCamera,
   Plane,
   PointLight,
@@ -59,9 +61,10 @@ function Shapes() {
   useAnimation(async (ctx) => {
     await ctx.move(lift).to({ x: 0, y: 0.75, z: 0 }, seconds(1), BEZIER_SMOOTH)
   })
+  const camera = () => orbit({ radius: 7, angle: 20 + frame() * 0.3, height: 3 })
   return (
     <Scene3D style={FULL} background="#0b1020">
-      <PerspectiveCamera position={() => orbit({ radius: 7, angle: 20 + frame() * 0.3, height: 3 })} lookAt={[0, 0.5, 0]} fov={45} />
+      <PerspectiveCamera position={camera} lookAt={[0, 0.5, 0]} fov={45} />
       <HemisphereLight color="#bfdbfe" groundColor="#1e293b" intensity={0.4} />
       <DirectionalLight position={[4, 6, 3]} intensity={1.2} castShadow />
       <PointLight position={[-2, 1.5, 2]} color="#f472b6" intensity={3} range={6} />
@@ -79,16 +82,23 @@ function Shapes() {
       </Group>
       <Cone position={[0.5, 0.6, 2.2]} radius={0.5} height={1.2} material={{ color: "#22c55e" }} />
 
+      {/* 2D in the scene, turned to the camera wherever it is. */}
+      <Panel position={[0, 2.4, 0]} lookAt={camera} pixelsPerUnit={160}>
+        <div style={{ padding: "16px 28px", borderRadius: 20, background: "rgba(15, 23, 42, 0.85)", border: "2px solid #38bdf8" }}>
+          <text style={{ color: "#e2e8f0", fontSize: 40 }}>{() => `frame ${frame()}`}</text>
+        </div>
+      </Panel>
+
       <text style={{ position: "absolute", left: 64, top: 48, color: "#e2e8f0", fontSize: 48 }}>Scene3D</text>
     </Scene3D>
   )
 }
 
-/** Materials written in WGSL: a hologram and a flag. */
+/** Materials written in WGSL: a hologram, which glows, and a flag. */
 function Materials() {
   const frame = useCurrentFrame()
   return (
-    <Scene3D style={FULL} background="#020617">
+    <Scene3D style={FULL} background="#020617" effects={[bloom({ strength: 1, threshold: 0.75 })]}>
       <PerspectiveCamera position={[0, 0.5, 6]} lookAt={[0, 0, 0]} fov={40} />
       <AmbientLight intensity={0.15} />
       <DirectionalLight position={[-3, 4, 5]} intensity={1.2} />

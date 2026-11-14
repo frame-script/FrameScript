@@ -24,7 +24,7 @@
  */
 
 import { framesToSeconds, useCurrentFrame } from "./frame.ts"
-import { Host, type JSXNode, nodeChild, provide } from "./jsx.ts"
+import { existingNode, Host, type JSXNode, nodeChild, provide } from "./jsx.ts"
 import { type Accessor, createRenderEffect, createSignal, onCleanup, untrack, useContext } from "./reactive.ts"
 import {
   bindTextures,
@@ -32,16 +32,20 @@ import {
   bindUniforms,
   compileShader,
   linearColor,
+  STAGE_EFFECT,
   STAGE_MATERIAL,
   type Textures,
   type Uniforms,
 } from "./shader.ts"
 import { bindStyle, type StyleProp } from "./style.ts"
 import type { Vec3 } from "./animation.ts"
+import { isVideoTexture, type VideoTexture, videoTextureNode } from "./media.ts"
 import * as cmd from "./internal/commands.ts"
+import * as ops from "./internal/ops.ts"
 import { type Space, SpaceContext } from "./internal/space.ts"
 
 export type { UniformValue, Uniforms, Textures } from "./shader.ts"
+export type { VideoTexture } from "./media.ts"
 
 type MaybeAccessor<T> = T | Accessor<T>
 
@@ -83,8 +87,11 @@ export interface Material {
   emissive?: MaybeAccessor<string>
   emissiveIntensity?: MaybeAccessor<number>
   opacity?: MaybeAccessor<number>
-  /** A picture the color is multiplied by. */
-  map?: MaybeAccessor<string>
+  /**
+   * A picture the color is multiplied by, or a video (`{ video: "assets/clip.mp4" }`, placed and
+   * heard as a `<Video>` where the mesh is).
+   */
+  map?: MaybeAccessor<string> | VideoTexture
   /** Both of its sides are drawn. */
   doubleSided?: MaybeAccessor<boolean>
   /** Drawn after what is opaque, from the farthest, whatever its opacity. */
@@ -127,9 +134,32 @@ export interface Scene3DProps {
   toneMapping?: MaybeAccessor<"none" | "neutral" | "aces">
   /** What the light is multiplied by first. */
   exposure?: MaybeAccessor<number>
+  /**
+   * What is done to all of the scene once it is drawn, in order: `bloom()`, or WGSL of your own
+   * (`{ wgsl, uniforms, textures }`), which declares `fn effect(uv: vec2f) -> vec4f` and reads the
+   * scene so far with `scene(uv)`; both are light, premultiplied.
+   */
+  effects?: Effect[]
   /** Things in 3D, and what is laid over the scene. */
   children?: JSXNode
   ref?: (node: number) => void
+}
+
+/** What is done to all of a scene once it is drawn. */
+export type Effect = { wgsl: string; uniforms?: Uniforms; textures?: Textures } | { bloom: BloomOptions }
+
+export interface BloomOptions {
+  /** How much of the spread light is added. 0.5 if not given. */
+  strength?: number
+  /** How bright light has to be to spread, where 1 is white. 0.8 if not given. */
+  threshold?: number
+  /** How far it spreads, from 0 to 1. 0.5 if not given. */
+  radius?: number
+}
+
+/** Light that spreads around what is bright: glowing things glow. */
+export function bloom(options: BloomOptions = {}): Effect {
+  return { bloom: options }
 }
 
 const TONES = { none: 0, neutral: 1, aces: 2 } as const
@@ -151,11 +181,29 @@ export function Scene3D(props: Scene3DProps): JSXNode {
     createRenderEffect(() => {
       if (timed()) untrack(() => bindTime(node, frame))
     })
+    ;(props.effects ?? []).forEach((e, i) => {
+      if ("bloom" in e) {
+        const b = e.bloom
+        cmd.setParam(node, cmd.P.EFFECT, [i, 1, b.strength ?? 0.5, b.threshold ?? 0.8, b.radius ?? 0.5])
+        return
+      }
+      const info = compileShader(e.wgsl, STAGE_EFFECT)
+      if (info.usesTime) setTimed(true)
+      cmd.setParam(node, cmd.P.EFFECT, [i, 0, info.id])
+      bindUniforms(node, info, e.uniforms, cmd.P.EFFECT_UNIFORM, [i])
+      bindTextures(node, info, e.textures, (t) => i * 256 + t, cmd.TEXT_EFFECT_TEXTURE, cmd.P.EFFECT_VIDEO)
+    })
+    // What panels show, laid out in the box where they aren't seen.
+    const [held, setHeld] = createSignal<number[]>([])
     const space: Space = {
       group: (visible, children) => thing(cmd.KIND_GROUP, { visible, children }, () => {}),
       needTime: () => setTimed(true),
+      hold: (n) => {
+        setHeld((list) => [...list, n])
+        onCleanup(() => setHeld((list) => list.filter((x) => x !== n)))
+      },
     }
-    new Host(node).mount(provide(SpaceContext, space, props.children))
+    new Host(node).mount(provide(SpaceContext, space, [props.children, () => held().map(existingNode)]))
     props.ref?.(node)
     return node
   })
@@ -272,7 +320,9 @@ function mesh<T>(props: ShapeProps, size: MaybeAccessor<T>, shape: (size: T) => 
     bind(m.transparent, (v) => cmd.setParam(node, cmd.P.TRANSPARENT, [v ? 1 : 0]))
     bind(props.castShadow, (v) => cmd.setParam(node, cmd.P.CAST_SHADOW, [v ? 1 : 0]))
     bind(props.receiveShadow, (v) => cmd.setParam(node, cmd.P.RECEIVE_SHADOW, [v ? 1 : 0]))
-    bind(m.map, (src) => cmd.setParamText(node, cmd.TEXT_MAP, 0, src))
+    const map = m.map
+    if (isVideoTexture(map)) cmd.setParam(node, cmd.P.VIDEO_MAP, [videoTextureNode(map)])
+    else bind(map, (src) => cmd.setParamText(node, cmd.TEXT_MAP, 0, src))
     if (shader) {
       cmd.setParam(node, cmd.P.SHADER, [shader.id])
       bindUniforms(node, shader, m.uniforms)
@@ -295,6 +345,114 @@ function custom(g: GeometryData): number[] {
   push(g.uvs, 2, "uv numbers")
   if (g.indices) for (let i = 0; i < g.indices.length; i++) out.push(g.indices[i])
   return out
+}
+
+// --- Models -------------------------------------------------------------------------------------
+
+export interface ModelProps extends Object3DProps {
+  /** A glTF file (`.glb` or `.gltf`) of the project. */
+  src: string
+  /** Which of its animations plays, by name or index; none if not given. */
+  animation?: MaybeAccessor<string | number | null>
+  /**
+   * Where in the animation it is, in seconds. If not given, the time of the clip, times `speed`,
+   * over and over unless `loop` is false.
+   */
+  time?: MaybeAccessor<number>
+  speed?: number
+  loop?: boolean
+  castShadow?: MaybeAccessor<boolean>
+  receiveShadow?: MaybeAccessor<boolean>
+}
+
+export interface ModelInfo {
+  animations: { name: string; duration: number }[]
+}
+
+const models = new Map<string, ModelInfo>()
+
+/** What the glTF model in `src` has: its animations, by name, and how long they are. */
+export function modelInfo(src: string): ModelInfo {
+  let info = models.get(src)
+  if (!info) {
+    info = { animations: ops.modelInfo(src).animations.map(([name, duration]) => ({ name, duration })) }
+    models.set(src, info)
+  }
+  return info
+}
+
+/**
+ * A glTF model: its nodes, meshes, materials and pictures, posed by one of its animations (skins
+ * included). What it shows at a frame depends on the time alone.
+ */
+export function Model(props: ModelProps): JSXNode {
+  const info = modelInfo(props.src)
+  const frame = useCurrentFrame()
+  const indexOf = (a: string | number | null | undefined): number => {
+    if (a === null || a === undefined) return -1
+    const i = typeof a === "number" ? a : info.animations.findIndex((x) => x.name === a)
+    if (i < 0 || i >= info.animations.length) {
+      const names = info.animations.map((x) => x.name)
+      throw new Error(
+        `${props.src} has no animation ${JSON.stringify(a)}` +
+          (names.length ? ` (it has ${names.join(", ")})` : " (it has none)"),
+      )
+    }
+    return i
+  }
+  return thing(cmd.KIND_MODEL, props, (node) => {
+    cmd.setParamText(node, cmd.TEXT_MODEL, 0, props.src)
+    bind(props.castShadow, (v) => cmd.setParam(node, cmd.P.CAST_SHADOW, [v ? 1 : 0]))
+    bind(props.receiveShadow, (v) => cmd.setParam(node, cmd.P.RECEIVE_SHADOW, [v ? 1 : 0]))
+    if (props.animation === undefined) return
+    const animation = typeof props.animation === "function"
+      ? () => indexOf((props.animation as Accessor<string | number | null>)())
+      : indexOf(props.animation)
+    bind(animation, (i) => cmd.setParam(node, cmd.P.ANIMATION, i < 0 ? [] : [i]))
+    const time = props.time ?? (() => {
+      const i = read(animation)
+      const t = framesToSeconds(frame()) * (props.speed ?? 1)
+      const d = i < 0 ? 0 : info.animations[i].duration
+      return props.loop === false || d <= 0 ? t : ((t % d) + d) % d
+    })
+    bind(time, (t) => cmd.setParam(node, cmd.P.ANIMATION_TIME, [t]))
+  })
+}
+
+// --- Panels -------------------------------------------------------------------------------------
+
+export interface PanelProps extends Object3DProps {
+  /** Of the box the 2D is in, which is as big as it is unless this says. */
+  style?: StyleProp
+  /** How many of its pixels make a unit of the scene. 100 if not given. */
+  pixelsPerUnit?: MaybeAccessor<number>
+  /** Light falls on it. If not, it shows its colors as they are, as on the screen. */
+  lit?: MaybeAccessor<boolean>
+  doubleSided?: MaybeAccessor<boolean>
+  /** What is shown on it: anything of 2D (`<div>`, `<text>`, `<img>`, `<Video>`, `<Shader>`…). */
+  children?: JSXNode
+}
+
+/**
+ * 2D in a scene: what is in it is laid out as anywhere else, and shown on a rectangle in the XY plane
+ * facing +Z, its middle at the panel's position, as many units across as its pixels say.
+ */
+export function Panel(props: PanelProps): JSXNode {
+  const space = useContext(SpaceContext)
+  return thing(cmd.KIND_PANEL, { ...props, children: undefined }, (node) => {
+    // Laid out in the scene's box, out of the way of the rest, but seen only on the panel.
+    const box = cmd.createNode(cmd.KIND_ELEMENT)
+    onCleanup(() => cmd.removeNode(box))
+    cmd.setParam(box, cmd.P.OFFSCREEN, [1])
+    bindStyle(box, { position: "absolute", left: 0, top: 0, display: "flex", flexDirection: "column" })
+    if (props.style) bindStyle(box, props.style)
+    new Host(box).mount(props.children)
+    space!.hold(box)
+    cmd.setParam(node, cmd.P.PANEL, [box])
+    bind(props.pixelsPerUnit, (v) => cmd.setParam(node, cmd.P.PIXELS_PER_UNIT, [v]))
+    bind(props.lit, (v) => cmd.setParam(node, cmd.P.LIT, [v ? 1 : 0]))
+    bind(props.doubleSided, (v) => cmd.setParam(node, cmd.P.DOUBLE_SIDED, [v ? 1 : 0]))
+  })
 }
 
 // --- Cameras ------------------------------------------------------------------------------------

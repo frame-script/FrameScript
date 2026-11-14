@@ -154,6 +154,11 @@ function mounter(mount: (host: Host) => Part[]): JSXNode {
   return { [MOUNT]: mount } as unknown as JSXNode
 }
 
+/** A child that is a node made elsewhere, which keeps it: it is only placed here. */
+export function existingNode(node: number): JSXNode {
+  return mounter(() => [node])
+}
+
 /**
  * A child that is one node, which `make` makes (with its children) when the child is made: for
  * components that make nodes of kinds JSX has no element for.

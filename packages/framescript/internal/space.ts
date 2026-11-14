@@ -11,6 +11,11 @@ export interface Space {
   group(visible: Accessor<boolean>, children: JSXNode): JSXNode
   /** Something in the scene changes with the time (its WGSL reads `fs.time`). */
   needTime(): void
+  /**
+   * Lays `node` (of the document) out in the scene's box, where it isn't seen, until the current
+   * owner goes: what a `<Panel>` shows.
+   */
+  hold(node: number): void
 }
 
 export const SpaceContext = createContext<Space | null>(null, "space")

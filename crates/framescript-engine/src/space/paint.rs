@@ -9,7 +9,7 @@
 use super::mesh::{MeshData, STRIDE};
 use super::{ToneMapping, View};
 use crate::gpu::{self, Growing, Pictures};
-use crate::shader::{Shader, Stage};
+use crate::shader::{Shader, Stage, Texture};
 use anti_webui_wgpu::canvas::{GpuFrame, GpuInit, GpuPaint};
 use anti_webui_wgpu::wgpu;
 use bytemuck::{Pod, Zeroable};
@@ -29,6 +29,8 @@ impl PartialEq for SpaceProps {
 }
 
 const SAMPLES: u32 = 4;
+/// Marks the key of the map of a video, which is its stream.
+const VIDEO_MAP: u64 = 1 << 63;
 /// How many texels a shadow map is across.
 const SHADOW_SIZE: u32 = 2048;
 /// How many lights can cast shadows at once.
@@ -96,7 +98,6 @@ struct Targets {
     light: wgpu::TextureView,
     resolved: wgpu::TextureView,
     depth: wgpu::TextureView,
-    finish: wgpu::BindGroup,
 }
 
 struct Mesh {
@@ -155,6 +156,7 @@ pub struct SpacePaint {
     /// What is bound in its place while it is drawn.
     no_shadows: ShadowMap,
     shadow_sampler: wgpu::Sampler,
+    effects: super::effects::Effects,
 }
 
 impl GpuPaint for SpacePaint {
@@ -277,6 +279,7 @@ impl GpuPaint for SpacePaint {
             shadow_matrices: Growing::new(device, "scene3d shadow matrices", wgpu::BufferUsages::STORAGE),
             shadow_map: None,
             no_shadows: make_shadow_map(device, 1, 1),
+            effects: super::effects::Effects::new(device),
             shadow_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("scene3d shadows"),
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -384,7 +387,7 @@ impl GpuPaint for SpacePaint {
                     emissive: m.emissive,
                     metalness: m.metalness,
                     roughness: m.roughness,
-                    flags: m.receive_shadow as u32,
+                    flags: m.receive_shadow as u32 | (m.unlit as u32) << 1 | (m.premultiplied as u32) << 2,
                     _pad: [0.0; 2],
                 }
             })
@@ -506,10 +509,10 @@ impl GpuPaint for SpacePaint {
             let user = shader.uniforms.is_some() || !shader.textures.is_empty();
             let user = match user {
                 true => {
-                    let views: Vec<wgpu::TextureView> = m
+                    let views: Vec<wgpu::TextureView> = o
                         .textures
                         .iter()
-                        .map(|t| self.pictures.view(device, queue, t.as_ref()).clone())
+                        .map(|t| self.pictures.view(device, queue, frame.encoder, t.as_ref()).clone())
                         .collect();
                     let views: Vec<&wgpu::TextureView> = views.iter().collect();
                     let layout = &self.materials[&shader.id].user;
@@ -517,9 +520,15 @@ impl GpuPaint for SpacePaint {
                 }
                 false => None,
             };
-            let map = m.map.as_ref().map_or(0, |p| p.id);
-            if !self.maps.contains_key(&map) {
-                let texture = self.pictures.view(device, queue, m.map.as_ref()).clone();
+            // Bound once for a picture; for a video, again each time, its texture can be another.
+            let map = match &o.map {
+                None => 0,
+                Some(Texture::Picture(p)) => p.id,
+                Some(Texture::Video(f)) => VIDEO_MAP | f.stream,
+                Some(Texture::Painted(p)) => VIDEO_MAP | 1 << 62 | u64::from(p.key),
+            };
+            if !self.maps.contains_key(&map) || map & VIDEO_MAP != 0 {
+                let texture = self.pictures.view(device, queue, frame.encoder, o.map.as_ref()).clone();
                 let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("scene3d map"),
                     layout: &self.map_layout,
@@ -547,6 +556,15 @@ impl GpuPaint for SpacePaint {
                 offset: offsets[i],
             });
         }
+        // Its layout is that of an empty `@group(1)`, even with nothing in the scene.
+        self.pipeline(
+            device,
+            &STANDARD.clone(),
+            Variant::Color {
+                see_through: false,
+                both_sides: false,
+            },
+        );
         let empty = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene3d nothing"),
             layout: &self.materials[&STANDARD.id].user,
@@ -617,9 +635,30 @@ impl GpuPaint for SpacePaint {
             }
         }
 
+        let shown = self
+            .effects
+            .apply(
+                device,
+                queue,
+                frame.encoder,
+                &mut self.pictures,
+                &targets.resolved,
+                frame.size,
+                &view.effects,
+                view.time,
+            )
+            .unwrap_or_else(|| targets.resolved.clone());
+        let finish = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene3d finish"),
+            layout: &self.finish_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&shown),
+            }],
+        });
         let mut pass = frame.begin_pass(None);
         pass.set_pipeline(&self.finish_pipeline);
-        pass.set_bind_group(0, &targets.finish, &[]);
+        pass.set_bind_group(0, &finish, &[]);
         pass.draw(0..3, 0..1);
     }
 }
@@ -764,7 +803,7 @@ impl SpacePaint {
         self.materials.retain(|_, m| m.of.strong_count() > 0);
         self.pictures.retain();
         let pictures = &self.pictures;
-        self.maps.retain(|&id, _| id == 0 || pictures.has(id));
+        self.maps.retain(|&id, _| id == 0 || (id & VIDEO_MAP == 0 && pictures.has(id)));
     }
 
     fn mesh(&mut self, device: &wgpu::Device, mesh: &Arc<MeshData>) {
@@ -917,23 +956,12 @@ impl SpacePaint {
             attachment | wgpu::TextureUsages::TEXTURE_BINDING,
         );
         let depth = texture("scene3d depth", DEPTH_FORMAT, SAMPLES, attachment);
-        let finish = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("scene3d finish"),
-            layout: &self.finish_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&resolved),
-                },
-            ],
-        });
         let _ = self.format;
         Targets {
             size,
             light,
             resolved,
             depth,
-            finish,
         }
     }
 }

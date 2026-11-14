@@ -60,7 +60,7 @@ export {
 export * from "./easing.ts"
 export { type ColorHex, mixColor, parseColor } from "./color.ts"
 export { FillFrame } from "./layout.ts"
-export { Video, type VideoInfo, videoInfo, type VideoProps } from "./media.ts"
+export { Video, type VideoInfo, videoInfo, type VideoProps, type VideoTexture } from "./media.ts"
 export {
   compileShader,
   Shader,

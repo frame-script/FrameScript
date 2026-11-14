@@ -18,6 +18,8 @@ export const KIND_GROUP = 6
 export const KIND_MESH = 7
 export const KIND_CAMERA = 8
 export const KIND_LIGHT = 9
+export const KIND_MODEL = 10
+export const KIND_PANEL = 11
 
 /** The node the composition makes for the frame itself. */
 export const STAGE = 0
@@ -57,6 +59,14 @@ export const P = {
   UNIFORM: 19,
   CAST_SHADOW: 20,
   RECEIVE_SHADOW: 21,
+  ANIMATION: 22,
+  ANIMATION_TIME: 23,
+  VIDEO_MAP: 24,
+  VIDEO_TEXTURE: 25,
+  PANEL: 26,
+  PIXELS_PER_UNIT: 27,
+  LIT: 28,
+  OFFSCREEN: 29,
   FOV: 30,
   NEAR: 31,
   FAR: 32,
@@ -73,11 +83,17 @@ export const P = {
   TONE_MAPPING: 51,
   EXPOSURE: 52,
   TIME: 53,
+  EFFECT: 54,
+  EFFECT_UNIFORM: 55,
+  EFFECT_COUNT: 56,
+  EFFECT_VIDEO: 57,
 } as const
 
 /** The parameters given as a file (`crate::space::text_param`). */
 export const TEXT_MAP = 0
 export const TEXT_TEXTURE = 1
+export const TEXT_MODEL = 2
+export const TEXT_EFFECT_TEXTURE = 3
 
 export const UNIT_PX = 0
 export const UNIT_PERCENT = 1

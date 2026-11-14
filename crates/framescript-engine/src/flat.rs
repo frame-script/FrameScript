@@ -4,7 +4,7 @@
 //! [`FlatFrame`] whenever it changes; [`FlatPaint`] draws that, on whatever device draws the scene.
 
 use crate::gpu::{self, Growing, Pictures};
-use crate::shader::{FLAT_GLOBALS, Picture, Shader};
+use crate::shader::{FLAT_GLOBALS, Now, Shader, Source, Texture};
 use anti_webui_wgpu::canvas::{GpuFrame, GpuInit, GpuPaint};
 use anti_webui_wgpu::wgpu;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ pub struct FlatBox {
     pub shader: Option<Arc<Shader>>,
     pub uniforms: Vec<u8>,
     /// By the order of the shader's textures.
-    pub textures: Vec<Option<Arc<Picture>>>,
+    pub textures: Vec<Option<Source>>,
     /// Seconds and the frame, of the clip.
     pub time: [f32; 2],
     /// Whether it changed since it was last handed to the scene.
@@ -34,11 +34,11 @@ impl FlatBox {
     }
 
     /// What the scene is to show, if there is anything.
-    pub fn frame(&self) -> Option<FlatFrame> {
+    pub fn frame(&self, now: &impl Now) -> Option<FlatFrame> {
         Some(FlatFrame {
             shader: self.shader.clone()?,
             uniforms: self.uniforms.clone(),
-            textures: self.textures.clone(),
+            textures: self.textures.iter().map(|t| t.as_ref()?.texture(now)).collect(),
             time: self.time,
         })
     }
@@ -48,7 +48,7 @@ impl FlatBox {
 pub struct FlatFrame {
     pub shader: Arc<Shader>,
     pub uniforms: Vec<u8>,
-    pub textures: Vec<Option<Arc<Picture>>>,
+    pub textures: Vec<Option<Texture>>,
     pub time: [f32; 2],
 }
 
@@ -137,7 +137,7 @@ impl GpuPaint for FlatPaint {
         let views: Vec<wgpu::TextureView> = f
             .textures
             .iter()
-            .map(|t| self.pictures.view(device, frame.queue, t.as_ref()).clone())
+            .map(|t| self.pictures.view(device, frame.queue, frame.encoder, t.as_ref()).clone())
             .collect();
         let views: Vec<&wgpu::TextureView> = views.iter().collect();
         let p = self.pipeline.as_ref().expect("just made");

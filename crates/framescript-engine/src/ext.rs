@@ -153,6 +153,25 @@ fn op_fs_shader(
     })
 }
 
+#[derive(Serialize)]
+struct ModelInfo {
+    /// Per animation: its name and how long it is, in seconds.
+    animations: Vec<(String, f32)>,
+}
+
+/// What the glTF model in `src` has. Reading it keeps it for when it is shown.
+#[op2]
+#[serde]
+fn op_fs_model_info(state: &mut OpState, #[string] src: String) -> Result<ModelInfo, JsErrorBox> {
+    let bridge = state.borrow::<SharedBridge>();
+    let mut bridge = bridge.borrow_mut();
+    let path = bridge.media.resolve(&src);
+    let model = bridge.drawn.model(path).map_err(JsErrorBox::generic)?;
+    Ok(ModelInfo {
+        animations: model.animations.iter().map(|a| (a.name.clone(), a.duration)).collect(),
+    })
+}
+
 /// The property table: per property its name, kind and, for choices, the names of the choices.
 #[op2]
 #[serde]
@@ -178,6 +197,7 @@ extension!(
         op_fs_video_info,
         op_fs_audio_info,
         op_fs_shader,
+        op_fs_model_info,
     ],
     options = { bridge: SharedBridge },
     state = |state, options| {

@@ -185,6 +185,26 @@ that are `active` is used), and `AmbientLight`, `HemisphereLight`, `DirectionalL
 and `SpotLight`. Without a camera the scene is seen from `[0, 0, 5]`; without lights, by a soft
 default light. A `<Clip>` in a scene is a group that shows while the clip does.
 
+`<Model src="assets/Fox.glb" animation="Run" scale={0.02} />` shows a glTF model (`.glb` or
+`.gltf`): its nodes, meshes, materials (base color and its picture, metalness, roughness, emissive)
+and skins, posed by one of its animations at the time of the clip (or at `time`, in seconds; it
+loops unless `loop={false}`). `modelInfo(src)` says what animations it has. A frame of a model
+depends on its time alone, skins included (they are bent on the CPU). `examples/model` has a fox
+(`./get-assets.sh` fetches it).
+
+A video can be a texture: `material={{ map: { video: "assets/clip.mp4", trimStart: 2 } }}`, or one
+of the `textures` of a shader (and of a `<Shader>`). It is placed and heard as a `<Video>` where it
+is, and the frame it shows is decoded and waited for as theirs are.
+
+`<Panel>` puts 2D in a scene: what is in it is laid out as anywhere else (`<div>`, `<text>`,
+`<img>`, `<Video>`…) and shown on a rectangle facing +Z, `pixelsPerUnit` (100) of its pixels to a
+unit, with its colors as they are unless it is `lit`. `lookAt={camera}` keeps it turned to the
+camera.
+
+`effects` are done to all of a scene once it is drawn, in order: `bloom({ strength, threshold,
+radius })`, and WGSL of your own (`{ wgsl, uniforms, textures }`) that declares
+`fn effect(uv: vec2f) -> vec4f` and reads the scene so far with `scene(uv)`.
+
 A `DirectionalLight` or a `SpotLight` with `castShadow` casts shadows (up to four lights of a
 scene); every mesh casts and receives them unless it says `castShadow={false}` or
 `receiveShadow={false}`. A directional light's shadow map covers what casts shadows, wherever it

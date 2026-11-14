@@ -8,13 +8,16 @@
 //!
 //! 3D の物は文書とは別の木になる。変わったシーンだけ、行列を計算したスナップショットを箱に渡す。
 
+pub mod effects;
 pub mod mesh;
+pub mod model;
 pub mod paint;
 
-use crate::shader::{Hooks, Picture, Shader};
+use crate::shader::{Hooks, Now, Shader, Source, Texture};
 use anti_webui_core::tree::{Document, NodeId, NodeKind};
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use mesh::MeshData;
+use model::ModelData;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -44,6 +47,22 @@ pub mod param {
     /// Of a mesh (1 if not given) and of a light (0 if not given).
     pub const CAST_SHADOW: u32 = 20;
     pub const RECEIVE_SHADOW: u32 = 21;
+    /// Of a model: the index of its animation (none for none), and the time in it, in seconds.
+    pub const ANIMATION: u32 = 22;
+    pub const ANIMATION_TIME: u32 = 23;
+    /// The handle of a video node whose frames are the map.
+    pub const VIDEO_MAP: u32 = 24;
+    /// The index of a texture of the shader, then the handle of a video node whose frames it is.
+    /// (Also of a `<Shader>`.)
+    pub const VIDEO_TEXTURE: u32 = 25;
+    /// Of a panel: the handle of the node it shows, how many of its pixels make a unit, and
+    /// whether light falls on it (it shows its colors as they are if not).
+    pub const PANEL: u32 = 26;
+    pub const PIXELS_PER_UNIT: u32 = 27;
+    pub const LIT: u32 = 28;
+    /// Of a node of the document: laid out, but shown only where it is painted on its own (what a
+    /// panel shows). 1 or 0.
+    pub const OFFSCREEN: u32 = 29;
     // Cameras.
     pub const FOV: u32 = 30;
     pub const NEAR: u32 = 31;
@@ -64,6 +83,16 @@ pub mod param {
     pub const EXPOSURE: u32 = 52;
     /// Seconds and the frame, of the clip.
     pub const TIME: u32 = 53;
+    /// The index of an effect of the scene, then what it is: 0 and the id of a shader, or 1 and
+    /// the strength, the threshold and the radius of a bloom.
+    pub const EFFECT: u32 = 54;
+    /// The index of an effect, the number of one of its uniforms, then its numbers.
+    pub const EFFECT_UNIFORM: u32 = 55;
+    /// How many effects the scene has: those after are gone.
+    pub const EFFECT_COUNT: u32 = 56;
+    /// The index of a texture of an effect (as [`super::text_param::EFFECT_TEXTURE`] says), then
+    /// the handle of a video node whose frames it is.
+    pub const EFFECT_VIDEO: u32 = 57;
 }
 
 /// The parameters given as text, with [`crate::commands::op::PARAM_TEXT`]: an index, then a file.
@@ -72,6 +101,10 @@ pub mod text_param {
     pub const MAP: u32 = 0;
     /// A texture of the shader, by its index.
     pub const TEXTURE: u32 = 1;
+    /// The glTF file of a model.
+    pub const MODEL: u32 = 2;
+    /// A texture of an effect of a scene: the index is the effect's times 256 and the texture's.
+    pub const EFFECT_TEXTURE: u32 = 3;
 }
 
 /// What a thing is made as (`op_fs_create`).
@@ -81,6 +114,8 @@ pub enum Kind {
     Mesh,
     Camera,
     Light,
+    Model,
+    Panel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,6 +148,11 @@ pub struct Thing {
     material: Material,
     camera: Camera,
     light: Light,
+    model: Option<Arc<ModelData>>,
+    animation: Option<usize>,
+    animation_time: f32,
+    panel: Option<u32>,
+    pixels_per_unit: f32,
 }
 
 #[derive(Clone)]
@@ -126,12 +166,16 @@ pub struct Material {
     pub emissive: [f32; 3],
     pub double_sided: bool,
     pub transparent: bool,
+    /// Its colors as they are, without light.
+    pub unlit: bool,
+    /// Its map is premultiplied, as AntiWebUI paints.
+    pub premultiplied: bool,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
-    pub map: Option<Arc<Picture>>,
+    pub map: Option<Source>,
     pub shader: Option<Arc<Shader>>,
     pub uniforms: Arc<Vec<u8>>,
-    pub textures: Arc<Vec<Option<Arc<Picture>>>>,
+    pub textures: Arc<Vec<Option<Source>>>,
 }
 
 impl Default for Material {
@@ -144,6 +188,8 @@ impl Default for Material {
             emissive: [0.0; 3],
             double_sided: false,
             transparent: false,
+            unlit: false,
+            premultiplied: false,
             cast_shadow: true,
             receive_shadow: true,
             map: None,
@@ -205,6 +251,11 @@ impl Thing {
                 ground: Vec3::splat(0.25),
                 cast_shadow: false,
             },
+            model: None,
+            animation: None,
+            animation_time: 0.0,
+            panel: None,
+            pixels_per_unit: 100.0,
         }
     }
 }
@@ -217,10 +268,32 @@ struct World {
     tone: ToneMapping,
     exposure: f32,
     time: [f32; 2],
+    effects: Vec<Effect>,
+}
+
+/// What is done to all of a scene once it is drawn, in order.
+#[derive(Clone)]
+pub enum Effect {
+    Shader {
+        shader: Arc<Shader>,
+        uniforms: Vec<u8>,
+        textures: Vec<Option<Source>>,
+    },
+    Bloom(Bloom),
+}
+
+/// Light that spreads around what is bright.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bloom {
+    /// How much of the spread light is added.
+    pub strength: f32,
+    /// How bright light has to be to spread (after tone mapping, where 1 is white).
+    pub threshold: f32,
+    /// How far it spreads, from 0 to 1.
+    pub radius: f32,
 }
 
 /// All things of a composition, and its scenes.
-#[derive(Default)]
 pub struct Spaces {
     things: Vec<Option<Thing>>,
     free: Vec<u32>,
@@ -228,7 +301,22 @@ pub struct Spaces {
     worlds: HashMap<u32, World>,
     /// The shapes made so far, by what they were made from.
     shapes: HashMap<Vec<u32>, Weak<MeshData>>,
+    /// A square of 1 by 1, which panels are scaled from.
+    unit_plane: Arc<MeshData>,
     changed: bool,
+}
+
+impl Default for Spaces {
+    fn default() -> Self {
+        Self {
+            things: Vec::new(),
+            free: Vec::new(),
+            worlds: HashMap::new(),
+            shapes: HashMap::new(),
+            unit_plane: mesh::make(mesh::shape::PLANE, &[1.0, 1.0]).expect("a plane can be made"),
+            changed: false,
+        }
+    }
 }
 
 impl Spaces {
@@ -266,6 +354,7 @@ impl Spaces {
                 tone: ToneMapping::Neutral,
                 exposure: 1.0,
                 time: [0.0; 2],
+                effects: Vec::new(),
             },
         );
         self.changed = true;
@@ -294,9 +383,9 @@ impl Spaces {
     }
 
     /// Sets a parameter of the scene `handle`. Says whether it is one of a scene.
-    pub fn set_world(&mut self, handle: u32, param: u32, v: &[f32]) -> bool {
+    pub fn set_world(&mut self, handle: u32, param: u32, v: &[f32], shaders: &[Arc<Shader>]) -> Result<bool, String> {
         let Some(w) = self.worlds.get_mut(&handle) else {
-            return false;
+            return Ok(false);
         };
         match param {
             param::BACKGROUND => w.background = array(v, [0.0; 4]),
@@ -309,10 +398,64 @@ impl Spaces {
             }
             param::EXPOSURE => w.exposure = v.first().copied().unwrap_or(1.0),
             param::TIME => w.time = array(v, [0.0; 2]),
-            _ => return false,
+            param::EFFECT => {
+                let (index, kind) = (v.first().copied().unwrap_or(0.0) as usize, v.get(1).copied().unwrap_or(0.0));
+                let effect = match kind as u32 {
+                    0 => {
+                        let shader = v.get(2).and_then(|&i| shaders.get(i as usize)).ok_or("no such shader")?;
+                        Effect::Shader {
+                            uniforms: shader.blank_uniforms(),
+                            textures: vec![None; shader.textures.len()],
+                            shader: shader.clone(),
+                        }
+                    }
+                    _ => {
+                        let [strength, threshold, radius] = array(v.get(2..).unwrap_or(&[]), [0.5, 0.8, 0.5]);
+                        Effect::Bloom(Bloom {
+                            strength,
+                            threshold,
+                            radius: radius.clamp(0.0, 1.0),
+                        })
+                    }
+                };
+                if index >= w.effects.len() {
+                    w.effects.resize(index + 1, effect.clone());
+                }
+                w.effects[index] = effect;
+            }
+            param::EFFECT_UNIFORM => {
+                if let [index, member, ref values @ ..] = *v
+                    && let Some(Effect::Shader { shader, uniforms, .. }) = w.effects.get_mut(index as usize)
+                {
+                    shader.write_uniform(uniforms, member as usize, values)?;
+                }
+            }
+            param::EFFECT_COUNT => w.effects.truncate(v.first().copied().unwrap_or(0.0) as usize),
+            param::EFFECT_VIDEO => {
+                if let [index, video] = *v {
+                    let index = index as u32;
+                    if let Some(Effect::Shader { textures, .. }) = w.effects.get_mut((index >> 8) as usize)
+                        && let Some(slot) = textures.get_mut((index & 255) as usize)
+                    {
+                        *slot = Some(Source::Video(video as u32));
+                    }
+                }
+            }
+            _ => return Ok(false),
         }
         self.changed = true;
-        true
+        Ok(true)
+    }
+
+    /// Gives the texture `index & 255` of the effect `index >> 8` of the scene `handle` a picture.
+    pub fn set_effect_texture(&mut self, handle: u32, index: u32, source: Option<Source>) {
+        if let Some(w) = self.worlds.get_mut(&handle)
+            && let Some(Effect::Shader { textures, .. }) = w.effects.get_mut((index >> 8) as usize)
+            && let Some(slot) = textures.get_mut((index & 255) as usize)
+        {
+            *slot = source;
+            self.changed = true;
+        }
     }
 
     /// Sets a parameter of the thing `id`.
@@ -382,6 +525,29 @@ impl Spaces {
                     shader.write_uniform(Arc::make_mut(&mut m.uniforms).as_mut_slice(), member as usize, values)?;
                 }
             }
+            param::ANIMATION => t.animation = v.first().filter(|&&a| a >= 0.0).map(|&a| a as usize),
+            param::ANIMATION_TIME => t.animation_time = one(0.0),
+            param::VIDEO_MAP => m.map = v.first().map(|&h| Source::Video(h as u32)),
+            param::VIDEO_TEXTURE => {
+                if let [index, handle] = *v
+                    && let Some(slot) = Arc::make_mut(&mut m.textures).get_mut(index as usize)
+                {
+                    *slot = Some(Source::Video(handle as u32));
+                }
+            }
+            param::PANEL => {
+                t.panel = v.first().map(|&h| h as u32);
+                if t.kind == Kind::Panel {
+                    m.map = t.panel.map(Source::Painted);
+                    m.unlit = true;
+                    m.premultiplied = true;
+                    m.transparent = true;
+                    m.cast_shadow = false;
+                    m.receive_shadow = false;
+                }
+            }
+            param::PIXELS_PER_UNIT => t.pixels_per_unit = one(100.0).max(1e-3),
+            param::LIT => m.unlit = one(0.0) == 0.0,
             param::FOV => t.camera.fov = one(50.0),
             param::NEAR => t.camera.near = one(0.1),
             param::FAR => t.camera.far = one(1000.0),
@@ -407,8 +573,28 @@ impl Spaces {
         Ok(())
     }
 
+    /// What the materials of things and the effects of scenes show that changes by itself: videos
+    /// and panels.
+    pub fn sources(&self) -> impl Iterator<Item = &Source> + '_ {
+        let things = self.things.iter().flatten().flat_map(|t| {
+            let m = &t.material;
+            m.map.iter().chain(m.textures.iter().flatten())
+        });
+        let effects = self.worlds.values().flat_map(|w| &w.effects).flat_map(|e| match e {
+            Effect::Shader { textures, .. } => textures.iter().flatten(),
+            Effect::Bloom(_) => [].iter().flatten(),
+        });
+        things.chain(effects)
+    }
+
+    /// Has the scenes handed again at the next [`Spaces::sync`]: a video or a panel in them shows
+    /// something else.
+    pub fn touch(&mut self) {
+        self.changed = true;
+    }
+
     /// Sets a picture of the thing `id`.
-    pub fn set_picture(&mut self, id: u32, param: u32, index: u32, picture: Option<Arc<Picture>>) {
+    pub fn set_picture(&mut self, id: u32, param: u32, index: u32, picture: Option<Source>) {
         let Some(Some(t)) = self.things.get_mut(id as usize) else {
             return;
         };
@@ -425,13 +611,21 @@ impl Spaces {
         }
     }
 
+    /// Gives the thing `id` the model it shows.
+    pub fn set_model(&mut self, id: u32, model: Option<Arc<ModelData>>) {
+        if let Some(Some(t)) = self.things.get_mut(id as usize) {
+            t.model = model;
+            self.changed = true;
+        }
+    }
+
     /// Hands every scene to its box, if anything changed since the last time.
-    pub fn sync(&mut self, doc: &mut Document) {
+    pub fn sync(&mut self, doc: &mut Document, now: &impl Now) {
         if !std::mem::take(&mut self.changed) {
             return;
         }
         for w in self.worlds.values() {
-            let view = self.view(w);
+            let view = self.view(w, now);
             if let Some(NodeKind::Canvas(c)) = doc.get_mut(w.node).map(|n| &mut n.kind) {
                 c.set_paint(anti_webui_wgpu::canvas::portable::<paint::SpacePaint>(paint::SpaceProps(
                     Arc::new(view),
@@ -441,7 +635,7 @@ impl Spaces {
         }
     }
 
-    fn view(&self, w: &World) -> View {
+    fn view(&self, w: &World, now: &impl Now) -> View {
         let mut v = View {
             background: w.background,
             tone: w.tone,
@@ -453,10 +647,26 @@ impl Spaces {
             sky: Vec3::ZERO,
             ground: Vec3::ZERO,
             objects: Vec::new(),
+            effects: w
+                .effects
+                .iter()
+                .map(|e| match e {
+                    Effect::Shader {
+                        shader,
+                        uniforms,
+                        textures,
+                    } => EffectView::Shader {
+                        shader: shader.clone(),
+                        uniforms: uniforms.clone(),
+                        textures: textures.iter().map(|t| t.as_ref()?.texture(now)).collect(),
+                    },
+                    Effect::Bloom(b) => EffectView::Bloom(*b),
+                })
+                .collect(),
         };
         let mut lit = false;
         for &root in &w.roots {
-            self.collect(root, Mat4::IDENTITY, &mut v, &mut lit);
+            self.collect(root, Mat4::IDENTITY, &mut v, &mut lit, now);
         }
         if !lit {
             // Something to see by when nothing is said.
@@ -476,7 +686,14 @@ impl Spaces {
         v
     }
 
-    fn collect(&self, id: u32, parent: Mat4, v: &mut View, lit: &mut bool) {
+    fn collect(
+        &self,
+        id: u32,
+        parent: Mat4,
+        v: &mut View,
+        lit: &mut bool,
+        now: &impl Now,
+    ) {
         let Some(Some(t)) = self.things.get(id as usize) else {
             return;
         };
@@ -489,11 +706,28 @@ impl Spaces {
             Kind::Group => {}
             Kind::Mesh => {
                 if let Some(mesh) = &t.mesh {
-                    v.objects.push(ObjectView {
-                        model: world,
-                        mesh: mesh.clone(),
-                        material: t.material.clone(),
-                    });
+                    v.objects.push(ObjectView::new(world, mesh.clone(), t.material.clone(), now));
+                }
+            }
+            Kind::Model => {
+                if let Some(model) = &t.model {
+                    let mut pieces = Vec::new();
+                    model.place(world, t.animation, t.animation_time, &mut pieces);
+                    for (model, mesh, material) in pieces {
+                        let mut material = material.clone();
+                        material.cast_shadow = t.material.cast_shadow;
+                        material.receive_shadow = t.material.receive_shadow;
+                        v.objects.push(ObjectView::new(model, mesh, material, now));
+                    }
+                }
+            }
+            Kind::Panel => {
+                // As big as the node is, in units, its middle where the panel is.
+                if let Some(p) = t.panel.and_then(|h| now.painted(h)) {
+                    let k = p.scale.max(1e-3) * t.pixels_per_unit;
+                    let size = Vec3::new(p.rect.width as f32 / k, p.rect.height as f32 / k, 1.0);
+                    let mesh = self.unit_plane.clone();
+                    v.objects.push(ObjectView::new(world * Mat4::from_scale(size), mesh, t.material.clone(), now));
                 }
             }
             Kind::Camera => {
@@ -539,7 +773,7 @@ impl Spaces {
             }
         }
         for &child in &t.children {
-            self.collect(child, world, v, lit);
+            self.collect(child, world, v, lit, now);
         }
     }
 }
@@ -588,6 +822,16 @@ pub struct View {
     pub sky: Vec3,
     pub ground: Vec3,
     pub objects: Vec<ObjectView>,
+    pub effects: Vec<EffectView>,
+}
+
+pub enum EffectView {
+    Shader {
+        shader: Arc<Shader>,
+        uniforms: Vec<u8>,
+        textures: Vec<Option<Texture>>,
+    },
+    Bloom(Bloom),
 }
 
 pub struct CameraView {
@@ -616,6 +860,21 @@ pub struct ObjectView {
     pub model: Mat4,
     pub mesh: Arc<MeshData>,
     pub material: Material,
+    /// What its map and the textures of its shader show now.
+    pub map: Option<Texture>,
+    pub textures: Vec<Option<Texture>>,
+}
+
+impl ObjectView {
+    fn new(model: Mat4, mesh: Arc<MeshData>, material: Material, now: &impl Now) -> Self {
+        Self {
+            model,
+            mesh,
+            map: material.map.as_ref().and_then(|s| s.texture(now)),
+            textures: material.textures.iter().map(|t| t.as_ref()?.texture(now)).collect(),
+            material,
+        }
+    }
 }
 
 /// What FrameScript adds after the code of a material.
@@ -680,7 +939,8 @@ struct FsObject {
     emissive: vec3f,
     metalness: f32,
     roughness: f32,
-    /// 1: it receives shadows.
+    /// 1: it receives shadows; 2: its colors are shown as they are, without light; 4: its map is
+    /// premultiplied (in sRGB).
     flags: u32,
 }
 
@@ -725,7 +985,11 @@ struct Surface {
 /// The surface as the material's color, map, metalness, roughness and emissive make it.
 fn default_surface(in: SurfaceInput) -> Surface {
     let o = fs_objects[in.object];
-    let texel = textureSample(fs_map, fs_map_sampler, in.uv);
+    var texel = textureSample(fs_map, fs_map_sampler, in.uv);
+    if (o.flags & 4u) != 0u {
+        // Premultiplied before it was made light: a power of 2.2 is near enough to undo it.
+        texel = vec4f(texel.rgb / max(pow(texel.a, 2.2), 1e-4), texel.a);
+    }
     var s: Surface;
     s.albedo = o.color.rgb * texel.rgb;
     s.alpha = o.color.a * texel.a;
@@ -891,6 +1155,9 @@ fn fs_fragment_main(in: SurfaceInput, @builtin(front_facing) front: bool) -> @lo
     }
     let s = fs_surface_hook(seen);
     let a = clamp(s.alpha, 0.0, 1.0);
+    if (fs_objects[seen.object].flags & 2u) != 0u {
+        return vec4f(s.albedo * a, a);
+    }
     return vec4f(fs_tone_map(fs_shade(s, seen.world_position, seen.object)) * a, a);
 }
 "#;
