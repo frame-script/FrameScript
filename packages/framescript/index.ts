@@ -62,6 +62,14 @@ export { type ColorHex, mixColor, parseColor } from "./color.ts"
 export { FillFrame } from "./layout.ts"
 export { Video, type VideoInfo, videoInfo, type VideoProps } from "./media.ts"
 export {
+  compileShader,
+  Shader,
+  type ShaderProps,
+  type Textures,
+  type Uniforms,
+  type UniformValue,
+} from "./shader.ts"
+export {
   Audio,
   type AudioInfo,
   audioInfo,

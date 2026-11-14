@@ -131,6 +131,72 @@ sound is the clock while playing, so the picture keeps to what is heard, and mov
 by hand lets a moment of it be heard. It goes out through ALSA (PipeWire and PulseAudio take that
 in); `ANTIWEBUI_AUDIO_DEVICE=none` turns it off.
 
+### WGSL
+
+```tsx
+import plasma from "./plasma.wgsl"
+
+<Shader wgsl={plasma} uniforms={{ low: "#0f172a", high: "#7c3aed", speed: 0.8 }}
+  style={{ width: "100%", height: "100%" }}>
+  <text>over it</text>
+</Shader>
+```
+
+```wgsl
+struct Uniforms { low: vec4f, high: vec4f, speed: f32 }
+@group(1) @binding(0) var<uniform> u: Uniforms;
+
+fn shade(uv: vec2f) -> vec4f {
+    let wave = sin(uv.x * 10.0 + fs.time * u.speed);
+    return mix(u.low, u.high, 0.5 + 0.5 * wave);
+}
+```
+
+`<Shader>` is a box (300 by 150 unless styled, as `<canvas>`) whose every pixel `shade(uv)` gives,
+as light with straight alpha; `uv` goes from (0, 0) at the top left to (1, 1) at the bottom right.
+A `@fragment` of its own can stand in for `shade`. FrameScript adds `fs`: `fs.time` (seconds into
+the clip), `fs.frame` and `fs.resolution`. What the shader is given goes in `@group(1)`: one
+uniform buffer, whose members are set by name in `uniforms` (numbers, lists, `{ x, y, z }`, or CSS
+colors, which arrive as light), `texture_2d<f32>`s set by name in `textures` (files of the project),
+and any `sampler`s. A `.wgsl` file imports as its code. The code is compiled with naga when the
+project loads, and what is wrong with it is an error of the project, at its file and line, as is a
+uniform that isn't there.
+
+### 3D
+
+```tsx
+import { Box, DirectionalLight, PerspectiveCamera, Plane, Scene3D, orbit } from "framescript/3d"
+
+<Scene3D style={{ width: "100%", height: "100%" }} background="#0b1020">
+  <PerspectiveCamera position={() => orbit({ radius: 7, angle: frame(), height: 3 })} lookAt={[0, 0.5, 0]} />
+  <DirectionalLight position={[4, 6, 3]} intensity={1.2} />
+  <Plane size={20} rotation={[-90, 0, 0]} material={{ color: "#1e293b", roughness: 0.9 }} />
+  <Box size={1.5} position={lift} rotation={() => [0, frame() * 1.5, 0]} material={{ color: "#38bdf8" }} />
+  <text style={{ position: "absolute", left: 64, top: 48 }}>over the scene</text>
+</Scene3D>
+```
+
+`<Scene3D>` is a box like any other; the things in 3D in it are drawn in it, and anything else is
+laid over it. Y is up; rotations are in degrees about X, then Y, then Z; every value can be a
+function or a `Variable`, as in styles (`ctx.move(position).to({ x, y, z })` moves a thing). There
+are `Group`, `Box`, `Sphere`, `Plane`, `Cylinder`, `Cone`, `Torus` and `Mesh` (a shape of your own:
+positions, normals, uvs, indices), `PerspectiveCamera` and `OrthographicCamera` (the last of those
+that are `active` is used), and `AmbientLight`, `HemisphereLight`, `DirectionalLight`, `PointLight`
+and `SpotLight`. Without a camera the scene is seen from `[0, 0, 5]`; without lights, by a soft
+default light. A `<Clip>` in a scene is a group that shows while the clip does.
+
+Materials are physically based (`color`, `metalness`, `roughness`, `emissive`, `opacity`, `map`),
+and lit surfaces are tone mapped (`toneMapping`: `"neutral"`, the default, `"aces"` or `"none"`);
+the background and colors a material gives itself come out as they are given. A material can be
+WGSL of its own (`material={{ wgsl: hologram, uniforms: { tint: "#22d3ee" } }}`): `surface(in)`
+returns the `Surface` at a point (start from `default_surface(in)`), `fragment(in)` returns a color
+with no light at all, and `vertex(v)` moves the vertices (a `Plane` with `segments` has some to move).
+`examples/3d` has all of it.
+
+The scene is drawn by whatever draws the frame, on its own GPU device: the preview on the UI thread,
+each worker of an export on its own. Only what changed is sent from the script, and the scene is
+handed to the renderer as a snapshot, so a frame of 3D is a function of its number like the rest.
+
 ### Exporting
 
 The export window in the studio, or `framescript export <project>` (see `--help`), writes the

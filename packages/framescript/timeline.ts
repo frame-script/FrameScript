@@ -29,6 +29,7 @@ import {
   useContext,
 } from "./reactive.ts"
 import type { StyleProps } from "./style.ts"
+import { SpaceContext } from "./internal/space.ts"
 import * as log from "./internal/log.ts"
 
 export interface ClipProps {
@@ -111,6 +112,9 @@ export function Clip(props: ClipProps): JSXNode {
 
   // Clips further in are not part of a sequence this one is in.
   const children = provide(ClipContext, scope, provide(SequenceContext, null, props.children))
+  // In a scene in 3D, a group of things that shows while the clip does.
+  const space = useContext(SpaceContext)
+  if (space) return space.group(shown, children)
   return createElement("div", {
     style: {
       position: "absolute",

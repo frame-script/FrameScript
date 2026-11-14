@@ -155,6 +155,14 @@ function mounter(mount: (host: Host) => Part[]): JSXNode {
 }
 
 /**
+ * A child that is one node, which `make` makes (with its children) when the child is made: for
+ * components that make nodes of kinds JSX has no element for.
+ */
+export function nodeChild(make: () => number): JSXNode {
+  return mounter(() => [make()])
+}
+
+/**
  * Makes `children` with `value` provided for `context`. A component that provides something
  * returns this: its children are only made after it returns, so providing in its body would be
  * too early.

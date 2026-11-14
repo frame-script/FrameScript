@@ -1,6 +1,8 @@
 //! Loads the modules of a project: files only, with TS and TSX transpiled.
 //!
-//! `"framescript"` and `"framescript/…"` resolve to the library. JSX is transpiled the classic
+//! `"framescript"` and `"framescript/…"` resolve to the library. A `.wgsl` file is a module whose
+//! default export is its code (and which tells the library what file the code is from, for what is
+//! said when it is wrong). JSX is transpiled the classic
 //! way, into `React.createElement`, which the library defines as a global (see
 //! `packages/framescript/jsx.ts`): there is no pragma to write.
 
@@ -71,6 +73,14 @@ fn load(specifier: &ModuleSpecifier) -> Result<ModuleSource, ModuleLoaderError> 
         .map_err(|_| JsErrorBox::generic(format!("{specifier} is not a file path")))?;
     let code = std::fs::read_to_string(&path)
         .map_err(|e| JsErrorBox::generic(format!("{}: {e}", path.display())))?;
+    if path.extension().is_some_and(|e| e == "wgsl") {
+        return Ok(ModuleSource::new(
+            ModuleType::JavaScript,
+            ModuleSourceCode::String(wgsl_module(&code, &path).into()),
+            specifier,
+            None,
+        ));
+    }
     let media_type = MediaType::from_specifier(specifier);
     let (module_type, code) = match media_type {
         MediaType::Json => (ModuleType::Json, code),
@@ -91,6 +101,19 @@ fn load(specifier: &ModuleSpecifier) -> Result<ModuleSource, ModuleLoaderError> 
         specifier,
         None,
     ))
+}
+
+/// A module for WGSL: its code as the default export, with the file it is from noted by the code.
+fn wgsl_module(code: &str, path: &Path) -> String {
+    let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+    let quote = |s: &str| serde_json::to_string(s).expect("strings serialize");
+    format!(
+        "const code = {};\n\
+         (globalThis.__fs_wgsl ??= new Map()).set(code, {});\n\
+         export default code;\n",
+        quote(code),
+        quote(&name),
+    )
 }
 
 /// Types taken away and JSX made into calls, without checking anything. The source map goes inline,
@@ -147,6 +170,13 @@ mod tests {
         );
         assert_eq!(resolve("./scene.tsx").unwrap().as_str(), "file:///project/scene.tsx");
         assert!(resolve("framescript-extra").is_err(), "other bare names are not ours");
+    }
+
+    #[test]
+    fn wgsl_is_its_code() {
+        let js = wgsl_module("fn shade() {}\n// \"quoted\"", Path::new("/p/plasma.wgsl"));
+        assert!(js.contains(r#"const code = "fn shade() {}\n// \"quoted\"";"#), "{js}");
+        assert!(js.contains(r#".set(code, "plasma.wgsl")"#), "{js}");
     }
 
     #[test]

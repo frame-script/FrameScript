@@ -5,9 +5,10 @@
 //! table, asked for once at startup, and what a video or a sound is, asked for once per file, are
 //! serialized.
 
-use crate::commands::Nodes;
+use crate::commands::{Drawn, Nodes};
 use crate::media::MediaNodes;
 use crate::props::{Kind, PROPS};
+use crate::shader::{Shader, Stage};
 use deno_core::{OpState, extension, op2};
 use deno_error::JsErrorBox;
 use serde::Serialize;
@@ -20,6 +21,7 @@ use std::rc::Rc;
 pub struct Bridge {
     pub nodes: Nodes,
     pub media: MediaNodes,
+    pub drawn: Drawn,
     pub fault: Option<String>,
 }
 
@@ -27,15 +29,23 @@ pub type SharedBridge = Rc<RefCell<Bridge>>;
 
 #[op2(fast)]
 fn op_fs_create(state: &mut OpState, kind: u32) -> u32 {
-    state.borrow::<SharedBridge>().borrow_mut().nodes.create(kind)
+    let bridge = state.borrow::<SharedBridge>();
+    let mut bridge = bridge.borrow_mut();
+    let Bridge { nodes, drawn, .. } = &mut *bridge;
+    nodes.create(kind, drawn)
 }
 
 #[op2(fast)]
 fn op_fs_commit(state: &mut OpState, #[buffer] words: &[u32]) {
     let bridge = state.borrow::<SharedBridge>();
     let mut bridge = bridge.borrow_mut();
-    let Bridge { nodes, media, fault } = &mut *bridge;
-    if let Err(e) = nodes.apply(words, media)
+    let Bridge {
+        nodes,
+        media,
+        drawn,
+        fault,
+    } = &mut *bridge;
+    if let Err(e) = nodes.apply(words, media, drawn)
         && fault.is_none()
     {
         *fault = Some(e);
@@ -92,6 +102,57 @@ fn op_fs_audio_info(state: &mut OpState, #[string] src: String) -> Result<AudioI
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShaderInfo {
+    /// The number the commands give it by.
+    id: u32,
+    /// Per uniform, in the order of their numbers: the name, the type, and how many numbers it
+    /// takes.
+    uniforms: Vec<(String, String, usize)>,
+    textures: Vec<String>,
+    uses_time: bool,
+}
+
+/// Compiles WGSL from `path` for `stage` (0 for a `<Shader>` box, 1 for a material), and says what
+/// it takes. Throws what is wrong with it. The same code is compiled once.
+#[op2]
+#[serde]
+fn op_fs_shader(
+    state: &mut OpState,
+    #[string] code: String,
+    #[string] path: String,
+    stage: u32,
+) -> Result<ShaderInfo, JsErrorBox> {
+    let stage = Stage::from_code(stage).ok_or_else(|| JsErrorBox::generic(format!("no stage {stage}")))?;
+    let bridge = state.borrow::<SharedBridge>();
+    let mut bridge = bridge.borrow_mut();
+    let shaders = &mut bridge.drawn.shaders;
+    let id = match shaders
+        .iter()
+        .position(|s| s.stage == stage && s.code.starts_with(&code) && s.code[code.len()..].starts_with('\n'))
+    {
+        Some(id) => id,
+        None => {
+            let shader = Shader::compile(&code, &path, stage).map_err(JsErrorBox::generic)?;
+            shaders.push(std::sync::Arc::new(shader));
+            shaders.len() - 1
+        }
+    };
+    let s = &shaders[id];
+    Ok(ShaderInfo {
+        id: id as u32,
+        uniforms: s
+            .uniforms
+            .iter()
+            .flat_map(|b| &b.members)
+            .map(|m| (m.name.clone(), m.ty.clone(), m.slots.len()))
+            .collect(),
+        textures: s.textures.iter().map(|t| t.name.clone()).collect(),
+        uses_time: s.uses_time,
+    })
+}
+
 /// The property table: per property its name, kind and, for choices, the names of the choices.
 #[op2]
 #[serde]
@@ -110,7 +171,14 @@ fn op_fs_props() -> Vec<(&'static str, u32, Vec<&'static str>)> {
 
 extension!(
     framescript,
-    ops = [op_fs_create, op_fs_commit, op_fs_props, op_fs_video_info, op_fs_audio_info],
+    ops = [
+        op_fs_create,
+        op_fs_commit,
+        op_fs_props,
+        op_fs_video_info,
+        op_fs_audio_info,
+        op_fs_shader,
+    ],
     options = { bridge: SharedBridge },
     state = |state, options| {
         state.put::<SharedBridge>(options.bridge);

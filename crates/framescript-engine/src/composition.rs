@@ -204,6 +204,7 @@ impl Composition {
         let bridge: SharedBridge = Rc::new(RefCell::new(Bridge {
             nodes: Nodes::new(stage),
             media: MediaNodes::new(media, dir.clone()),
+            drawn: Default::default(),
             fault: None,
         }));
         // Loading goes through futures (imports could be fetched), and V8 posts tasks for later:
@@ -358,7 +359,11 @@ impl Composition {
         };
         let bridge = &self.bridge;
         let complete = in_window(self.ui.window(), || {
-            with_doc(|d| bridge.borrow_mut().media.show_frames(d, wait_for))
+            with_doc(|d| {
+                let mut bridge = bridge.borrow_mut();
+                bridge.drawn.sync(d);
+                bridge.media.show_frames(d, wait_for)
+            })
         });
         timings.script = t.elapsed();
 

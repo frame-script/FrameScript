@@ -17,3 +17,8 @@ tokio.workspace = true
 serde.workspace = true
 deno_error.workspace = true
 png.workspace = true
+bytemuck.workspace = true
+# WGSL that compositions write is parsed and validated, and its uniforms read, with naga.
+naga = { version = "30", features = ["wgsl-in"] }
+glam = { version = "0.33", features = ["bytemuck"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

@@ -12,6 +12,12 @@ export const KIND_ELEMENT = 0
 export const KIND_TEXT = 1
 export const KIND_IMAGE = 2
 export const KIND_VIDEO = 3
+export const KIND_SHADER = 4
+export const KIND_SCENE = 5
+export const KIND_GROUP = 6
+export const KIND_MESH = 7
+export const KIND_CAMERA = 8
+export const KIND_LIGHT = 9
 
 /** The node the composition makes for the frame itself. */
 export const STAGE = 0
@@ -28,6 +34,48 @@ const STRING = 9
 const TEXT = 10
 const SOURCE = 11
 const VIDEO_TIME = 12
+const PARAM = 13
+const PARAM_TEXT = 14
+
+/** The parameters of `<Shader>` boxes, scenes and things in 3D (`crate::space::param` in Rust). */
+export const P = {
+  POSITION: 0,
+  ROTATION: 1,
+  QUATERNION: 2,
+  SCALE: 3,
+  LOOK_AT: 4,
+  VISIBLE: 5,
+  GEOMETRY: 10,
+  COLOR: 11,
+  METALNESS: 12,
+  ROUGHNESS: 13,
+  EMISSIVE: 14,
+  OPACITY: 15,
+  DOUBLE_SIDED: 16,
+  TRANSPARENT: 17,
+  SHADER: 18,
+  UNIFORM: 19,
+  FOV: 30,
+  NEAR: 31,
+  FAR: 32,
+  ORTHOGRAPHIC: 33,
+  ACTIVE: 34,
+  LIGHT: 40,
+  LIGHT_COLOR: 41,
+  INTENSITY: 42,
+  RANGE: 43,
+  ANGLE: 44,
+  PENUMBRA: 45,
+  GROUND_COLOR: 46,
+  BACKGROUND: 50,
+  TONE_MAPPING: 51,
+  EXPOSURE: 52,
+  TIME: 53,
+} as const
+
+/** The parameters given as a file (`crate::space::text_param`). */
+export const TEXT_MAP = 0
+export const TEXT_TEXTURE = 1
 
 export const UNIT_PX = 0
 export const UNIT_PERCENT = 1
@@ -191,6 +239,28 @@ export function setVideoTime(node: number, time: number, shown: boolean): void {
   words[len + 3] = secondsWords[0]
   words[len + 4] = secondsWords[1]
   len += 5
+}
+
+/** Sets a parameter of a `<Shader>`, a scene or a thing in 3D to `values`; none takes it back. */
+export function setParam(node: number, param: number, values: ArrayLike<number>): void {
+  reserve(4 + values.length)
+  words[len] = PARAM
+  words[len + 1] = node
+  words[len + 2] = param
+  words[len + 3] = values.length
+  len += 4
+  for (let i = 0; i < values.length; i++) floats[len++] = values[i]
+}
+
+/** Gives a picture to one: the file `src`, or none for "". */
+export function setParamText(node: number, param: number, index: number, src: string): void {
+  reserve(5 + ((src.length + 1) >> 1))
+  words[len] = PARAM_TEXT
+  words[len + 1] = node
+  words[len + 2] = param
+  words[len + 3] = index
+  len += 4
+  writeString(src)
 }
 
 /** The length in UTF-16 code units, then the units, two to a word, the first in the low half. */

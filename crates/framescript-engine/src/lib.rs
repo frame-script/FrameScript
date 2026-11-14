@@ -9,17 +9,23 @@
 //! - [`render`]: drawing a scene offscreen, into pixels or a PNG file.
 //! - [`export`]: writing the whole of it out as a video file, drawing frames on several threads.
 //! - [`ext`], [`commands`], [`props`]: how the TypeScript side reaches the node tree.
+//! - [`shader`], [`flat`], [`space`]: WGSL that compositions write, `<Shader>` boxes, and scenes in
+//!   3D, drawn on the GPU by whatever draws the scene ([`gpu`] has what they share).
 
 pub mod commands;
 pub mod composition;
 pub mod export;
 pub mod ext;
+pub mod flat;
+pub mod gpu;
 pub mod loader;
 pub mod media;
 pub mod props;
 pub mod playback;
 pub mod render;
+pub mod shader;
 pub mod sound;
+pub mod space;
 pub mod worker;
 
 pub use composition::{

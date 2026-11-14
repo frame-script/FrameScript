@@ -34,5 +34,22 @@ export interface AudioInfo {
 /** What the sound in a file of the project is. Throws if it has none. */
 export const audioInfo: (src: string) => AudioInfo = core.ops.op_fs_audio_info
 
+export interface ShaderInfo {
+  /** The number the commands give it by. */
+  id: number
+  /** Per uniform, by its number: its name, its type, and how many numbers it takes. */
+  uniforms: [string, string, number][]
+  /** The names of its textures, by their indices. */
+  textures: string[]
+  /** Whether it reads `fs.time` or `fs.frame`. */
+  usesTime: boolean
+}
+
+/**
+ * Compiles WGSL (from the file `path`) for a `<Shader>` box (stage 0) or a material (stage 1).
+ * Throws what is wrong with it.
+ */
+export const shader: (code: string, path: string, stage: number) => ShaderInfo = core.ops.op_fs_shader
+
 /** Runs every queued microtask now. */
 export const runMicrotasks: () => void = () => core.runMicrotasks()
