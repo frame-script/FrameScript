@@ -8,7 +8,7 @@
 use anti_webui_style::{
     AlignContent, AlignItems, BoxShadow, Color, Display, FlexDirection, FlexWrap, FontFamily,
     FontStyle, FontWeight, ImageRendering, JustifyContent, Length, LineHeight, ObjectFit, Overflow,
-    Position, Style, TextAlign, WhiteSpace,
+    PaintOrder, Position, Style, TextAlign, TextShadow, TextStroke, WhiteSpace,
 };
 
 /// How the value of a property is encoded in the command buffer.
@@ -333,6 +333,47 @@ pub static PROPS: &[Prop] = &[
     ]),
     flag!("underline", underline),
     flag!("strikethrough", strikethrough),
+    Prop {
+        name: "textShadow",
+        kind: Kind::Shadows,
+        apply: |s, v| {
+            s.text_shadows = match v {
+                Value::Shadows(list) => Some(
+                    list.iter()
+                        .map(|b| TextShadow {
+                            offset_x: b.offset_x,
+                            offset_y: b.offset_y,
+                            blur: b.blur,
+                            color: b.color,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            }
+        },
+    },
+    // Strokes travel as shadows: the width of each as its spread.
+    Prop {
+        name: "textStroke",
+        kind: Kind::Shadows,
+        apply: |s, v| {
+            s.text_strokes = match v {
+                Value::Shadows(list) => Some(
+                    list.iter()
+                        .map(|b| TextStroke {
+                            width: b.spread,
+                            color: b.color,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            }
+        },
+    },
+    choice!("paintOrder", paint_order, [
+        "normal" => PaintOrder::Normal,
+        "stroke" => PaintOrder::Stroke,
+    ]),
     choice!("objectFit", object_fit, [
         "fill" => ObjectFit::Fill,
         "contain" => ObjectFit::Contain,

@@ -21,9 +21,6 @@ pub struct Pictures {
     videos: HashMap<u64, Frame>,
     /// Of nodes of the document, by their keys.
     painted: HashMap<u32, Frame>,
-    /// What draws the frames of videos (as AntiWebUI draws them in a window: every way they are
-    /// stored, turned as they say), made when the first one comes.
-    renderer: Option<anti_webui_wgpu::Renderer>,
     /// What shows where there is no picture: white, so that it changes nothing it multiplies.
     white: wgpu::TextureView,
 }
@@ -39,6 +36,10 @@ struct Frame {
     target: wgpu::TextureView,
     /// The same, read as light.
     view: wgpu::TextureView,
+    /// What draws into it (as AntiWebUI draws in a window: videos every way they are stored, turned
+    /// as they say). One each: a renderer writes its buffers when the queue is next submitted, so
+    /// one that drew two textures in an encoder would leave both with what it drew last.
+    renderer: Option<anti_webui_wgpu::Renderer>,
 }
 
 impl Pictures {
@@ -48,7 +49,6 @@ impl Pictures {
             of: HashMap::new(),
             videos: HashMap::new(),
             painted: HashMap::new(),
-            renderer: None,
             white,
         }
     }
@@ -98,8 +98,7 @@ impl Pictures {
                     })],
                     chunks: Vec::new(),
                 };
-                let (renderer, kept) = (&mut self.renderer, &mut self.painted);
-                draw(device, queue, encoder, renderer, kept, p.key, size, id, alive, scene)
+                draw(device, queue, encoder, &mut self.painted, p.key, size, id, alive, scene)
             }
         }
     }
@@ -135,8 +134,7 @@ impl Pictures {
             chunks: Vec::new(),
         };
         let alive = Alive::Stream(frame.alive.clone());
-        let (renderer, kept) = (&mut self.renderer, &mut self.videos);
-        draw(device, queue, encoder, renderer, kept, frame.stream, size, frame.id, alive, scene)
+        draw(device, queue, encoder, &mut self.videos, frame.stream, size, frame.id, alive, scene)
     }
 
     /// Whether the texture of the picture `id` is kept.
@@ -167,13 +165,12 @@ impl Alive {
 }
 
 /// The texture kept as `key` in `kept`, of `size`, holding what `scene` draws: drawn again (by
-/// AntiWebUI's renderer, which is made the first time) when `id` isn't what it holds.
+/// its own renderer, made the first time) when `id` isn't what it holds.
 #[allow(clippy::too_many_arguments)]
 fn draw<'k, K: std::hash::Hash + Eq + Copy>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
-    renderer: &mut Option<anti_webui_wgpu::Renderer>,
     kept: &'k mut HashMap<K, Frame>,
     key: K,
     size: (u32, u32),
@@ -209,13 +206,14 @@ fn draw<'k, K: std::hash::Hash + Eq + Copy>(
                 size,
                 target,
                 view,
+                renderer: None,
             },
         );
     }
     let k = kept.get_mut(&key).expect("just made");
     if k.id != id {
         k.id = id;
-        let renderer = renderer.get_or_insert_with(|| anti_webui_wgpu::Renderer::new(device, wgpu::TextureFormat::Rgba8Unorm));
+        let renderer = k.renderer.get_or_insert_with(|| anti_webui_wgpu::Renderer::new(device, wgpu::TextureFormat::Rgba8Unorm));
         renderer.render(device, queue, encoder, &k.target, &scene());
     }
     &k.view

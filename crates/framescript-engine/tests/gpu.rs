@@ -540,6 +540,71 @@ export default function Main() {
 }
 
 #[test]
+fn text_is_edged_and_shadowed_as_its_style_says() {
+    let Some(mut gpu) = gpu() else { return };
+    // An `l` edged in red under its letter, with a blue shadow 24 px to its right.
+    let main = r##"export default function Main() {
+  return (
+    <div style={{ width: "100%", height: "100%", background: "#ffffff" }}>
+      <text
+        style={{
+          position: "absolute",
+          left: 10,
+          top: 0,
+          fontSize: 40,
+          color: "#000000",
+          textStroke: "6px #ff0000",
+          paintOrder: "stroke fill",
+          textShadow: "24px 0 0 #0000ff",
+        }}
+      >
+        l
+      </text>
+    </div>
+  )
+}
+"##;
+    let dir = project("text-effects", main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    let near = |x: u32, c: [u8; 3]| (0..3).all(|i| px(&p, x, 24)[i].abs_diff(c[i]) < 60);
+    let all = |c: [u8; 3]| (0..W).filter(|&x| near(x, c)).collect::<Vec<_>>();
+    let (black, red, blue) = (all([0, 0, 0]), all([255, 0, 0]), all([0, 0, 255]));
+    assert!(!black.is_empty() && !red.is_empty() && !blue.is_empty(), "{black:?} {red:?} {blue:?}");
+    // The edging is on both sides of the letter, which it doesn't cover.
+    assert!(red[0] < black[0] && *red.last().unwrap() > *black.last().unwrap(), "{red:?} {black:?}");
+    // The shadow is of the edged letter, beside it.
+    assert!(blue[0] > *red.last().unwrap(), "{blue:?} {red:?}");
+    assert!(blue.len().abs_diff(red.len() + black.len()) <= 2, "{blue:?} {red:?} {black:?}");
+}
+
+#[test]
+fn panels_of_the_same_size_each_show_their_own() {
+    let Some(mut gpu) = gpu() else { return };
+    // Each a unit across, 12 pixels of the frame: one left of the middle, one right of it.
+    let main = r##"import { OrthographicCamera, Panel, Scene3D } from "framescript/3d"
+export default function Main() {
+  return (
+    <Scene3D style={{ width: "100%", height: "100%" }} background="#00ff00">
+      <OrthographicCamera position={[0, 0, 10]} height={4} />
+      <Panel position={[-1, 0, 0]} pixelsPerUnit={25}>
+        <div style={{ width: 25, height: 25, background: "#ff0000" }} />
+      </Panel>
+      <Panel position={[1, 0, 0]} pixelsPerUnit={25}>
+        <div style={{ width: 25, height: 25, background: "#0000ff" }} />
+      </Panel>
+    </Scene3D>
+  )
+}
+"##;
+    let dir = project("panels", main, &[]);
+    let mut c = Composition::load(&dir).expect("loads");
+    let p = frame(&mut c, &mut gpu, 0);
+    assert_eq!(px(&p, 20, 24), [255, 0, 0, 255], "the left one");
+    assert_eq!(px(&p, 44, 24), [0, 0, 255, 255], "the right one");
+}
+
+#[test]
 fn effects_are_done_to_the_scene_in_order() {
     let Some(mut gpu) = gpu() else { return };
     let invert = r#"

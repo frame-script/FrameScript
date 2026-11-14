@@ -111,6 +111,22 @@ export interface CSSProperties {
   textAlign?: "start" | "end" | "left" | "center" | "right"
   whiteSpace?: "normal" | "pre-wrap" | "pre" | "nowrap"
   textDecoration?: "none" | "underline" | "line-through" | string
+  /**
+   * As in CSS, `"2px 4px 8px rgba(0,0,0,.6)"`: across, down, the blur, the color; several with
+   * commas, the first on top. The letters as they are painted, strokes included.
+   */
+  textShadow?: string
+  /**
+   * A line along the outlines of the letters, `"6px #000"`, half of it outside them (CSS
+   * `-webkit-text-stroke`). Several, the first on top (not in CSS): `["6px #fff", "14px #000"]`
+   * edges the letters in white, then in black. With `paintOrder: "stroke"`, they go under the
+   * letters, which keep their shape: the edging of captions.
+   */
+  textStroke?: string | readonly string[]
+  /** The same as `textStroke`. */
+  WebkitTextStroke?: string | readonly string[]
+  /** `"stroke"` (or `"stroke fill"`): the strokes of text under its letters. `"normal"`: over them. */
+  paintOrder?: string
 
   /** How the picture of an `<img>` or a video fits its box. */
   objectFit?: "fill" | "contain" | "cover" | "none" | "scale-down"
@@ -299,6 +315,30 @@ function shadows(value: string): cmd.Shadow[] | null {
     }
     if (numbers.length < 2) return null
     out.push({ x: numbers[0], y: numbers[1], blur: numbers[2] ?? 0, spread: numbers[3] ?? 0, color, inset })
+  }
+  return out
+}
+
+/** `"6px #000"`, several with commas or in a list: each a width and a color (black if not given). */
+function strokes(value: unknown): cmd.Shadow[] | null {
+  const list = typeof value === "string" ? split(value, ",") : Array.isArray(value) ? value : null
+  if (list === null) return null
+  const out: cmd.Shadow[] = []
+  for (const one of list) {
+    if (typeof one !== "string") return null
+    let width: number | null = null
+    let color = 0x000000ff
+    for (const part of split(one, " ")) {
+      const n = /^-?[\d.]/.test(part) ? number(part) : null
+      if (n !== null) width = n
+      else {
+        const c = parseColor(part)
+        if (c === null) return null
+        color = c
+      }
+    }
+    if (width === null) return null
+    out.push({ x: 0, y: 0, blur: 0, spread: width, color, inset: false })
   }
   return out
 }
@@ -607,6 +647,22 @@ export function setStyle(node: number, key: string, value: unknown): void {
       write(node, "underline", v === null || v === undefined ? null : s.includes("underline"))
       write(node, "strikethrough", v === null || v === undefined ? null : s.includes("line-through"))
       return
+    }
+    case "textStroke":
+    case "WebkitTextStroke": {
+      if (value === null || value === undefined || value === "") return write(node, "textStroke", null)
+      const list = strokes(value)
+      if (list === null) return invalid(key, v)
+      cmd.setShadows(node, prop("textStroke").id, list)
+      return
+    }
+    case "paintOrder": {
+      if (typeof v !== "string") return write(node, key, v)
+      // The strokes come first if they are named before the letters, which go last if not named.
+      const parts = v.trim().split(/\s+/)
+      const stroke = parts.indexOf("stroke")
+      const fill = parts.indexOf("fill")
+      return write(node, key, stroke >= 0 && (fill < 0 || stroke < fill) ? "stroke" : "normal")
     }
     case "position":
       if (v === "fixed" || v === "sticky") {

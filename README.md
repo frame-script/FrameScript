@@ -248,6 +248,13 @@ positioned (`position: "relative"` or `"absolute"`) or translucent or transforme
 rest in the order it is written, and `zIndex` (for what is positioned and for flex items) orders
 it further. `relative` doesn't move anything with `top` / `left`.
 
+Text can have shadows and strokes, as in CSS: `textShadow: "0 4px 12px rgba(0,0,0,.6)"` (several
+with commas, the first on top), and `textStroke: "6px #000"` (`-webkit-text-stroke`; half of it is
+outside the letters). With `paintOrder: "stroke"` the strokes go under the letters, which keep
+their shape: the edging of captions. Unlike CSS, `textStroke` takes several, the first on top, so
+`["6px #fff", "16px #000"]` edges letters in white and then in black. A shadow is of the letters
+as they are painted, strokes included; a transparent `color` with a stroke leaves only outlines.
+
 ## Layout
 
 | | |
@@ -257,5 +264,7 @@ it further. `relative` doesn't move anything with `top` / `left`.
 | `crates/framescript-studio` | the `framescript` binary: the studio and `render` |
 | `examples/hello` | an example project (`tsc -p examples/hello` checks its types) |
 | `examples/media` | pictures, videos and sound (run `./make-assets.sh` first) |
+| `examples/3d`, `examples/model` | WGSL and scenes in 3D; a glTF model (run `./get-assets.sh` first) |
+| `examples/showcase` | 40 s of all of it, cut to music made in code (run `./make-assets.sh` first) |
 
 How it works, and why, is in [docs/design](docs/design/00-overview.md).
