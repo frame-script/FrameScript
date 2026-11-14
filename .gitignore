@@ -1,2 +1,4 @@
 /target
 __pycache__/
+# What `framescript export` writes by default.
+examples/*/out/

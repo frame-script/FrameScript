@@ -20,7 +20,8 @@ type MaybeAccessor<T> = T | (() => T)
 
 export interface CSSProperties {
   display?: "flex" | "block" | "none" | "contents"
-  position?: "relative" | "absolute"
+  /** As in CSS for what goes over what; `relative` doesn't move anything with `top` / `left`. */
+  position?: "static" | "relative" | "absolute"
   flexDirection?: "row" | "column" | "row-reverse" | "column-reverse"
   flexWrap?: "nowrap" | "wrap" | "wrap-reverse"
   flex?: number | string

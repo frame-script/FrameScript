@@ -6,10 +6,12 @@ Videos and motion graphics written in TSX, laid out and drawn by
 ```sh
 cargo run --release -- examples/hello                        # the studio
 cargo run --release -- render examples/hello -f 120 -o a.png # one frame as a PNG
+cargo run --release -- export examples/hello -o hello.mp4    # the whole video
 ```
 
 In the studio: Space plays and pauses, ← / → step a frame (a second with Shift), Home / End go to
-the ends, and pressing or dragging on the timeline seeks. Saving a file of the project loads it
+the ends, and pressing or dragging on the timeline seeks. The film button at the right of the
+transport opens the export window. Saving a file of the project loads it
 again.
 
 ## A project
@@ -129,13 +131,31 @@ sound is the clock while playing, so the picture keeps to what is heard, and mov
 by hand lets a moment of it be heard. It goes out through ALSA (PipeWire and PulseAudio take that
 in); `ANTIWEBUI_AUDIO_DEVICE=none` turns it off.
 
+### Exporting
+
+The export window in the studio, or `framescript export <project>` (see `--help`), writes the
+video with its sound through the system's `ffmpeg` (or `FRAMESCRIPT_FFMPEG`): H.264, H.265 or AV1
+in MP4, ProRes 422 HQ in MOV, and H.264 / H.265 on the GPU through VA-API where that works. It
+takes a quality (CRF), a speed, a size (50–200% of the project's; more than 100% draws it larger,
+as sharp as at its size), the frames to write and how many are drawn at once.
+
+Since a frame is a pure function of its number, the frames are shared out among workers, each with
+a V8, a document, a GPU device and an encoder of its own: each goes through a stretch of the frames
+in order (its videos decode in order), and one that is done first takes the second half of what
+another has left. The pieces are joined as they are, and the sound is mixed from the same plan as
+in the preview. Pictures become YUV 4:2:0 (BT.709) on the GPU, so the encoder has nothing to
+convert. More workers help when drawing is what takes the time; when the encoder is, they can't.
+
 ### Styles
 
 CSS properties in camelCase; numbers are pixels. Shorthands (`padding: "8px 16px"`, `border`,
 `borderRadius`, `gap`, `flex`, `inset`), `transform` (`translate`, `scale`, `rotate`) and the
 separate `translate` / `scale` / `rotate`, `boxShadow`, `filter: blur()`, colors (`#hex`,
 `rgb()`, `hsl()`, names), `objectFit` / `objectPosition` for pictures and videos. Elements are
-`<div>`, `<text>` (one run of text) and `<img>`.
+`<div>`, `<text>` (one run of text) and `<img>`. What goes over what is as in CSS: what is
+positioned (`position: "relative"` or `"absolute"`) or translucent or transformed goes over the
+rest in the order it is written, and `zIndex` (for what is positioned and for flex items) orders
+it further. `relative` doesn't move anything with `top` / `left`.
 
 ## Layout
 

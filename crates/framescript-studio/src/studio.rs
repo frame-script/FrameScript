@@ -4,11 +4,12 @@
 //! wants and how big, and draws the scenes that come back; scrubbing stays smooth however long a
 //! frame takes, and a wish the worker hasn't got to is replaced by the next one.
 
+use crate::export::{Exporter, summary};
 use crate::preview::{Preview, PreviewFrame};
 use crate::timeline::{timecode, timeline};
 use anti_webui::prelude::*;
 use anti_webui_md3e::components::sized_icon;
-use anti_webui_md3e::icons;
+use anti_webui_md3e::{ColorScheme, icons, set_color_scheme};
 use framescript_engine::worker::{Event, PreviewWorker};
 use framescript_engine::{AudioPlayer, FrameTimings, ProjectInfo, ProjectSettings};
 use std::cell::Cell;
@@ -42,6 +43,7 @@ pub fn run(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
 fn studio(dir: PathBuf) -> impl IntoView {
     set_theme(Theme::dark());
+    set_color_scheme(ColorScheme::dark());
     let project = signal(None::<Project>);
     let frame = signal(0u32);
     let shown = signal(None::<PreviewFrame>);
@@ -90,6 +92,11 @@ fn studio(dir: PathBuf) -> impl IntoView {
             }
         }
     });
+    let exporter = Exporter::new(dir.clone(), project);
+    on_cleanup({
+        let exporter = exporter.clone();
+        move || exporter.stop()
+    });
     let worker = Rc::new(PreviewWorker::spawn(dir, move |event| sender.send(event)));
     effect({
         let worker = worker.clone();
@@ -130,7 +137,7 @@ fn studio(dir: PathBuf) -> impl IntoView {
         .focusable()
         .on_key_down(move |e| keys(e, project, frame, playing))
         .child(preview_area(worker, shown, error))
-        .child(transport(project, frame, playing, stats, loaded_in))
+        .child(transport(project, frame, playing, stats, loaded_in, exporter))
         .child(timeline(project, frame))
 }
 
@@ -188,6 +195,7 @@ fn transport(
     playing: Signal<bool>,
     stats: Signal<Option<Stats>>,
     loaded_in: Signal<f64>,
+    exporter: Rc<Exporter>,
 ) -> Div {
     let fps = move || project.with(|p| p.as_ref().map_or(60.0, |p| p.settings.fps));
     let last = move || project.with(|p| p.as_ref().map_or(0, |p| p.info.duration_frames.saturating_sub(1)));
@@ -261,6 +269,18 @@ fn transport(
             .text_size(12.0)
             .text_color(Color::from_rgb(0x8b93a7)),
         )
+        .child({
+            let exporter = exporter.clone();
+            dyn_view(move || {
+                summary(&exporter).map(|s| {
+                    text(s)
+                        .ml(12.0)
+                        .text_size(12.0)
+                        .text_color(Color::from_rgb(0x7dd3fc))
+                })
+            })
+        })
+        .child(tool(icons::MOVIE, move || exporter.open()).ml(6.0))
 }
 
 fn tool(symbol: &'static anti_webui_md3e::icons::Symbol, action: impl Fn() + 'static) -> Div {

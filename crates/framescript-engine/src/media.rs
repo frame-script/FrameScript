@@ -36,6 +36,10 @@ const READ_ON: f64 = 2.0;
 /// Times this close are the same: what is asked for is a frame of the project in seconds, which
 /// needn't come out exactly at the start of a frame of the video.
 const EPSILON: f64 = 1e-5;
+/// Decoders a video may have at most: one for each place far apart in it that is wanted at once,
+/// like the same video twice at different speeds, so that none of them keeps going to key frames
+/// for the others.
+const MAX_LANES: usize = 3;
 /// What the frames of all videos may take, unless `FRAMESCRIPT_VIDEO_CACHE_MB` says.
 const BUDGET: usize = 1 << 30;
 
@@ -77,6 +81,17 @@ impl Default for Media {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .map_or(BUDGET, |mb| mb << 20);
+        Self::with_budget(budget)
+    }
+}
+
+impl Media {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// With `budget` bytes for the frames of all its videos.
+    pub fn with_budget(budget: usize) -> Self {
         Self {
             videos: Arc::default(),
             sounds: Arc::default(),
@@ -86,12 +101,6 @@ impl Default for Media {
                 budget,
             }),
         }
-    }
-}
-
-impl Media {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// `f` is called, from a decoder's thread, when a frame comes that was shown something else
@@ -175,6 +184,9 @@ struct SourceState {
     wanted: BTreeMap<u64, f64>,
     /// What was shown something else for what it wanted, and is to hear when that is here.
     waiting: HashSet<u64>,
+    /// How many decoders it has; no more are started once one couldn't be.
+    lanes: usize,
+    no_more_lanes: bool,
     error: Option<String>,
     quit: bool,
 }
@@ -194,9 +206,12 @@ impl SourceShared {
 /// A video and the frames decoded of it.
 pub struct VideoSource {
     path: PathBuf,
+    /// What the decoders open, and on what device.
+    source: String,
+    device: Option<PathBuf>,
     info: VideoInfo,
     shared: Arc<SourceShared>,
-    thread: Option<JoinHandle<()>>,
+    threads: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl VideoSource {
@@ -210,7 +225,10 @@ impl VideoSource {
             .map_err(|e| e.to_string())?;
         let info = reader.info();
         let shared = Arc::new(SourceShared {
-            state: Mutex::new(SourceState::default()),
+            state: Mutex::new(SourceState {
+                lanes: 1,
+                ..Default::default()
+            }),
             changed: Condvar::new(),
             common,
         });
@@ -219,15 +237,39 @@ impl VideoSource {
             .name("framescript-video".into())
             .spawn({
                 let shared = shared.clone();
-                move || Decoder::new(shared, reader).run()
+                move || Decoder::new(shared, reader, 0).run()
             })
             .expect("a thread can be started");
         Ok(Self {
             path: path.to_path_buf(),
+            source: source.to_owned(),
+            device,
             info,
             shared,
-            thread: Some(thread),
+            threads: Mutex::new(vec![thread]),
         })
+    }
+
+    /// Starts another decoder, `lane`, which opens the file again.
+    fn add_lane(&self, lane: usize) {
+        let (shared, source, device) = (self.shared.clone(), self.source.clone(), self.device.clone());
+        let thread = std::thread::Builder::new()
+            .name("framescript-video".into())
+            .spawn(move || {
+                match VideoReader::open(&source, &VideoSettings::default(), device.as_deref()) {
+                    Ok(reader) => Decoder::new(shared, reader, lane).run(),
+                    Err(e) => {
+                        eprintln!("framescript: no other decoder for {source}: {e}");
+                        let mut state = shared.lock();
+                        state.lanes -= 1;
+                        state.no_more_lanes = true;
+                        drop(state);
+                        shared.changed.notify_all();
+                    }
+                }
+            })
+            .expect("a thread can be started");
+        self.threads.lock().expect("no panics with the lock").push(thread);
     }
 
     pub fn path(&self) -> &Path {
@@ -290,6 +332,11 @@ impl VideoSource {
         let mut state = self.shared.lock();
         if state.wanted.insert(asker, seconds) != Some(seconds) {
             state.waiting.remove(&asker);
+            let places = groups(&state.wanted).last().map_or(0, |&(_, g)| g + 1);
+            if places > state.lanes && state.lanes < MAX_LANES && !state.no_more_lanes {
+                state.lanes += 1;
+                self.add_lane(state.lanes - 1);
+            }
             self.shared.changed.notify_all();
         }
         state
@@ -300,7 +347,7 @@ impl Drop for VideoSource {
     fn drop(&mut self) {
         self.shared.lock().quit = true;
         self.shared.changed.notify_all();
-        if let Some(thread) = self.thread.take() {
+        for thread in self.threads.get_mut().expect("no panics with the lock").drain(..) {
             let _ = thread.join();
         }
         self.shared.common.sources.fetch_sub(1, Ordering::Relaxed);
@@ -327,12 +374,33 @@ fn nearest(frames: &BTreeMap<i64, Cached>, seconds: f64) -> Option<Arc<VideoFram
         .map(|(_, c)| c.frame.clone())
 }
 
-/// The first time that no frame there is covers in the window after what is wanted, and that.
-fn first_missing(state: &SourceState, duration: Option<f64>) -> Option<(f64, f64)> {
-    state
-        .wanted
-        .values()
-        .find_map(|&w| missing_after(state, w, duration).map(|m| (w, m)))
+/// The times wanted in order, each with the place it is in: times closer than reading on takes
+/// are in the same place, which one decoder goes through.
+fn groups(wanted: &BTreeMap<u64, f64>) -> Vec<(f64, usize)> {
+    let mut times: Vec<f64> = wanted.values().copied().collect();
+    times.sort_by(f64::total_cmp);
+    let mut group = 0;
+    let mut previous: Option<f64> = None;
+    times
+        .into_iter()
+        .map(|t| {
+            if previous.is_some_and(|p| t - p > READ_ON) {
+                group += 1;
+            }
+            previous = Some(t);
+            (t, group)
+        })
+        .collect()
+}
+
+/// The first time that no frame there is covers in the window after what is wanted in the places
+/// of decoder `lane`, and that.
+fn first_missing(state: &SourceState, duration: Option<f64>, lane: usize) -> Option<(f64, f64)> {
+    let lanes = state.lanes.max(1);
+    groups(&state.wanted)
+        .into_iter()
+        .filter(|&(_, g)| g % lanes == lane)
+        .find_map(|(w, _)| missing_after(state, w, duration).map(|m| (w, m)))
 }
 
 /// How far the closest of what is wanted is from `seconds`.
@@ -387,16 +455,19 @@ struct Decoder {
     reader: VideoReader,
     duration: Option<f64>,
     run: Option<Run>,
+    /// Which of the decoders of the video it is.
+    lane: usize,
 }
 
 impl Decoder {
-    fn new(shared: Arc<SourceShared>, reader: VideoReader) -> Self {
+    fn new(shared: Arc<SourceShared>, reader: VideoReader, lane: usize) -> Self {
         let duration = reader.info().duration;
         Self {
             shared,
             reader,
             duration,
             run: None,
+            lane,
         }
     }
 
@@ -419,7 +490,7 @@ impl Decoder {
                 return None;
             }
             if state.error.is_none()
-                && let Some((_, missing)) = first_missing(&state, self.duration)
+                && let Some((_, missing)) = first_missing(&state, self.duration, self.lane)
             {
                 return Some(missing);
             }

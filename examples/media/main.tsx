@@ -66,6 +66,8 @@ function Photo() {
       />
       <text
         style={{
+          // Over the picture, which is positioned: as in CSS, this has to be too.
+          position: "relative",
           color: "#f8fafc",
           fontSize: 120,
           fontWeight: "bold",

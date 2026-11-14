@@ -160,6 +160,7 @@ pub static PROPS: &[Prop] = &[
         "contents" => Display::Contents,
     ]),
     choice!("position", position, [
+        "static" => Position::Static,
         "relative" => Position::Relative,
         "absolute" => Position::Absolute,
     ]),

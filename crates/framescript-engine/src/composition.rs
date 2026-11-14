@@ -56,6 +56,13 @@ impl Default for ProjectSettings {
     }
 }
 
+impl ProjectSettings {
+    /// `framescript.json` in `dir`.
+    pub fn read(dir: &Path) -> Result<Self, Error> {
+        read_settings(dir)
+    }
+}
+
 /// What the scripts made of the project, for the timeline.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -303,7 +310,17 @@ impl Composition {
     pub fn fit(&mut self, width: u32, height: u32) {
         let (w, h) = (self.settings.width.max(1) as f64, self.settings.height.max(1) as f64);
         let ratio = (width as f64 / w).min(height as f64 / h).min(1.0);
-        let scale = Scale(((ratio * 120.0).floor() as u32).max(1));
+        self.set_scale(Scale(((ratio * 120.0).floor() as u32).max(1)));
+    }
+
+    /// Paints at `ratio` of the project's own size, more than it too: what is drawn stays sharp,
+    /// and only pictures and videos are scaled up. The ratio is rounded to a multiple of 1/120.
+    pub fn scale_to(&mut self, ratio: f64) {
+        self.set_scale(Scale(((ratio * 120.0).round() as u32).max(1)));
+    }
+
+    fn set_scale(&mut self, scale: Scale) {
+        let (w, h) = (self.settings.width.max(1) as f64, self.settings.height.max(1) as f64);
         let size = (
             (w * scale.as_f64()).round().max(1.0) as u32,
             (h * scale.as_f64()).round().max(1.0) as u32,
