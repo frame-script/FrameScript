@@ -157,6 +157,9 @@ function queueCheck(f: () => void) {
   checks.push(f)
 }
 
+/** @internal Runs `f` once everything is made, before the first frame. */
+export const afterMount = queueCheck
+
 /** @internal Runs what waits until everything is made. */
 export function runChecks(): void {
   for (const f of checks.splice(0)) f()
@@ -205,6 +208,14 @@ export function clipInfos(): ClipInfo[] {
       parent: parent?.id ?? null,
     }
   })
+}
+
+/** @internal Whether `scope` is `test`'s, or is in a clip that is. */
+export function isWithin(scope: ClipScope, test: (clip: ClipScope) => boolean): boolean {
+  for (let r = clips.get(scope.id); r; r = r.parent ? clips.get(r.parent.id) : undefined) {
+    if (test(r.scope)) return true
+  }
+  return false
 }
 
 /** @internal Finds a clip by its label, for `ctx.waitUntilClip`. */

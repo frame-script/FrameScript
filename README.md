@@ -131,6 +131,26 @@ sound is the clock while playing, so the picture keeps to what is heard, and mov
 by hand lets a moment of it be heard. It goes out through ALSA (PipeWire and PulseAudio take that
 in); `ANTIWEBUI_AUDIO_DEVICE=none` turns it off.
 
+### Lip sync
+
+```tsx
+<Sequence>
+  <Clip label="Aoi"><Audio src="voice/001.wav" /></Clip>
+  <Clip label="Kou"><Audio src="voice/002.wav" /></Clip>
+  <Clip label="Aoi"><Audio src="voice/003.wav" /></Clip>
+</Sequence>
+<LipSync clip="Aoi" open="aoi/open.png" closed="aoi/closed.png" />
+```
+
+`<LipSync>` is a picture that shows `open` while the sound in the clips labeled `clip` (every one
+of them, and the clips in them) is louder than `threshold`, 0.1 of the loudest it gets, and
+`closed` otherwise; without `clip`, it follows the clip it is in. What it follows is the time in
+the file, so trimming and `playbackRate` count, but `volume` doesn't, except that what is silenced
+says nothing. `useVoiceLevel(clip)` is how loud that is at the frame, from 0 to 1, for a mouth
+of anything else; `audioLevels(src)` is how loud a file is every hundredth of a second, read once
+in the engine (a few milliseconds for a line) and handed over as a `Float32Array`.
+`examples/lipsync` has two characters talking.
+
 ### WGSL
 
 ```tsx
@@ -290,6 +310,7 @@ as they are painted, strokes included; a transparent `color` with a stroke leave
 | `crates/framescript-studio` | the `framescript` binary: the studio and `render` |
 | `examples/hello` | an example project (`tsc -p examples/hello` checks its types) |
 | `examples/media` | pictures, videos and sound (run `./make-assets.sh` first) |
+| `examples/lipsync` | two faces whose mouths follow their lines (run `./make-assets.sh` first) |
 | `examples/3d`, `examples/model` | WGSL and scenes in 3D; a glTF model (run `./get-assets.sh` first) |
 | `examples/showcase` | 40 s of all of it, cut to music made in code (run `./make-assets.sh` first) |
 | `examples/motion` | 44 s of motion graphics in SVG and type, cut to music made in code (run `./make-assets.sh` first) |

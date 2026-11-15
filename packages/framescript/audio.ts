@@ -37,6 +37,49 @@ export function audioInfo(src: string): ops.AudioInfo {
   return info
 }
 
+/** How loud the sound of a file is over time, for mouths and anything else that moves with it. */
+export interface AudioLevels {
+  /** How many levels there are for a second of the file. */
+  perSecond: number
+  /** The root mean square of each 1/`perSecond` of a second, from the start of the file. */
+  values: Float32Array
+  /** The loudest of them. */
+  peak: number
+  /** How loud it is at `seconds` into the file; 0 outside it. */
+  at(seconds: number): number
+  /** The loudest from `from` to `to` seconds into the file. */
+  max(from: number, to: number): number
+}
+
+const levels = new Map<string, AudioLevels>()
+
+/**
+ * How loud the sound in `src` is over time. The file is read through once, the first time, which
+ * for a voice takes a few milliseconds.
+ *
+ * 音量の推移（RMS、1/100 秒ごと）。最初の一回だけファイルを読み通す。
+ */
+export function audioLevels(src: string): AudioLevels {
+  let l = levels.get(src)
+  if (!l) {
+    const values = new Float32Array(ops.audioLevels(src))
+    const perSecond = ops.LEVELS_PER_SECOND
+    let peak = 0
+    for (const v of values) if (v > peak) peak = v
+    const max = (from: number, to: number) => {
+      if (to < 0) return 0
+      const first = Math.max(0, Math.floor(from * perSecond))
+      const end = Math.min(values.length, Math.max(first + 1, Math.ceil(to * perSecond)))
+      let m = 0
+      for (let i = first; i < end; i++) if (values[i] > m) m = values[i]
+      return m
+    }
+    l = { perSecond, values, peak, at: (seconds) => max(seconds, seconds), max }
+    levels.set(src, l)
+  }
+  return l
+}
+
 /**
  * How loud: 1 is as it is in the file, 0 is silent. A function is given the frame of the clip and
  * is called for every frame once, when the project loads: it can't follow signals.
@@ -88,7 +131,8 @@ export function placeSpan(props: SoundProps, clip: ClipScope | null, duration: n
   return { from, to, rate }
 }
 
-interface Sound {
+/** @internal A piece of sound and where it is. */
+export interface Sound {
   src: string
   span: Span
   clip: ClipScope | null
@@ -111,6 +155,25 @@ export function addSound(src: string, span: Span, clip: ClipScope | null, props:
   }
   sounds.add(sound)
   onCleanup(() => sounds.delete(sound))
+}
+
+/** @internal Every piece of sound there is. */
+export function placedSounds(): Sound[] {
+  return [...sounds]
+}
+
+/**
+ * @internal How many seconds into its file `sound` is at the frame `global` of the project, or NaN
+ * when it isn't heard then: outside its clip, after its end, or with no volume.
+ */
+export function heardAt(sound: Sound, global: number): number {
+  const start = sound.clip ? sound.clip.start() : 0
+  const f = global - start
+  if (f < 0 || (sound.clip && f >= sound.clip.duration())) return Number.NaN
+  const volume = typeof sound.volume === "function" ? sound.volume(f) : sound.volume
+  if (!(volume > 0)) return Number.NaN
+  const t = sound.span.from + (f / project.fps) * sound.span.rate
+  return t < sound.span.to ? t : Number.NaN
 }
 
 /** Sound that plays from the start of the clip it is in. It shows nothing. */

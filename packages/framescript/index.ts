@@ -74,7 +74,10 @@ export {
   Audio,
   type AudioInfo,
   audioInfo,
+  type AudioLevels,
+  audioLevels,
   type AudioProps,
   type SoundProps,
   type Volume,
 } from "./audio.ts"
+export { LipSync, type LipSyncProps, useVoiceLevel } from "./lipsync.ts"

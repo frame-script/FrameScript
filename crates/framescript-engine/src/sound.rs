@@ -8,6 +8,9 @@
 //! Each file has a thread that decodes ([`AudioReader`]) into blocks of half a second at
 //! [`RATE`], around where it was last asked for and the few seconds after: playing goes on from
 //! blocks that are there already, and going back to what was heard costs nothing.
+//!
+//! How loud a file is over time ([`AudioSource::levels`]) is for the scripts, which move mouths
+//! with it: it is read through once, the first time it is asked for, and kept with the file.
 
 use crate::media::Media;
 use anti_webui_core::video::VideoSettings;
@@ -16,7 +19,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -32,6 +35,10 @@ const READ_ON: i64 = 2 * RATE as i64;
 const PREROLL: f64 = 0.1;
 /// What the blocks of one file may take: about six minutes of it.
 const BUDGET: usize = 64 << 20;
+/// How many levels a second of a file [`AudioSource::levels`] gives.
+pub const LEVELS_PER_SECOND: u32 = 100;
+/// The rate a file is read at for its levels: enough for a voice, and quicker than [`RATE`].
+const LEVELS_RATE: u32 = 16_000;
 
 /// The pair at `seconds`.
 fn pair(seconds: f64) -> i64 {
@@ -69,6 +76,7 @@ pub struct AudioSource {
     info: AudioInfo,
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
+    levels: OnceLock<Result<Arc<[f32]>, String>>,
 }
 
 impl AudioSource {
@@ -100,6 +108,7 @@ impl AudioSource {
             info,
             shared,
             thread: Some(thread),
+            levels: OnceLock::new(),
         })
     }
 
@@ -162,6 +171,14 @@ impl AudioSource {
         complete
     }
 
+    /// How loud it is, every 1/[`LEVELS_PER_SECOND`] of a second from the start of the file: the
+    /// root mean square of both channels over each. Read through on this thread the first time.
+    pub fn levels(&self) -> Result<Arc<[f32]>, String> {
+        self.levels
+            .get_or_init(|| levels_of(&self.path).map(Arc::from))
+            .clone()
+    }
+
     /// `asker` no longer needs anything decoded for it.
     pub fn unwant(&self, asker: u64) {
         self.shared.lock().wanted.remove(&asker);
@@ -176,6 +193,34 @@ impl Drop for AudioSource {
             let _ = thread.join();
         }
     }
+}
+
+fn levels_of(path: &Path) -> Result<Vec<f32>, String> {
+    let mut reader = AudioReader::open(&path.to_string_lossy(), &VideoSettings::default(), LEVELS_RATE)
+        .map_err(|e| e.to_string())?;
+    let window = (LEVELS_RATE / LEVELS_PER_SECOND) as i64;
+    // Per level, the sum of the squares and how many samples.
+    let mut sums: Vec<(f64, u32)> = Vec::new();
+    while let Some(chunk) = reader.next_chunk().map_err(|e| e.to_string())? {
+        let first = (chunk.start * LEVELS_RATE as f64).round() as i64;
+        for (i, pair) in chunk.samples.chunks_exact(2).enumerate() {
+            let at = first + i as i64;
+            if at < 0 {
+                continue;
+            }
+            let level = (at / window) as usize;
+            if level >= sums.len() {
+                sums.resize(level + 1, (0.0, 0));
+            }
+            let sum = &mut sums[level];
+            sum.0 += (pair[0] as f64).powi(2) + (pair[1] as f64).powi(2);
+            sum.1 += 2;
+        }
+    }
+    Ok(sums
+        .into_iter()
+        .map(|(sum, n)| if n == 0 { 0.0 } else { (sum / n as f64).sqrt() as f32 })
+        .collect())
 }
 
 /// What the decoder has read and not yet put in a block: pairs that follow on from `from`.

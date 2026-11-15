@@ -34,6 +34,15 @@ export interface AudioInfo {
 /** What the sound in a file of the project is. Throws if it has none. */
 export const audioInfo: (src: string) => AudioInfo = core.ops.op_fs_audio_info
 
+/** How many levels a second `audioLevels` gives: `sound::LEVELS_PER_SECOND` in Rust. */
+export const LEVELS_PER_SECOND = 100
+
+/**
+ * How loud the sound in a file of the project is over time, as the bytes of `f32`s: the root mean
+ * square of each 1/`LEVELS_PER_SECOND` of a second from its start. Throws if it has none.
+ */
+export const audioLevels: (src: string) => ArrayBuffer = core.ops.op_fs_audio_levels
+
 export interface ShaderInfo {
   /** The number the commands give it by. */
   id: number

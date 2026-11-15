@@ -3,7 +3,7 @@
 //! What runs every frame is a fast call with a `Uint32Array` borrowed from V8 ([`op_fs_commit`]),
 //! text included (see [`crate::commands`]): nothing goes through JSON or serde. Only the property
 //! table, asked for once at startup, and what a video or a sound is, asked for once per file, are
-//! serialized.
+//! serialized. How loud a sound is over time comes as an `ArrayBuffer`, of `f32`s.
 
 use crate::commands::{Drawn, Nodes};
 use crate::media::MediaNodes;
@@ -102,6 +102,23 @@ fn op_fs_audio_info(state: &mut OpState, #[string] src: String) -> Result<AudioI
     })
 }
 
+/// How loud the sound of `src` is over time, as the bytes of `f32`s (see
+/// [`crate::sound::AudioSource::levels`]). Throws if it has none.
+#[op2]
+#[arraybuffer]
+fn op_fs_audio_levels(state: &mut OpState, #[string] src: String) -> Result<Vec<u8>, JsErrorBox> {
+    let source = state
+        .borrow::<SharedBridge>()
+        .borrow()
+        .media
+        .audio(&src)
+        .map_err(|e| JsErrorBox::generic(format!("can't open the sound of {src}: {e}")))?;
+    let levels = source
+        .levels()
+        .map_err(|e| JsErrorBox::generic(format!("can't read the sound of {src}: {e}")))?;
+    Ok(levels.iter().flat_map(|l| l.to_ne_bytes()).collect())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ShaderInfo {
@@ -196,6 +213,7 @@ extension!(
         op_fs_props,
         op_fs_video_info,
         op_fs_audio_info,
+        op_fs_audio_levels,
         op_fs_shader,
         op_fs_model_info,
     ],
