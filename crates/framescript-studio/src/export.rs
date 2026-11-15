@@ -10,9 +10,10 @@ use crate::timeline::timecode;
 use anti_webui::prelude::*;
 use anti_webui_md3e::components::{
     ButtonStyle, SliderStyle, TextFieldStyle, connected_button_group, dropdown_field,
-    linear_progress, outlined_button, outlined_text_field, sized_icon, styled_button,
-    styled_slider, switch,
+    outlined_button, outlined_text_field, sized_icon, styled_button, styled_slider, switch,
+    wavy_progress,
 };
+use anti_webui_md3e::typography::TextStyle;
 use anti_webui_md3e::{color_scheme, icons};
 use framescript_engine::export::{self, Codec, Export, ExportSettings, Progress, Speed, Stage};
 use std::cell::RefCell;
@@ -23,7 +24,9 @@ use std::rc::Rc;
 const SCALES: [(f64, &str); 4] = [(0.5, "50%"), (1.0, "100%"), (1.5, "150%"), (2.0, "200%")];
 /// Of the sound, in kb/s.
 const BITRATES: [u32; 4] = [128, 192, 256, 320];
-const LABEL: f32 = 92.0;
+const LABEL: f32 = 72.0;
+/// Of what the rows are called, and of what is said beside the controls.
+const LABEL_SIZE: f32 = 13.0;
 
 /// What the form says.
 #[derive(Clone, Copy)]
@@ -154,7 +157,7 @@ impl Exporter {
         let window = open_window(
             WindowOptions::new()
                 .title("Export")
-                .size(560, 720)
+                .size(540, 560)
                 .dialog(true)
                 .background(color_scheme().surface_container_low),
             move || view(this),
@@ -174,7 +177,6 @@ impl Exporter {
         let job = self.job.borrow_mut().take();
         drop(job);
     }
-
 
     fn start(&self) {
         if self.running() {
@@ -227,21 +229,21 @@ fn row(label: &str, content: impl IntoView) -> Div {
         .flex()
         .flex_row()
         .items_center()
-        .gap(12.0)
-        .min_h(48.0)
+        .gap(10.0)
+        .min_h(40.0)
         .child(
             text(label.to_string())
                 .w(LABEL)
                 .flex_none()
-                .text_size(14.0)
-                .text_color(color_scheme().on_surface_variant),
+                .text_size(LABEL_SIZE)
+                .dyn_style(|s| s.text_color(color_scheme().on_surface_variant)),
         )
         .child(
             div()
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(12.0)
+                .gap(8.0)
                 .flex_1()
                 .min_w(0.0)
                 .child(content),
@@ -250,8 +252,8 @@ fn row(label: &str, content: impl IntoView) -> Div {
 
 fn note(f: impl Fn() -> String + 'static) -> Text {
     text(f)
-        .text_size(13.0)
-        .text_color(color_scheme().on_surface_variant)
+        .text_size(LABEL_SIZE)
+        .dyn_style(|s| s.text_color(color_scheme().on_surface_variant))
 }
 
 fn view(this: Rc<Exporter>) -> impl IntoView {
@@ -266,7 +268,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
     let codec_row = dyn_view(move || match codecs.get() {
         None => note(|| "Asking FFmpeg what it can encode…".into()).into_view(),
         Some(Err(e)) => note(move || e.clone())
-            .text_color(color_scheme().error)
+            .dyn_style(|s| s.text_color(color_scheme().error))
             .into_view(),
         Some(Ok(list)) => {
             let label = signal(f.codec.get_untracked().label().to_string());
@@ -278,7 +280,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                 }
             });
             dropdown_field(label, options, TextFieldStyle::new(), true)
-                .w(320.0)
+                .w(240.0)
                 .into_view()
         }
     });
@@ -293,7 +295,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
             .flex()
             .flex_row()
             .items_center()
-            .gap(12.0)
+            .gap(8.0)
             .child(
                 styled_slider(
                     f.quality,
@@ -301,12 +303,12 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                         .range(lo as f32..=hi as f32)
                         .label(|v| format!("{v:.0}")),
                 )
-                .w(220.0),
+                .w(180.0),
             )
             .child(note(move || {
                 let q = f.quality.get().round();
                 let what = if codec.is_hardware() { "QP" } else { "CRF" };
-                format!("{what} {q:.0}: lower is better, and larger")
+                format!("{what} {q:.0} · lower is better, and larger")
             }))
             .into_view()
     });
@@ -322,7 +324,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
             move |i| f.speed.get() == Speed::ALL[i],
             move |i| f.speed.set(Speed::ALL[i]),
         )
-        .child(note(|| "slower makes smaller files".into()).ml(8.0))
+        .child(note(|| "slower makes smaller files".into()).ml(6.0))
         .into_view()
     });
 
@@ -343,14 +345,14 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                 None => String::new(),
             })
         })
-        .ml(8.0),
+        .ml(6.0),
     );
 
     let frames_row = div()
         .flex()
         .flex_row()
         .items_center()
-        .gap(12.0)
+        .gap(8.0)
         .child(connected_button_group(
             ["All", "Some"],
             ButtonStyle::tonal(),
@@ -383,13 +385,10 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(8.0)
-                .child(
-                    outlined_text_field(f.from, TextFieldStyle::new().label("From frame")).w(120.0),
-                )
-                .child(
-                    outlined_text_field(f.to, TextFieldStyle::new().label("Up to frame")).w(120.0),
-                )
+                .gap(6.0)
+                .child(outlined_text_field(f.from, TextFieldStyle::new()).w(80.0))
+                .child(note(|| "up to".into()))
+                .child(outlined_text_field(f.to, TextFieldStyle::new()).w(80.0))
                 .into_view()
         }));
 
@@ -397,7 +396,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
         .flex()
         .flex_row()
         .items_center()
-        .gap(12.0)
+        .gap(8.0)
         .child(switch(f.audio))
         .child(dyn_view(move || {
             if !f.audio.get() {
@@ -414,8 +413,13 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                 }
             });
             let options = BITRATES.iter().map(|b| format!("{b} kb/s")).collect();
-            dropdown_field(label, options, TextFieldStyle::new().label("AAC"), true)
-                .w(160.0)
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(6.0)
+                .child(dropdown_field(label, options, TextFieldStyle::new(), true).w(124.0))
+                .child(note(|| "AAC".into()))
                 .into_view()
         }));
 
@@ -426,7 +430,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
         .flex()
         .flex_row()
         .items_center()
-        .gap(12.0)
+        .gap(8.0)
         .child(
             styled_slider(
                 f.workers,
@@ -435,7 +439,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
                     .steps(threads as u32 - 1)
                     .label(|v| format!("{v:.0}")),
             )
-            .w(220.0),
+            .w(180.0),
         )
         .child(note(move || {
             let n = f.workers.get().round() as u32;
@@ -445,12 +449,12 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
     let form = div()
         .flex()
         .flex_col()
-        .gap(10.0)
+        .gap(6.0)
         .child(row(
             "File",
             outlined_text_field(
                 f.output,
-                TextFieldStyle::new().label("Where the video goes"),
+                TextFieldStyle::new().placeholder("Where the video goes"),
             )
             .flex_1(),
         ))
@@ -470,7 +474,7 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
             .flex()
             .flex_row()
             .justify_end()
-            .gap(12.0)
+            .gap(8.0)
             .child(dyn_view(move || {
                 if running.running() {
                     let cancel = cancel.clone();
@@ -506,17 +510,22 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
         .flex()
         .flex_col()
         .gap(16.0)
-        .p(24.0)
-        .bg(color_scheme().surface_container_low)
-        .text_color(color_scheme().on_surface)
+        .p(20.0)
+        .dyn_style(|s| {
+            let c = color_scheme();
+            s.bg(c.surface_container_low).text_color(c.on_surface)
+        })
         .child(
             div()
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(12.0)
-                .child(sized_icon(icons::MOVIE, 28.0))
-                .child(text("Export").text_size(24.0)),
+                .gap(8.0)
+                .child(
+                    sized_icon(icons::MOVIE, 18.0)
+                        .dyn_style(|s| s.text_color(color_scheme().on_surface_variant)),
+                )
+                .child(TextStyle::TITLE_SMALL.apply(text("Export"))),
         )
         .child(form)
         .child(div().flex_1())
@@ -524,40 +533,83 @@ fn view(this: Rc<Exporter>) -> impl IntoView {
         .child(actions)
 }
 
-/// How the export goes, or how it went.
+/// What the status shows, which only changes from one stage to another.
+#[derive(Clone, Copy, PartialEq)]
+enum Shown {
+    Nothing,
+    Problem,
+    Going,
+    Done,
+    Failed,
+    Cancelled,
+}
+
+/// How the export goes, or how it went. It is built again only when the stage changes: the bar
+/// and the line follow the progress in between, so that the bar moves on smoothly and its wave
+/// keeps flowing.
 fn status(this: Rc<Exporter>) -> impl IntoView {
     let progress = this.progress;
     let problem = this.problem;
-    dyn_view(move || {
-        if let Some(p) = problem.get() {
-            return note(move || p.clone())
-                .text_color(color_scheme().error)
-                .into_view();
+    let shown = memo(move || {
+        if problem.with(Option::is_some) {
+            return Shown::Problem;
         }
-        let Some(p) = progress.get() else {
-            return div().into_view();
-        };
-        let done = p.done as f32 / p.total.max(1) as f32;
-        let (line, icon, color) = describe(&p);
-        let bar = match p.stage {
-            Stage::Starting | Stage::Rendering | Stage::Joining => {
-                Some(linear_progress(move || done).w_full())
+        progress.with(|p| match p.as_ref().map(|p| &p.stage) {
+            None => Shown::Nothing,
+            Some(Stage::Starting | Stage::Rendering | Stage::Joining) => Shown::Going,
+            Some(Stage::Done) => Shown::Done,
+            Some(Stage::Failed(_)) => Shown::Failed,
+            Some(Stage::Cancelled) => Shown::Cancelled,
+        })
+    });
+    dyn_view(move || {
+        let shown = shown.get();
+        match shown {
+            Shown::Nothing => return div().into_view(),
+            Shown::Problem => {
+                return note(move || problem.get().unwrap_or_default())
+                    .dyn_style(|s| s.text_color(color_scheme().error))
+                    .into_view();
             }
-            _ => None,
+            _ => {}
+        }
+        let icon = untrack(|| progress.with(|p| p.as_ref().and_then(|p| describe(p).1)));
+        // Of the stage, in the scheme there is now.
+        let color = move || {
+            progress.with(|p| {
+                p.as_ref()
+                    .map_or(color_scheme().on_surface_variant, |p| describe(p).2)
+            })
         };
+        let bar = (shown == Shown::Going).then(|| {
+            wavy_progress(move || {
+                progress.with(|p| {
+                    p.as_ref()
+                        .map_or(0.0, |p| p.done as f32 / p.total.max(1) as f32)
+                })
+            })
+            .w_full()
+        });
+        let line = move || progress.with(|p| p.as_ref().map(|p| describe(p).0).unwrap_or_default());
         div()
             .flex()
             .flex_col()
-            .gap(10.0)
+            .gap(8.0)
             .children(bar)
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(8.0)
-                    .children(icon.map(|i| sized_icon(i, 20.0).text_color(color)))
-                    .child(text(line).text_size(14.0).text_color(color)),
+                    .gap(6.0)
+                    .children(
+                        icon.map(|i| sized_icon(i, 16.0).dyn_style(move |s| s.text_color(color()))),
+                    )
+                    .child(
+                        text(line)
+                            .text_size(LABEL_SIZE)
+                            .dyn_style(move |s| s.text_color(color())),
+                    ),
             )
             .into_view()
     })

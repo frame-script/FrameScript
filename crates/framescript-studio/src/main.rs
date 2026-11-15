@@ -8,7 +8,9 @@
 
 mod export;
 mod preview;
+mod settings;
 mod studio;
+mod system;
 mod timeline;
 
 use framescript_engine::export::{Codec, Export, ExportSettings, Speed, Stage};

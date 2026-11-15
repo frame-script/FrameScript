@@ -35,3 +35,8 @@ pub use export::{Codec, Export, ExportSettings, Progress, Speed, Stage};
 pub use media::Media;
 pub use playback::AudioPlayer;
 pub use sound::AudioPlan;
+
+/// The version of V8 that runs the compositions.
+pub fn v8_version() -> &'static str {
+    deno_core::v8::V8::get_version()
+}

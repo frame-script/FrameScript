@@ -3,7 +3,7 @@
 //! The worker paints on its own thread; what reaches the UI thread is only the [`Scene`], which is
 //! drawn here by a renderer of the preview's own with the window's GPU device, into a texture the
 //! size of the scene, and then put in the middle of the box (the scene is as big as fits, with the
-//! project's aspect, so the rest are bars).
+//! project's aspect; around it is clear).
 
 use anti_webui::core::scene::Scene;
 use anti_webui::gpu::{GpuFrame, GpuInit, GpuPaint, wgpu};
@@ -63,6 +63,7 @@ impl GpuPaint for Preview {
     type Props = Option<PreviewFrame>;
 
     fn new(gpu: &GpuInit<'_>) -> Self {
+        crate::system::note_display_gpu(gpu.device.adapter_info());
         let device = gpu.device;
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("preview"),
@@ -91,11 +92,13 @@ impl GpuPaint for Preview {
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("preview"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("preview"),
-                bind_group_layouts: &[Some(&layout)],
-                immediate_size: 0,
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("preview"),
+                    bind_group_layouts: &[Some(&layout)],
+                    immediate_size: 0,
+                }),
+            ),
             vertex: wgpu::VertexState {
                 module: &module,
                 entry_point: Some("vs"),
@@ -131,9 +134,10 @@ impl GpuPaint for Preview {
     }
 
     fn render(&mut self, props: &Self::Props, frame: &mut GpuFrame<'_>) {
-        let black = Some(wgpu::Color::BLACK);
+        // Around the picture, what the box is on shows through.
+        let clear = Some(wgpu::Color::TRANSPARENT);
         let Some(shown) = props else {
-            frame.begin_pass(black);
+            frame.begin_pass(clear);
             return;
         };
         let scene = &shown.scene;
@@ -150,7 +154,8 @@ impl GpuPaint for Preview {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: self.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
             let view = texture.create_view(&Default::default());
@@ -182,7 +187,7 @@ impl GpuPaint for Preview {
         let scale = if fit >= 1.0 { 1.0 } else { fit };
         let (w, h) = ((sw * scale).round(), (sh * scale).round());
         let (x, y) = (((bw - w) / 2.0).floor(), ((bh - h) / 2.0).floor());
-        let mut pass = frame.begin_pass(black);
+        let mut pass = frame.begin_pass(clear);
         pass.set_viewport(x, y, w.max(1.0), h.max(1.0), 0.0, 1.0);
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bind, &[]);
