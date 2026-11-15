@@ -73,12 +73,23 @@ fn files(
     let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).expect("JSON") + "\n";
     let main = MAIN.replace("{TITLE}", &quoted(name));
     let launcher = install::launcher(home);
-    let readme = install::source(home, version).join("README.md");
+    // The documentation is in docs/ in the releases after 2.0.1, and in the README before.
+    let source = install::source(home, version);
+    let reference = if source.join("docs/README.md").exists() {
+        format!(
+            "`{}`, the index of the documentation (read `project.md`, `reactivity.md` and \
+             `timeline.md` there first)",
+            source.join("docs/README.md").display()
+        )
+    } else {
+        format!("`{}`", source.join("README.md").display())
+    };
     let agents = AGENTS
         .replace("{NAME}", name)
         .replace("{VERSION}", version)
+        .replace("{FPS}", &format!("{}", size.fps.round()))
         .replace("{LAUNCHER}", &launcher.display().to_string())
-        .replace("{README}", &readme.display().to_string())
+        .replace("{REFERENCE}", &reference)
         .replace("{LIBRARY}", &library.display().to_string());
     vec![
         ("framescript.json", pretty(&settings)),
@@ -86,7 +97,8 @@ fn files(
         ("tsconfig.json", pretty(&tsconfig)),
         (
             ".gitignore",
-            "# What `framescript export` writes by default.\nout/\n".into(),
+            "# What `framescript export` writes by default, and frames rendered to check.\nout/\ncheck/\n"
+                .into(),
         ),
         ("AGENTS.md", agents),
         // Claude Code reads CLAUDE.md, which takes in AGENTS.md.
@@ -153,13 +165,50 @@ laid out and drawn frame by frame.
 
 `framescript --help` says the rest: codecs, quality, size, a range of frames.
 
-To see what a change does, render the frames it touches and look at them; reading the code isn't
-enough to know where things end up.
+## Checking it
+
+You can't watch the studio, and code that looks right often draws something else: text off the
+frame, a box over another, an animation that ends in the wrong place, an empty clip. So check the
+video yourself, by rendering frames and looking at the pictures, after every change and before you
+say it is done. Renders go in `check/`.
+
+```sh
+# It loads (an error says its file and line, exit code 1), and how many frames it has.
+framescript render . --frame 0 --out check/f-0.png
+# The frames where things happen, small: the start and end of each clip and animation.
+framescript render . --width 640 --frame 0 --frame 45 --frame 90 --out check/f-{}.png
+# One a second ({FPS} fps, up to frame 600), in bash or zsh.
+framescript render . --width 480 $(for f in $(seq 0 {FPS} 600); do printf -- '--frame %s ' $f; done) --out check/f-{}.png
+# Motion: frames close together across a move.
+framescript render . --width 480 --frame 30 --frame 34 --frame 38 --frame 42 --out check/m-{}.png
+```
+
+`--width` draws smaller, with the layout of the full size; look at the full size to judge whether
+text is sharp and big enough. Look at every picture for:
+
+- text cut off at the edges, or running out of its box, or too small or faint to read;
+- things off the frame, or covered by others;
+- frames that are empty where something should be, clips too long or too short;
+- animations that end somewhere other than meant, or move at the wrong time;
+- the picture against the sound: mouths, cuts on the beat, captions with their lines.
+
+After exporting, check the file too (`ffmpeg` and `ffprobe` are FFmpeg's):
+
+```sh
+# Its length, its size, and whether it has sound.
+ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of compact out/{NAME}.mp4
+# The whole video in one picture: a frame a second, 16 of them (fps=1/2: one every 2 seconds).
+ffmpeg -v error -i out/{NAME}.mp4 -vf "fps=1,scale=320:-1,tile=4x4" -frames:v 1 -y check/sheet.png
+# The picture at 12.5 seconds.
+ffmpeg -v error -ss 12.5 -i out/{NAME}.mp4 -frames:v 1 -y check/at-12.5.png
+```
+
+Tell the person what you checked and what you saw.
 
 ## Writing it
 
-The reference is `{README}`. The library, with its types, is in `{LIBRARY}`
-(`tsconfig.json` points there).
+The reference is {REFERENCE}. The library, with its types, is in `{LIBRARY}`
+(`tsconfig.json` points there); its `index.ts` lists what there is.
 
 - Components run once, as in SolidJS. What changes over time is a function or a variable
   (`useVariable`), handed over as it is: `style={{ opacity: () => frame() / 30 }}`. `frame()`
@@ -167,7 +216,11 @@ The reference is `{README}`. The library, with its types, is in `{LIBRARY}`
 - Times are in frames. `seconds(n)` is `n` seconds at the project's rate.
 - `<Clip>` is a layer, shown for its duration; `<Sequence>` puts clips one after another;
   `useAnimation(async (ctx) => …)` moves variables over time.
-- Pictures, videos and sounds are found from the project's directory.
+- A frame must not depend on the frames drawn before it: the studio seeks, and an export draws
+  stretches of frames on several workers at once.
+- Text is in `<text>`. Elements are `<div>`, `<text>`, `<img>` and `<svg>`, with CSS in camelCase
+  (numbers are pixels), and the library's components (`<Video>`, `<Audio>`, `<Shader>`, …).
+- Pictures, videos and sounds go in the project (`assets/`), and are found from its directory.
 "#;
 
 #[cfg(test)]
@@ -205,7 +258,17 @@ mod tests {
             "the title is a string"
         );
         assert!(get("AGENTS.md").contains("framescript render ."));
+        assert!(
+            get("AGENTS.md").contains("seq 0 30 600"),
+            "one a second at the project's rate"
+        );
+        assert!(get(".gitignore").contains("check/"));
         assert!(!get("AGENTS.md").contains("{LAUNCHER}"));
+        assert!(!get("AGENTS.md").contains("{REFERENCE}"));
+        assert!(
+            get("AGENTS.md").contains("/versions/2.0.1/README.md"),
+            "no docs/ in it: the README"
+        );
     }
 
     #[test]
