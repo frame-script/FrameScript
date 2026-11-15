@@ -199,6 +199,21 @@ fn run(command: Command, options: &Options) -> Result<ExitCode, String> {
                     .as_ref()
                     .map(|v| path(install::docs(home, v)))
                     .into();
+                json["source"] = current
+                    .as_ref()
+                    .map(|v| path(install::source(home, v)))
+                    .into();
+                json["antiwebui"] = current
+                    .as_ref()
+                    .and_then(|v| install::antiwebui(home, v))
+                    .map(|a| {
+                        serde_json::json!({
+                            "revision": a.revision,
+                            "url": a.url,
+                            "checkout": a.checkout.map(path),
+                        })
+                    })
+                    .into();
                 json["system"] = system::name().into();
                 json["arch"] = std::env::consts::ARCH.into();
                 println!("{}", serde_json::to_string_pretty(&json).expect("JSON"));

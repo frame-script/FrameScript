@@ -73,6 +73,68 @@ pub fn docs(home: &Path, version: &str) -> PathBuf {
     }
 }
 
+/// The commit of AntiWebUI that a version is built with, and where its source is.
+pub struct AntiWebUi {
+    pub revision: String,
+    /// The source at that commit, on GitHub.
+    pub url: String,
+    /// cargo's copy of it, from the build, while cargo keeps it.
+    pub checkout: Option<PathBuf>,
+}
+
+/// What the version's `Cargo.lock` says of AntiWebUI.
+pub fn antiwebui(home: &Path, version: &str) -> Option<AntiWebUi> {
+    let lock = std::fs::read_to_string(source(home, version).join("Cargo.lock")).ok()?;
+    let (repository, revision) = antiwebui_in_lock(&lock)?;
+    Some(AntiWebUi {
+        url: format!("{repository}/tree/{revision}"),
+        checkout: cargo_checkout(&revision),
+        revision,
+    })
+}
+
+/// The repository and the commit of `source = "git+https://github.com/bea4dev/AntiWebUI?branch=main#<commit>"`.
+fn antiwebui_in_lock(lock: &str) -> Option<(String, String)> {
+    lock.lines().find_map(|line| {
+        let source = line
+            .trim()
+            .strip_prefix("source = \"git+")?
+            .strip_suffix('"')?;
+        if !source.contains("/AntiWebUI") {
+            return None;
+        }
+        let (url, revision) = source.split_once('#')?;
+        let repository = url.split('?').next()?.trim_end_matches(".git");
+        Some((repository.to_owned(), revision.to_owned()))
+    })
+}
+
+/// Where cargo checked a commit of AntiWebUI out: `<CARGO_HOME>/git/checkouts/antiwebui-<hash>/`,
+/// in a directory named by the start of the commit. cargo cleans these up when they go unused.
+fn cargo_checkout(revision: &str) -> Option<PathBuf> {
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| system::home_dir().map(|h| h.join(".cargo")))?;
+    std::fs::read_dir(cargo_home.join("git/checkouts"))
+        .ok()?
+        .flatten()
+        .filter(|repo| repo.file_name().to_string_lossy().starts_with("antiwebui-"))
+        .flat_map(|repo| {
+            std::fs::read_dir(repo.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+        })
+        .find(|checkout| {
+            let name = checkout.file_name().to_string_lossy().into_owned();
+            !name.is_empty()
+                && revision.starts_with(&name)
+                && checkout.path().join("Cargo.toml").exists()
+        })
+        .map(|checkout| checkout.path())
+}
+
 pub fn binary(home: &Path, version: &str) -> PathBuf {
     source(home, version)
         .join("bin")
@@ -344,6 +406,27 @@ fn export_line(bin: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn antiwebui_is_found_in_the_lock() {
+        let lock = r#"[[package]]
+name = "anti-webui-core"
+version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI?branch=main#f8035a5f0f7d439d2bebe3479e239c4e6254c626"
+
+[[package]]
+name = "wgpu"
+source = "git+https://github.com/bea4dev/wgpu?branch=adapter-filter#ff143aee"
+"#;
+        assert_eq!(
+            antiwebui_in_lock(lock),
+            Some((
+                "https://github.com/bea4dev/AntiWebUI".to_owned(),
+                "f8035a5f0f7d439d2bebe3479e239c4e6254c626".to_owned()
+            ))
+        );
+        assert_eq!(antiwebui_in_lock("[[package]]\nname = \"x\""), None);
+    }
 
     #[test]
     fn quotes_hold_whatever_is_in_them() {

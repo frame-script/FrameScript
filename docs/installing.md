@@ -52,8 +52,9 @@ installed, and the current one otherwise (or `--version`).
 - Without a terminal nothing is asked: what would have been is said, and the exit code is 2.
 - `--yes` answers yes to everything; `--no-path` leaves the PATH and the shell's files alone.
 - `doctor --json` says what is missing and how it is put in (packages, a command, a download, or
-  something for a person to do), and where FrameScript's command, library and documentation are
-  (`launcher`, `library`, `docs`).
+  something for a person to do), and where FrameScript's command, library, documentation and
+  source are (`launcher`, `library`, `docs`, `source`), with the commit of AntiWebUI it is built
+  with and where that source is (`antiwebui`).
 - `sudo` can't ask for a password without a terminal: the packages' command is then said, for a
   person to run.
 - A project has an `AGENTS.md` that tells an agent how to work on it.

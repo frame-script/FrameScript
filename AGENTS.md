@@ -93,6 +93,61 @@ The most exact reference is the library's types: `packages/framescript/index.ts`
 `examples/` has a project for each part: `hello`, `media`, `lipsync`, `3d`, `model`, `showcase`,
 `motion`.
 
+## Reading the Rust source
+
+When the documentation doesn't say why something is drawn as it is, the source does. FrameScript's
+is this repository; in an installed FrameScript it is `<home>/versions/<tag>/`, Rust and all.
+AntiWebUI's is another repository, at the commit that `Cargo.lock` names
+(`source = "git+https://github.com/bea4dev/AntiWebUI?branch=main#<commit>"`): cargo's copy of it
+from the build is in `~/.cargo/git/checkouts/antiwebui-*/<the start of the commit>/` (cargo cleans
+these up once they go unused), and it is at `https://github.com/bea4dev/AntiWebUI/tree/<commit>`.
+For an installed FrameScript, `create-framescript doctor --json` says all of it (`source`, and
+`antiwebui`: `revision`, `url`, `checkout`).
+
+How a frame is made, and where:
+
+1. The TSX runs in V8: `packages/framescript` (reactivity, JSX, clips, animations), loaded by
+   `crates/framescript-engine/src/loader.rs` into a `composition.rs`.
+2. What changes is sent to Rust as ops: `ext.rs` (the ops), `commands.rs` (what they ask of the
+   node tree), `props.rs` (style properties by number).
+3. AntiWebUI holds the nodes and lays them out: `anti-webui-core`'s `tree.rs`, `layout.rs` (styles
+   and the integer flex layout) and `text/` (shaping, on parley).
+4. It paints them into a scene, a display list: `anti-webui-core`'s `paint.rs` and `scene.rs`.
+5. The scene is drawn by `anti-webui-wgpu`'s renderer (`renderer.rs`) at the project's size, and
+   made the size it is shown or written at by FrameScript's `resample.rs`: in the window by
+   `crates/framescript-studio/src/preview.rs`, and offscreen by `render.rs` for PNGs and exports.
+6. A PNG is written by the studio's `main.rs`; a video by the engine's `export.rs`, which runs
+   `ffmpeg`.
+
+| FrameScript (`crates/framescript-engine/src/`) | |
+|---|---|
+| `composition.rs` | a loaded project: its scripts in V8, and the document they build |
+| `loader.rs` | the modules of a project, TS and TSX transpiled |
+| `ext.rs`, `commands.rs`, `props.rs` | the ops, what they ask of the node tree, style properties |
+| `render.rs`, `resample.rs` | drawing offscreen; a picture at another size |
+| `worker.rs`, `playback.rs` | the preview's thread, and its sound |
+| `media.rs`, `sound.rs` | pictures and videos; what sound plays when, and its samples |
+| `shader.rs`, `flat.rs`, `gpu.rs` | WGSL of compositions, `<Shader>`, what the GPU painters share |
+| `space/` | 3D: `<Scene3D>`, meshes, glTF models, effects |
+| `export.rs` | the video file, with its sound |
+
+`crates/framescript-studio/src/` is the `framescript` binary: `main.rs` (the command line),
+`studio.rs`, `preview.rs`, `timeline.rs`, `export.rs` (the export window), `settings.rs`,
+`system.rs`.
+
+| AntiWebUI (`src/` of its repository) | |
+|---|---|
+| `anti-webui-core` | reactivity, the node tree, styles and layout, text, painting into a scene, shaders, SVG, the video element |
+| `anti-webui-style` | the style types |
+| `anti-webui-wgpu` | the wgpu renderer of scenes |
+| `anti-webui-video` | FFmpeg found at run time: decoding, and sound out (ALSA, WASAPI, Audio Queue) |
+| `anti-webui-app` | a platform backend, the renderer and the core wired together |
+| `anti-webui-wayland`, `-x11`, `-windows`, `-macos` | the platforms |
+
+Both have `docs/design/` (in Japanese), which says how each part works and why: AntiWebUI's
+`01-pixel-model.md`, `03-layout.md` and `04-text.md` explain where things land, and FrameScript's
+`00-overview.md` the threads, the ops, sound and export.
+
 ## Working on FrameScript itself
 
 | | |

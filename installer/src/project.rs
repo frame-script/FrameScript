@@ -118,7 +118,33 @@ fn here(home: &Path, version: &str) -> String {
     } else {
         format!("`{}`", docs.display())
     };
+    let source = install::source(home, version);
+    // The releases after 2.0.1 have a map of the source for agents.
+    let map = if source.join("AGENTS.md").exists() {
+        " (its `AGENTS.md` maps it)"
+    } else {
+        ""
+    };
+    let antiwebui = match install::antiwebui(home, version) {
+        Some(a) => match &a.checkout {
+            Some(dir) => format!(
+                "at commit `{}`, whose source is in `{}` (cargo's copy from the build, which cargo \
+                 cleans up once it goes unused; then {})",
+                a.revision,
+                dir.display(),
+                a.url
+            ),
+            None => format!("at commit `{}`: {}", a.revision, a.url),
+        },
+        None => {
+            "https://github.com/bea4dev/AntiWebUI (the commit is in `Cargo.lock` of the source)"
+                .into()
+        }
+    };
     HERE.replace("{START}", START)
+        .replace("{SOURCE}", &source.display().to_string())
+        .replace("{MAP}", map)
+        .replace("{ANTIWEBUI}", &antiwebui)
         .replace("{END}", END)
         .replace("{VERSION}", version)
         .replace("{HOME}", &home.display().to_string())
@@ -353,11 +379,19 @@ FrameScript {VERSION} is in `{HOME}`:
 - The reference is {REFERENCE}.
 - The library, with its types, is in `{LIBRARY}` (`tsconfig.json` points there); its `index.ts`
   lists what there is.
+- FrameScript's own source, its Rust included, is in `{SOURCE}`{MAP}: `crates/` (the engine
+  and the studio), `packages/framescript` (the library) and `docs/design/` (how it works and why,
+  in Japanese).
+- AntiWebUI, which lays the frames out and draws them, is {ANTIWEBUI}. Its `docs/design/` says how
+  it works (in Japanese).
+
+When the documentation doesn't say why something is drawn as it is, the source does.
 
 These paths are of the computer the project was made on. If they aren't there (the project came
 from another computer, or FrameScript was installed somewhere else), run `create-framescript sync .`:
 it points this part and `tsconfig.json` at the FrameScript of the computer it runs on.
-`create-framescript doctor --json` says where things are too (`launcher`, `library`, `docs`).
+`create-framescript doctor --json` says where things are too (`launcher`, `library`, `docs`,
+`source`, `antiwebui`).
 {END}"#;
 
 #[cfg(test)]
