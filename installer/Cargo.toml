@@ -1,0 +1,23 @@
+[package]
+name = "create-framescript"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["bea4dev"]
+repository = "https://github.com/frame-script/FrameScript"
+description = "Puts FrameScript on this computer, with what it needs, and makes projects for it"
+
+[dependencies]
+# Downloads over HTTPS with rustls, which needs nothing of the system.
+ureq = "3"
+serde_json = "1"
+sha2 = "0.11"
+# The source of a release (.tar.gz) and FFmpeg (.tar.xz on Linux, .zip on Windows), unpacked
+# without anything of the system.
+tar = "0.4"
+flate2 = "1"
+lzma-rs = "0.3"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+# Not a part of FrameScript's workspace.
+[workspace]

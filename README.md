@@ -20,6 +20,34 @@ shows that picture made smaller to fit (each pixel the average of what it covers
 at another size, or `render --width`, is made from it too, so what is seen is where it is
 exported.
 
+## Installing
+
+```sh
+cargo install --git https://github.com/frame-script/FrameScript create-framescript
+create-framescript my-video     # checks, installs FrameScript, and makes the project my-video
+framescript my-video            # opens it
+```
+
+`create-framescript` (in `installer/`) looks at what FrameScript needs, and asks before it puts in
+what is missing: packages with the system's package manager (pacman, apt, dnf, zypper, xbps, or
+Homebrew on macOS), Rust's update, and FFmpeg 9. FFmpeg comes from pacman on Arch and from
+Homebrew on macOS; elsewhere, where the system's is older, a build of
+[FFmpeg-Builds](https://github.com/FFmpeg-Builds/FFmpeg-Builds) is downloaded, checked against the
+sums of its release. Then it builds the latest release (or `--version`) from its source, once for
+each version, in `~/.local/share/framescript` (`~/Library/Application Support/FrameScript` on
+macOS, `%LOCALAPPDATA%\FrameScript` on Windows, or `--home`), and puts `framescript` on the PATH.
+
+| | |
+|---|---|
+| `create-framescript doctor` | what is there and what is missing; changes nothing |
+| `create-framescript install` | installs or updates FrameScript |
+| `create-framescript new <dir> --width 1280 --height 720 --fps 30` | a project of that size |
+
+For programs and AI agents: without a terminal nothing is asked (what would have been is said, and
+the exit code is 2), `--yes` answers yes to everything, `--no-path` leaves the shell's files alone,
+and `doctor --json` says what is missing and how it is put in. A project has an `AGENTS.md` that
+tells an agent how to look at frames it renders.
+
 ## A project
 
 A directory with `framescript.json` and an entry module (see `examples/hello`):

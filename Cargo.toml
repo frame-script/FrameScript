@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/framescript-engine", "crates/framescript-studio"]
+# The installer is a workspace of its own, so that installing it doesn't build FrameScript.
+exclude = ["installer"]
 
 [workspace.package]
 version = "0.1.0"
