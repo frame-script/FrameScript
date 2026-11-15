@@ -51,7 +51,8 @@ framescript my-video            # スタジオで開く
 ```
 
 `create-framescript` は、パッケージや FFmpeg 9 を入れる前に必ず確認を取ります。詳しくは
-[インストール](docs/installing.md)（英語）を見てください。
+[インストール](docs/installing.md)（英語）を見てください。別のコンピュータから持ってきた（clone した）プロジェクトは、
+`create-framescript sync <dir>` でこのコンピュータの FrameScript を指すように直せます。
 
 ## 概要
 

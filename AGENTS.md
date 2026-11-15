@@ -19,6 +19,8 @@ FrameScript at `<home>/versions/<tag>/<path>` (`create-framescript doctor` says 
    something is still missing: what to do is in its output. Packages need `sudo`, which can't ask
    for a password without a terminal; give the person the command it shows, and go on once they
    have run it. `framescript` is `<home>/bin/framescript` until a new terminal has it on the PATH.
+   A project that came from another computer (its paths to FrameScript aren't there) is pointed at
+   the FrameScript here with `create-framescript sync <dir>`.
 3. **Learn it.** Read [docs/project.md](docs/project.md), [docs/reactivity.md](docs/reactivity.md)
    and [docs/timeline.md](docs/timeline.md), then the pages for what the video needs (below). The
    project's own `AGENTS.md` says where its version's documentation and types are.

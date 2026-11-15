@@ -37,6 +37,9 @@ usage:
   create-framescript doctor [--json]
                                   says what is there and what is missing, and changes nothing
   create-framescript ffmpeg       downloads FFmpeg 9 for FrameScript, even if the system has one
+  create-framescript sync [<project>]
+                                  points a project from another computer (tsconfig.json, and
+                                  AGENTS.md's part of this computer) at the FrameScript here
 
 options:
   -y, --yes          answers yes to every question: installs packages (with sudo), downloads
@@ -63,6 +66,7 @@ enum Command {
     Install,
     Doctor,
     Ffmpeg,
+    Sync(PathBuf),
 }
 
 struct Options {
@@ -133,6 +137,8 @@ fn parse(args: &[String]) -> Result<(Command, Options), String> {
         ["install"] => Command::Install,
         ["doctor"] => Command::Doctor,
         ["ffmpeg"] => Command::Ffmpeg,
+        ["sync"] => Command::Sync(PathBuf::from(".")),
+        ["sync", project] => Command::Sync(PathBuf::from(project)),
         [project] => Command::New(Some((*project).to_owned())),
         _ => return Err(format!("what is `{}`?", words.join(" "))),
     };
@@ -179,8 +185,19 @@ fn run(command: Command, options: &Options) -> Result<ExitCode, String> {
                 json["home"] = home.display().to_string().into();
                 json["installed"] = install::installed(home).into();
                 json["current"] = install::current(home).into();
-                json["launcher"] = install::current(home)
-                    .map(|_| install::launcher(home).display().to_string())
+                let current = install::current(home);
+                let path = |p: PathBuf| p.display().to_string();
+                json["launcher"] = current
+                    .as_ref()
+                    .map(|_| path(install::launcher(home)))
+                    .into();
+                json["library"] = current
+                    .as_ref()
+                    .map(|v| path(install::library(home, v)))
+                    .into();
+                json["docs"] = current
+                    .as_ref()
+                    .map(|v| path(install::docs(home, v)))
                     .into();
                 json["system"] = system::name().into();
                 json["arch"] = std::env::consts::ARCH.into();
@@ -196,6 +213,52 @@ fn run(command: Command, options: &Options) -> Result<ExitCode, String> {
             println!("FFmpeg 9 is in {}.", home.join("ffmpeg").display());
             if install::current(home).is_some() {
                 install::write_launcher(home)?;
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Sync(dir) => {
+            let made_for = project::version_of(&dir);
+            let version = match (&options.version, &made_for) {
+                (Some(version), _) => Some(version.clone()),
+                (None, Some(made_for)) if install::is_installed(home, made_for) => {
+                    Some(made_for.clone())
+                }
+                _ => install::current(home),
+            };
+            let Some(version) = version.filter(|v| install::is_installed(home, v)) else {
+                println!(
+                    "FrameScript {}isn't installed here: `create-framescript install{}` installs it.",
+                    options
+                        .version
+                        .as_ref()
+                        .map_or(String::new(), |v| format!("{v} ")),
+                    options
+                        .version
+                        .as_ref()
+                        .map_or(String::new(), |v| format!(" --version {v}"))
+                );
+                return Ok(ExitCode::from(MISSING));
+            };
+            if let Some(made_for) = made_for.filter(|m| *m != version) {
+                ui::warn(&format!(
+                    "{} was made for FrameScript {made_for}, which isn't installed here: it is \
+                     pointed at {version} (`create-framescript install --version {made_for}`, \
+                     then this again, for {made_for})",
+                    dir.display()
+                ));
+            }
+            let synced = project::sync(&dir, home, &version)?;
+            match synced.tsconfig {
+                Some(0) => ui::warn(
+                    "tsconfig.json has no path of FrameScript's library: it is left as it is",
+                ),
+                Some(_) => println!("tsconfig.json points at FrameScript {version} here."),
+                None => println!("tsconfig.json is written, for FrameScript {version} here."),
+            }
+            if synced.agents {
+                println!("AGENTS.md says where FrameScript is here.");
+            } else {
+                println!("AGENTS.md has no part of this computer's in it: it is left as it is.");
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -226,8 +289,16 @@ fn run(command: Command, options: &Options) -> Result<ExitCode, String> {
             let dir = PathBuf::from(&name);
             // Before anything is built for it.
             if std::fs::read_dir(&dir).is_ok_and(|mut e| e.next().is_some()) {
+                let hint = if dir.join("framescript.json").exists() {
+                    format!(
+                        " (a project: `create-framescript sync {}` points it at the FrameScript here)",
+                        dir.display()
+                    )
+                } else {
+                    String::new()
+                };
                 return Err(format!(
-                    "{} is there already, with something in it",
+                    "{} is there already, with something in it{hint}",
                     dir.display()
                 ));
             }
@@ -395,6 +466,12 @@ mod tests {
             Command::Doctor
         ));
         assert!(matches!(parsed(&[]).unwrap().0, Command::New(None)));
+        assert!(
+            matches!(parsed(&["sync"]).unwrap().0, Command::Sync(ref d) if d == Path::new("."))
+        );
+        assert!(
+            matches!(parsed(&["sync", "v"]).unwrap().0, Command::Sync(ref d) if d == Path::new("v"))
+        );
         assert!(parsed(&["--width", "0", "a"]).is_err());
         assert!(parsed(&["--nonsense"]).is_err());
         assert!(parsed(&["a", "b"]).is_err());

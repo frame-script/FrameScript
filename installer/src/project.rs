@@ -1,7 +1,17 @@
 //! A new project: a title that comes up and goes, with what an editor and an AI agent need to know.
+//!
+//! Where FrameScript is differs from one computer to another, and the project says it in two places:
+//! `tsconfig.json` (where the library's types are) and a part of `AGENTS.md` between [`START`] and
+//! [`END`]. [`sync`] writes those again for the computer it runs on, and leaves the rest alone.
 
 use crate::install;
 use std::path::Path;
+
+/// Where the part of `AGENTS.md` that is this computer's starts and ends.
+const START: &str = "<!-- create-framescript: this computer -->";
+const END: &str = "<!-- /create-framescript -->";
+/// What a path of FrameScript's library ends with, in `tsconfig.json`.
+const LIBRARY: &str = "/packages/framescript";
 
 pub struct Size {
     pub width: u32,
@@ -23,8 +33,7 @@ pub fn create(dir: &Path, size: &Size, home: &Path, version: &str) -> Result<(),
         .file_name()
         .and_then(|n| n.to_str())
         .map_or_else(|| "untitled".to_owned(), str::to_owned);
-    let library = install::source(home, version).join("packages/framescript");
-    let files = files(&name, size, &library, home, version);
+    let files = files(&name, size, home, version);
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     for (file, text) in files {
         let path = dir.join(file);
@@ -38,13 +47,7 @@ fn forward(path: &Path) -> String {
     path.display().to_string().replace('\\', "/")
 }
 
-fn files(
-    name: &str,
-    size: &Size,
-    library: &Path,
-    home: &Path,
-    version: &str,
-) -> Vec<(&'static str, String)> {
+fn files(name: &str, size: &Size, home: &Path, version: &str) -> Vec<(&'static str, String)> {
     let quoted = |s: &str| serde_json::to_string(s).expect("strings serialize");
     let settings = serde_json::json!({
         "name": name,
@@ -54,7 +57,36 @@ fn files(
         "entry": "main.tsx",
         "background": "#0b1020",
     });
-    let library_ts = forward(library);
+    let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).expect("JSON") + "\n";
+    let main = MAIN.replace("{TITLE}", &quoted(name));
+    let agents = AGENTS
+        .replace("{NAME}", name)
+        .replace("{FPS}", &format!("{}", size.fps.round()))
+        .replace("{HERE}", &here(home, version));
+    vec![
+        ("framescript.json", pretty(&settings)),
+        ("main.tsx", main),
+        ("tsconfig.json", tsconfig(home, version)),
+        (
+            ".gitignore",
+            "# What `framescript export` writes by default, and frames rendered to check.\nout/\ncheck/\n"
+                .into(),
+        ),
+        ("AGENTS.md", agents),
+        // Claude Code reads CLAUDE.md, which takes in AGENTS.md.
+        ("CLAUDE.md", "@AGENTS.md\n".into()),
+    ]
+}
+
+/// The library's path, as it is written in `tsconfig.json`: with `/`, and escaped for JSON.
+fn library_in_json(home: &Path, version: &str) -> String {
+    let path = forward(&install::library(home, version));
+    let quoted = serde_json::to_string(&path).expect("strings serialize");
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+fn tsconfig(home: &Path, version: &str) -> String {
+    let library_ts = forward(&install::library(home, version));
     let tsconfig = serde_json::json!({
         "compilerOptions": {
             "target": "ES2022",
@@ -70,40 +102,127 @@ fn files(
         },
         "include": ["**/*.ts", "**/*.tsx", format!("{library_ts}/**/*.ts")],
     });
-    let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).expect("JSON") + "\n";
-    let main = MAIN.replace("{TITLE}", &quoted(name));
-    let launcher = install::launcher(home);
+    serde_json::to_string_pretty(&tsconfig).expect("JSON") + "\n"
+}
+
+/// The part of `AGENTS.md` that says where FrameScript is on this computer.
+fn here(home: &Path, version: &str) -> String {
+    let docs = install::docs(home, version);
     // The documentation is in docs/ in the releases after 2.0.1, and in the README before.
-    let source = install::source(home, version);
-    let reference = if source.join("docs/README.md").exists() {
+    let reference = if docs.ends_with("docs/README.md") {
         format!(
             "`{}`, the index of the documentation (read `project.md`, `reactivity.md` and \
              `timeline.md` there first)",
-            source.join("docs/README.md").display()
+            docs.display()
         )
     } else {
-        format!("`{}`", source.join("README.md").display())
+        format!("`{}`", docs.display())
     };
-    let agents = AGENTS
-        .replace("{NAME}", name)
+    HERE.replace("{START}", START)
+        .replace("{END}", END)
         .replace("{VERSION}", version)
-        .replace("{FPS}", &format!("{}", size.fps.round()))
-        .replace("{LAUNCHER}", &launcher.display().to_string())
+        .replace("{HOME}", &home.display().to_string())
+        .replace("{LAUNCHER}", &install::launcher(home).display().to_string())
         .replace("{REFERENCE}", &reference)
-        .replace("{LIBRARY}", &library.display().to_string());
-    vec![
-        ("framescript.json", pretty(&settings)),
-        ("main.tsx", main),
-        ("tsconfig.json", pretty(&tsconfig)),
-        (
-            ".gitignore",
-            "# What `framescript export` writes by default, and frames rendered to check.\nout/\ncheck/\n"
-                .into(),
-        ),
-        ("AGENTS.md", agents),
-        // Claude Code reads CLAUDE.md, which takes in AGENTS.md.
-        ("CLAUDE.md", "@AGENTS.md\n".into()),
-    ]
+        .replace(
+            "{LIBRARY}",
+            &install::library(home, version).display().to_string(),
+        )
+}
+
+/// The version of FrameScript a project's `tsconfig.json` points at: `<tag>` of
+/// `…/versions/<tag>/packages/framescript`.
+pub fn version_of(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join("tsconfig.json")).ok()?;
+    let before = &text[..text.find(LIBRARY)?];
+    let tag = &before[before.rfind("/versions/")? + "/versions/".len()..];
+    (!tag.is_empty() && !tag.contains(['/', '"', '\n'])).then(|| tag.to_owned())
+}
+
+/// What [`sync`] did.
+pub struct Synced {
+    /// How many paths of the library `tsconfig.json` had, which now are this computer's; `None`
+    /// when it was written anew.
+    pub tsconfig: Option<usize>,
+    /// Whether `AGENTS.md` had a part of this computer's to write again.
+    pub agents: bool,
+}
+
+/// Points the project in `dir` at FrameScript `version` in `home`: the library's paths in
+/// `tsconfig.json`, and the part of `AGENTS.md` between [`START`] and [`END`]. The rest of them,
+/// comments included, stays as it is; a missing `tsconfig.json` is written.
+pub fn sync(dir: &Path, home: &Path, version: &str) -> Result<Synced, String> {
+    if !dir.join("framescript.json").exists() {
+        return Err(format!(
+            "{} isn't a project: it has no framescript.json",
+            dir.display()
+        ));
+    }
+    let write = |name: &str, text: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    let tsconfig = match std::fs::read_to_string(dir.join("tsconfig.json")) {
+        Ok(text) => {
+            let (text, count) = repoint(&text, &library_in_json(home, version));
+            write("tsconfig.json", &text)?;
+            Some(count)
+        }
+        Err(_) => {
+            write("tsconfig.json", &self::tsconfig(home, version))?;
+            None
+        }
+    };
+    let agents = match std::fs::read_to_string(dir.join("AGENTS.md")) {
+        Ok(text) => match replace_part(&text, &here(home, version)) {
+            Some(text) => {
+                write("AGENTS.md", &text)?;
+                true
+            }
+            None => false,
+        },
+        Err(_) => false,
+    };
+    Ok(Synced { tsconfig, agents })
+}
+
+/// In every string of `text` that has [`LIBRARY`] in it, puts `library` in place of what comes
+/// before that, and returns how many there were. Nothing else changes, comments included.
+fn repoint(text: &str, library: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut count = 0;
+    while let Some(at) = rest.find(LIBRARY) {
+        let (before, after) = rest.split_at(at);
+        match before.rfind('"') {
+            // The start of the string, on the same line.
+            Some(quote) if !before[quote..].contains('\n') => {
+                out.push_str(&before[..=quote]);
+                out.push_str(library);
+                count += 1;
+            }
+            _ => {
+                out.push_str(before);
+                out.push_str(LIBRARY);
+            }
+        }
+        rest = &after[LIBRARY.len()..];
+    }
+    out.push_str(rest);
+    (out, count)
+}
+
+/// `text` with what is between [`START`] and [`END`], both included, replaced by `part`. `None`
+/// when there is no such part.
+fn replace_part(text: &str, part: &str) -> Option<String> {
+    let start = text.find(START)?;
+    let end = start + text[start..].find(END)? + END.len();
+    Some(format!(
+        "{}{}{}",
+        &text[..start],
+        part.trim_end(),
+        &text[end..]
+    ))
 }
 
 const MAIN: &str = r##"import { BEZIER_SMOOTH, Clip, FillFrame, seconds, Timeline, useAnimation, useVariable } from "framescript"
@@ -145,16 +264,18 @@ function Title() {
 
 const AGENTS: &str = r#"# {NAME}
 
-A video made with [FrameScript](https://github.com/frame-script/FrameScript) {VERSION}: TSX that is
-laid out and drawn frame by frame.
+A video made with [FrameScript](https://github.com/frame-script/FrameScript): TSX that is laid out
+and drawn frame by frame.
 
 - `framescript.json`: the size, the frame rate, the entry module and the background.
 - `main.tsx`: the entry. Its default export is what the video shows.
-- `out/`: where exports go by default (not kept in git).
+- `out/`: where exports go by default, and `check/`: frames rendered to check (not kept in git).
+
+{HERE}
 
 ## Commands
 
-`framescript` is `{LAUNCHER}` where it isn't on the PATH.
+`framescript` is FrameScript's command (where it isn't on the PATH, see above).
 
 | | |
 |---|---|
@@ -207,8 +328,7 @@ Tell the person what you checked and what you saw.
 
 ## Writing it
 
-The reference is {REFERENCE}. The library, with its types, is in `{LIBRARY}`
-(`tsconfig.json` points there); its `index.ts` lists what there is.
+The documentation and the library's types are where it says above.
 
 - Components run once, as in SolidJS. What changes over time is a function or a variable
   (`useVariable`), handed over as it is: `style={{ opacity: () => frame() / 30 }}`. `frame()`
@@ -223,6 +343,23 @@ The reference is {REFERENCE}. The library, with its types, is in `{LIBRARY}`
 - Pictures, videos and sounds go in the project (`assets/`), and are found from its directory.
 "#;
 
+/// Written again by `create-framescript sync`, between its first line and its last.
+const HERE: &str = r#"{START}
+## On this computer
+
+FrameScript {VERSION} is in `{HOME}`:
+
+- `framescript` is `{LAUNCHER}` where it isn't on the PATH.
+- The reference is {REFERENCE}.
+- The library, with its types, is in `{LIBRARY}` (`tsconfig.json` points there); its `index.ts`
+  lists what there is.
+
+These paths are of the computer the project was made on. If they aren't there (the project came
+from another computer, or FrameScript was installed somewhere else), run `create-framescript sync .`:
+it points this part and `tsconfig.json` at the FrameScript of the computer it runs on.
+`create-framescript doctor --json` says where things are too (`launcher`, `library`, `docs`).
+{END}"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,13 +367,12 @@ mod tests {
     #[test]
     fn the_files_say_what_they_should() {
         let home = Path::new("/home/a/.local/share/framescript");
-        let library = install::source(home, "2.0.1").join("packages/framescript");
         let size = Size {
             width: 1280,
             height: 720,
             fps: 30.0,
         };
-        let files = files("my \"video\"", &size, &library, home, "2.0.1");
+        let files = files("my \"video\"", &size, home, "2.0.1");
         let get = |name: &str| &files.iter().find(|(n, _)| *n == name).unwrap().1;
 
         let settings: serde_json::Value = serde_json::from_str(get("framescript.json")).unwrap();
@@ -269,6 +405,77 @@ mod tests {
             get("AGENTS.md").contains("/versions/2.0.1/README.md"),
             "no docs/ in it: the README"
         );
+    }
+
+    #[test]
+    fn the_library_is_pointed_at_and_nothing_else_changes() {
+        let text = r#"{
+  // the editor's
+  "compilerOptions": {
+    "paths": { "framescript": ["C:/Users/a/AppData/Local/FrameScript/versions/2.0.1/packages/framescript/index.ts"] }
+  },
+  "include": ["**/*.tsx", "/home/a/.local/share/framescript/versions/2.0.1/packages/framescript/**/*.ts"]
+}
+"#;
+        let (out, count) = repoint(
+            text,
+            "/Users/b/FrameScript/versions/2.0.2/packages/framescript",
+        );
+        assert_eq!(count, 2);
+        assert!(
+            out.contains(
+                r#"["/Users/b/FrameScript/versions/2.0.2/packages/framescript/index.ts"]"#
+            )
+        );
+        assert!(
+            out.contains(r#""/Users/b/FrameScript/versions/2.0.2/packages/framescript/**/*.ts""#)
+        );
+        assert!(out.contains("// the editor's") && out.contains(r#""**/*.tsx""#));
+        assert_eq!(repoint("{}", "/x").1, 0);
+    }
+
+    #[test]
+    fn a_project_from_another_computer_is_pointed_here() {
+        let root =
+            std::env::temp_dir().join(format!("create-framescript-sync-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("video");
+        let size = Size {
+            width: 1920,
+            height: 1080,
+            fps: 60.0,
+        };
+        create(&dir, &size, &root.join("there"), "2.0.1").unwrap();
+        // What the person wrote in AGENTS.md stays.
+        let agents =
+            std::fs::read_to_string(dir.join("AGENTS.md")).unwrap() + "\n## Mine\n\nKeep this.\n";
+        std::fs::write(dir.join("AGENTS.md"), agents).unwrap();
+
+        let here = root.join("here");
+        let synced = sync(&dir, &here, "2.0.2").unwrap();
+        assert_eq!(synced.tsconfig, Some(2));
+        assert!(synced.agents);
+        let tsconfig = std::fs::read_to_string(dir.join("tsconfig.json")).unwrap();
+        let agents = std::fs::read_to_string(dir.join("AGENTS.md")).unwrap();
+        let there = forward(&root.join("there"));
+        assert!(
+            !tsconfig.contains(&there) && tsconfig.contains("/versions/2.0.2/packages/framescript")
+        );
+        assert!(
+            !agents.contains(&there.replace('/', std::path::MAIN_SEPARATOR_STR)),
+            "{agents}"
+        );
+        assert!(agents.contains("FrameScript 2.0.2 is in"));
+        assert!(agents.contains("## Mine\n\nKeep this."));
+        assert_eq!(agents.matches(START).count(), 1);
+
+        assert_eq!(version_of(&dir).as_deref(), Some("2.0.2"));
+        // Without tsconfig.json, it is written.
+        std::fs::remove_file(dir.join("tsconfig.json")).unwrap();
+        assert_eq!(sync(&dir, &here, "2.0.2").unwrap().tsconfig, None);
+        assert!(dir.join("tsconfig.json").exists());
+        assert!(sync(&root, &here, "2.0.2").is_err(), "not a project");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

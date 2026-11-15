@@ -53,7 +53,8 @@ framescript my-video            # opens it in the studio
 ```
 
 `create-framescript` asks before it installs anything (packages, FFmpeg 9); see
-[installing](docs/installing.md).
+[installing](docs/installing.md). A project cloned from another computer is pointed at the
+FrameScript on this one with `create-framescript sync <dir>`.
 
 ## Overview
 

@@ -57,6 +57,22 @@ pub fn source(home: &Path, version: &str) -> PathBuf {
     home.join("versions").join(version)
 }
 
+/// FrameScript's library of a version, with its types.
+pub fn library(home: &Path, version: &str) -> PathBuf {
+    source(home, version).join("packages/framescript")
+}
+
+/// Where the documentation of a version starts: `docs/` in the releases after 2.0.1, the README
+/// before.
+pub fn docs(home: &Path, version: &str) -> PathBuf {
+    let index = source(home, version).join("docs/README.md");
+    if index.exists() {
+        index
+    } else {
+        source(home, version).join("README.md")
+    }
+}
+
 pub fn binary(home: &Path, version: &str) -> PathBuf {
     source(home, version)
         .join("bin")
