@@ -1,7 +1,7 @@
 # FrameScript2
 
 Videos and motion graphics written in TSX, laid out and drawn by
-[AntiWebUI](../AntiWebUI) (wgpu, no browser), run in V8 through deno_core.
+[AntiWebUI](https://github.com/bea4dev/AntiWebUI) (wgpu, no browser), run in V8 through deno_core.
 
 ```sh
 cargo run --release -- examples/hello                        # the studio

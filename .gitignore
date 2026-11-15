@@ -2,3 +2,5 @@
 __pycache__/
 # What `framescript export` writes by default.
 examples/*/out/
+# Where a checkout of AntiWebUI can stand in for the one on GitHub (see Cargo.toml).
+/.cargo/config.toml

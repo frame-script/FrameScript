@@ -10,13 +10,21 @@ authors = ["bea4dev"]
 
 [workspace.dependencies]
 framescript-engine = { path = "crates/framescript-engine" }
-anti-webui = { path = "../AntiWebUI/src/anti-webui" }
-anti-webui-md3e = { path = "../AntiWebUI/src/anti-webui-md3e" }
-anti-webui-core = { path = "../AntiWebUI/src/anti-webui-core" }
-anti-webui-style = { path = "../AntiWebUI/src/anti-webui-style" }
-anti-webui-wgpu = { path = "../AntiWebUI/src/anti-webui-wgpu" }
-anti-webui-app = { path = "../AntiWebUI/src/anti-webui-app", default-features = false }
-anti-webui-video = { path = "../AntiWebUI/src/anti-webui-video" }
+# AntiWebUI from GitHub, at the commit Cargo.lock names (`cargo update -p anti-webui` moves it on).
+# To work on a checkout of it at the same time, point these at it in `.cargo/config.toml`, which
+# is not kept in git:
+#
+#   [patch."https://github.com/bea4dev/AntiWebUI"]
+#   anti-webui = { path = "../AntiWebUI/src/anti-webui" }
+#   anti-webui-md3e = { path = "../AntiWebUI/src/anti-webui-md3e" }
+#   ...and the same for the other crates below.
+anti-webui = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
+anti-webui-md3e = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
+anti-webui-core = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
+anti-webui-style = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
+anti-webui-wgpu = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
+anti-webui-app = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main", default-features = false }
+anti-webui-video = { git = "https://github.com/bea4dev/AntiWebUI", branch = "main" }
 # V8 through deno_core directly, for the ops (op2) and the runtime. rustyscript, which wraps it,
 # is on deno_core 0.380 (V8 142) at its latest, whose Temporal can't be built with the ICU that
 # AntiWebUI's text needs (see docs/design/00-overview.md).
