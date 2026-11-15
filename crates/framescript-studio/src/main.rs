@@ -114,23 +114,25 @@ fn render(args: &[String]) -> Result<()> {
         composition.info().duration_frames,
         composition.info().clips.len()
     );
-    if let Some(w) = width {
-        composition.fit(w, u32::MAX);
-    }
     let mut renderer = OffscreenRenderer::new()?;
+    if let Some(w) = width {
+        // Drawn at the project's size and made that wide, so that it is laid out the same.
+        let (pw, ph) = composition.size();
+        let h = ((w as f64 * ph as f64 / pw as f64).round() as u32).max(1);
+        renderer.set_size(Some((w, h)));
+    }
     for &frame in &frames {
         let (scene, timings) = composition.render(frame)?;
         let rgba = renderer.rgba(&scene);
+        let (w, h) = renderer.size_of(&scene);
         let path = match &out {
             Some(o) if frames.len() > 1 => o.replace("{}", &frame.to_string()),
             Some(o) => o.clone(),
             None => format!("frame-{frame}.png"),
         };
-        write_png(path.as_ref(), scene.width, scene.height, &rgba)?;
+        write_png(path.as_ref(), w, h, &rgba)?;
         eprintln!(
-            "frame {frame} -> {path} ({}x{}; script {:.2} ms, layout {:.2} ms, paint {:.2} ms)",
-            scene.width,
-            scene.height,
+            "frame {frame} -> {path} ({w}x{h}; script {:.2} ms, layout {:.2} ms, paint {:.2} ms)",
             timings.script.as_secs_f64() * 1000.0,
             timings.layout.as_secs_f64() * 1000.0,
             timings.paint.as_secs_f64() * 1000.0,

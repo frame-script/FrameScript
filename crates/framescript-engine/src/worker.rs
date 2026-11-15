@@ -1,7 +1,7 @@
 //! A thread of its own for a composition, for the preview.
 //!
-//! The UI thread only says what it would like to see (a frame, at a size); the worker makes the
-//! latest of that and hands the [`Scene`] back. While it is busy, wishes replace one another, so
+//! The UI thread only says which frame it would like to see; the worker makes the latest of that
+//! and hands the [`Scene`] back, at the project's size (the preview draws it at its own). While it is busy, wishes replace one another, so
 //! scrubbing never queues up frames nobody will look at. It also loads the project again when its
 //! files change, keeping the frames of videos it has decoded.
 //!
@@ -44,7 +44,6 @@ pub struct RenderedFrame {
 #[derive(Clone, Copy, PartialEq)]
 struct Wish {
     frame: u32,
-    size: (u32, u32),
 }
 
 struct State {
@@ -72,10 +71,7 @@ impl PreviewWorker {
     pub fn spawn(dir: PathBuf, send: impl Fn(Event) + Send + 'static) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
-                wish: Wish {
-                    frame: 0,
-                    size: (960, 540),
-                },
+                wish: Wish { frame: 0 },
                 reload: true,
                 media: false,
                 quit: false,
@@ -97,11 +93,6 @@ impl PreviewWorker {
 
     pub fn seek(&self, frame: u32) {
         self.change(|s| s.wish.frame = frame);
-    }
-
-    /// The most pixels the preview has room for.
-    pub fn fit(&self, width: u32, height: u32) {
-        self.change(|s| s.wish.size = (width.max(1), height.max(1)));
     }
 
     pub fn reload(&self) {
@@ -197,7 +188,6 @@ fn run(dir: &Path, shared: &Arc<Shared>, send: &dyn Fn(Event)) {
         let Some(c) = composition.as_mut() else {
             continue;
         };
-        c.fit(wish.size.0, wish.size.1);
         incomplete = false;
         match c.render_with(wish.frame, Wait::PREVIEW) {
             Ok(r) => {

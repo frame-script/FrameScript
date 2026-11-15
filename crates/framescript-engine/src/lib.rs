@@ -6,7 +6,8 @@
 //! - [`worker`]: a composition on a thread of its own, for the preview.
 //! - [`media`]: pictures and videos, and the cache of decoded frames that makes seeking fast.
 //! - [`sound`]: what sound plays when, mixed from the files it is in; [`playback`] plays it.
-//! - [`render`]: drawing a scene offscreen, into pixels or a PNG file.
+//! - [`render`]: drawing a scene offscreen, into pixels or a PNG file; [`resample`] draws it at
+//!   another size.
 //! - [`export`]: writing the whole of it out as a video file, drawing frames on several threads.
 //! - [`ext`], [`commands`], [`props`]: how the TypeScript side reaches the node tree.
 //! - [`shader`], [`flat`], [`space`]: WGSL that compositions write, `<Shader>` boxes, and scenes in
@@ -23,6 +24,7 @@ pub mod media;
 pub mod props;
 pub mod playback;
 pub mod render;
+pub mod resample;
 pub mod shader;
 pub mod sound;
 pub mod space;

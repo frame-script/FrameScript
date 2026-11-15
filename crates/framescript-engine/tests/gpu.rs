@@ -200,12 +200,11 @@ export default function Main() { return <div><Box /></div> }
 fn a_lit_scene_is_the_same_whatever_frame_came_before() {
     let Some(mut gpu) = gpu() else { return };
     let project = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/3d"));
+    gpu.set_size(Some((320, 180)));
     let mut c = Composition::load(&project).expect("the example loads");
-    c.fit(320, 180);
     let frames = [200, 650, 300, 420, 760];
     let forwards: Vec<_> = frames.iter().map(|&f| frame_any(&mut c, &mut gpu, f)).collect();
     let mut c = Composition::load(&project).expect("the example loads");
-    c.fit(320, 180);
     for (i, &f) in frames.iter().enumerate().rev() {
         assert!(frame_any(&mut c, &mut gpu, f) == forwards[i], "frame {f} differs when reached another way");
     }

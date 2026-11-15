@@ -1,9 +1,13 @@
 //! Drawing scenes offscreen, without a window: for the command line, exporting and tests.
 //!
+//! What comes out is the scene's size, or one it is drawn at by [`Resampler`] (see
+//! [`OffscreenRenderer::set_size`]).
+//!
 //! For video, the picture is turned into YUV 4:2:0 on the GPU (BT.709, video range, as encoders
 //! want it): what comes back is less than half the size of RGBA, and the encoder has nothing to
 //! convert.
 
+use crate::resample::Resampler;
 use anti_webui_core::scene::Scene;
 use anti_webui_wgpu::wgpu;
 use anti_webui_wgpu::{Gpu, GpuError, Renderer};
@@ -72,8 +76,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 pub struct OffscreenRenderer {
     gpu: Gpu,
     renderer: Renderer,
+    /// The size of what comes out, if not the scene's.
+    size: Option<(u32, u32)>,
     /// What was drawn into last, kept for the next frame of the same size.
     target: Option<Target>,
+    /// The scene at its own size, when what comes out is another, and what draws it at that.
+    picture: Option<(wgpu::Texture, wgpu::TextureView, wgpu::BindGroup)>,
+    resampler: Option<Resampler>,
     yuv: Option<Yuv>,
 }
 
@@ -137,9 +146,23 @@ impl OffscreenRenderer {
         Ok(Self {
             gpu,
             renderer,
+            size: None,
             target: None,
+            picture: None,
+            resampler: None,
             yuv: None,
         })
+    }
+
+    /// Makes what comes out `width` × `height`, the scene drawn larger or smaller to fill it;
+    /// `None`, the scene's own size.
+    pub fn set_size(&mut self, size: Option<(u32, u32)>) {
+        self.size = size.map(|(w, h)| (w.max(1), h.max(1)));
+    }
+
+    /// The size of what comes out for `scene`.
+    pub fn size_of(&self, scene: &Scene) -> (u32, u32) {
+        self.size.unwrap_or((scene.width.max(1), scene.height.max(1)))
     }
 
     /// Tightly packed RGBA8 pixels of `scene`.
@@ -273,26 +296,14 @@ impl OffscreenRenderer {
 
     /// Draws `scene` into the target, made again if its size changed.
     fn draw(&mut self, scene: &Scene) -> Target {
-        let (w, h) = (scene.width.max(1), scene.height.max(1));
+        let own = (scene.width.max(1), scene.height.max(1));
+        let size = self.size_of(scene);
+        let device = &self.gpu.device;
+        let format = self.renderer.format();
         let target = match self.target.take() {
-            Some(t) if (t.texture.width(), t.texture.height()) == (w, h) => t,
+            Some(t) if (t.texture.width(), t.texture.height()) == size => t,
             _ => {
-                let texture = self.gpu.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("offscreen"),
-                    size: wgpu::Extent3d {
-                        width: w,
-                        height: h,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: self.renderer.format(),
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
+                let texture = texture(device, size, format, "offscreen");
                 let view = texture.create_view(&Default::default());
                 Target {
                     texture,
@@ -302,17 +313,73 @@ impl OffscreenRenderer {
                 }
             }
         };
-        let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
-        self.renderer.render(
-            &self.gpu.device,
-            &self.gpu.queue,
-            &mut encoder,
-            &target.view,
-            scene,
-        );
+        let mut encoder = device.create_command_encoder(&Default::default());
+        if size == own {
+            self.renderer
+                .render(device, &self.gpu.queue, &mut encoder, &target.view, scene);
+        } else {
+            let resampler = self
+                .resampler
+                .get_or_insert_with(|| Resampler::new(device, format));
+            if self
+                .picture
+                .as_ref()
+                .is_none_or(|(t, ..)| (t.width(), t.height()) != own)
+            {
+                let texture = texture(device, own, format, "offscreen scene");
+                let view = texture.create_view(&Default::default());
+                let bind = resampler.bind(device, &view);
+                self.picture = Some((texture, view, bind));
+            }
+            let (_, view, bind) = self.picture.as_ref().expect("made above");
+            self.renderer
+                .render(device, &self.gpu.queue, &mut encoder, view, scene);
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("offscreen resample"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            resampler.draw(&mut pass, bind);
+        }
         self.gpu.queue.submit([encoder.finish()]);
         target
     }
+}
+
+/// A picture of `size` to draw into, and read from.
+fn texture(
+    device: &wgpu::Device,
+    (width, height): (u32, u32),
+    format: wgpu::TextureFormat,
+    label: &str,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    })
 }
 
 impl Yuv {

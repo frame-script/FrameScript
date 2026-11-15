@@ -245,7 +245,8 @@ pub struct ExportSettings {
     /// See [`Codec::quality_range`].
     pub quality: u32,
     pub speed: Speed,
-    /// Of the project's own size; more than 1 draws it larger, as sharp as at its size.
+    /// Of the project's own size. The frames are drawn at the project's size and then made larger
+    /// or smaller ([`crate::resample`]), so they are laid out as in the preview.
     pub scale: f64,
     /// The frames to write, the end not among them. `None`: all of them.
     pub range: Option<(u32, u32)>,
@@ -441,6 +442,9 @@ struct Job {
     fps: f64,
     /// The frames to write.
     frames: Range<u32>,
+    /// What the composition paints.
+    project: (u32, u32),
+    /// Of the frames written.
     size: (u32, u32),
     plan: Arc<AudioPlan>,
 }
@@ -514,9 +518,8 @@ fn export(
     tell: &mut Tell,
 ) -> Result<(), String> {
     let job = {
-        let mut c = Composition::load_with(dir, Media::with_budget(WORKER_CACHE))
+        let c = Composition::load_with(dir, Media::with_budget(WORKER_CACHE))
             .map_err(|e| e.to_string())?;
-        c.scale_to(settings.scale);
         let total = c.info().duration_frames;
         let (from, to) = settings.range.unwrap_or((0, total));
         let frames = from.min(total)..to.min(total);
@@ -526,7 +529,8 @@ fn export(
         Job {
             fps: c.settings().fps.max(1.0),
             frames,
-            size: c.size(),
+            project: c.size(),
+            size: scaled(c.size(), settings.scale),
             plan: c.audio().clone(),
         }
     };
@@ -675,11 +679,11 @@ impl Worker<'_> {
     fn run(&self, lanes: &Lanes, i: usize) -> Result<(), String> {
         let media = Media::with_budget(WORKER_CACHE);
         let mut c = Composition::load_with(self.dir, media).map_err(|e| e.to_string())?;
-        c.scale_to(self.settings.scale);
-        if c.size() != self.job.size {
+        if c.size() != self.job.project {
             return Err("the project changed while it was being exported".into());
         }
         let mut gpu = OffscreenRenderer::new().map_err(|e| format!("no GPU to draw with: {e}"))?;
+        gpu.set_size(Some(self.job.size));
         // The piece being written, and the frame it goes on with.
         let mut piece: Option<(Encoder, u32)> = None;
         while let Some(f) = lanes.next(i) {
@@ -849,6 +853,12 @@ fn join(
     Encoder::start(args)?.finish()?;
     std::fs::rename(&joined, &settings.output)
         .map_err(|e| format!("{}: {e}", settings.output.display()))
+}
+
+/// `size` at `scale`, in whole pixels.
+fn scaled((w, h): (u32, u32), scale: f64) -> (u32, u32) {
+    let side = |n: u32| ((n as f64 * scale).round() as u32).max(1);
+    (side(w), side(h))
 }
 
 /// The frame rate as a fraction FFmpeg knows: 30000/1001 for 29.97.

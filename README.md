@@ -14,6 +14,12 @@ the ends, and pressing or dragging on the timeline seeks. The film button at the
 transport opens the export window. Saving a file of the project loads it
 again.
 
+A frame is always laid out and painted at the project's size: AntiWebUI rounds every length to
+whole pixels of what it paints, so at another scale things would be somewhere else. The preview
+shows that picture made smaller to fit (each pixel the average of what it covers), and an export
+at another size, or `render --width`, is made from it too, so what is seen is where it is
+exported.
+
 ## A project
 
 A directory with `framescript.json` and an entry module (see `examples/hello`):
@@ -273,8 +279,9 @@ handed to the renderer as a snapshot, so a frame of 3D is a function of its numb
 The export window in the studio, or `framescript export <project>` (see `--help`), writes the
 video with its sound through the system's `ffmpeg` (or `FRAMESCRIPT_FFMPEG`): H.264, H.265 or AV1
 in MP4, ProRes 422 HQ in MOV, and H.264 / H.265 on the GPU through VA-API where that works. It
-takes a quality (CRF), a speed, a size (50–200% of the project's; more than 100% draws it larger,
-as sharp as at its size), the frames to write and how many are drawn at once.
+takes a quality (CRF), a speed, a size (50–200% of the project's, made from the frame at the
+project's size; more than 100% is enlarged, Catmull-Rom), the frames to write and how many are
+drawn at once.
 
 Since a frame is a pure function of its number, the frames are shared out among workers, each with
 a V8, a document, a GPU device and an encoder of its own: each goes through a stretch of the frames

@@ -17,8 +17,8 @@ fn a_frame_is_the_same_whatever_came_before() {
         eprintln!("no GPU to draw with; skipped");
         return;
     };
+    gpu.set_size(Some((480, 270)));
     let mut composition = Composition::load(project()).expect("the example loads");
-    composition.fit(480, 270);
     let total = composition.info().duration_frames;
     assert!(total > 100, "the example lasts a while ({total} frames)");
     let frames: Vec<u32> = (0..total).step_by(13).chain([total - 1]).collect();
@@ -32,7 +32,6 @@ fn a_frame_is_the_same_whatever_came_before() {
 
     // Jumped to backwards, in a new composition.
     let mut composition = Composition::load(project()).expect("the example loads");
-    composition.fit(480, 270);
     for (i, &f) in frames.iter().enumerate().rev() {
         let pixels = gpu.rgba(&composition.render(f).expect("renders").0);
         assert!(pixels == forwards[i], "frame {f} differs when it is reached backwards");

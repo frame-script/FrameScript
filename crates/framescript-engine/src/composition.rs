@@ -279,7 +279,7 @@ impl Composition {
             size: (0, 0),
             frame: None,
         };
-        composition.fit(u32::MAX, u32::MAX);
+        composition.lay_out();
         Ok(composition)
     }
 
@@ -300,39 +300,21 @@ impl Composition {
         &self.dir
     }
 
-    /// The size of what [`Composition::render`] paints, in pixels.
+    /// The size of what [`Composition::render`] paints, in pixels: the project's, always.
+    /// AntiWebUI rounds every length to whole pixels of what it paints, so at another scale things
+    /// would be somewhere else; what is wanted at another size is drawn from this
+    /// ([`crate::resample`]).
     pub fn size(&self) -> (u32, u32) {
         self.size
     }
 
-    /// Paints at the largest scale, up to the project's own size, that fits `width` × `height`
-    /// pixels. The scale is a multiple of 1/120 (AntiWebUI's), and the size is what the project's
-    /// size comes to at it, so the layout is the project's whatever the size.
-    pub fn fit(&mut self, width: u32, height: u32) {
-        let (w, h) = (self.settings.width.max(1) as f64, self.settings.height.max(1) as f64);
-        let ratio = (width as f64 / w).min(height as f64 / h).min(1.0);
-        self.set_scale(Scale(((ratio * 120.0).floor() as u32).max(1)));
-    }
-
-    /// Paints at `ratio` of the project's own size, more than it too: what is drawn stays sharp,
-    /// and only pictures and videos are scaled up. The ratio is rounded to a multiple of 1/120.
-    pub fn scale_to(&mut self, ratio: f64) {
-        self.set_scale(Scale(((ratio * 120.0).round() as u32).max(1)));
-    }
-
-    fn set_scale(&mut self, scale: Scale) {
-        let (w, h) = (self.settings.width.max(1) as f64, self.settings.height.max(1) as f64);
-        let size = (
-            (w * scale.as_f64()).round().max(1.0) as u32,
-            (h * scale.as_f64()).round().max(1.0) as u32,
-        );
-        if size == self.size {
-            return;
-        }
+    /// Paints at the project's size, a pixel to a pixel.
+    fn lay_out(&mut self) {
+        let size = (self.settings.width.max(1), self.settings.height.max(1));
         self.size = size;
         self.ui.handle_event(WindowEvent::Resized {
             size: SizeI::new(size.0 as i32, size.1 as i32),
-            scale,
+            scale: Scale::ONE,
         });
     }
 

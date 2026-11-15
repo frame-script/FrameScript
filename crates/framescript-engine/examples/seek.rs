@@ -17,7 +17,6 @@ fn main() {
         let _ = tx.send(());
     });
     let mut c = Composition::load_with(&dir, media.clone()).expect("it loads");
-    c.fit(1280, 720);
     let total = c.info().duration_frames;
     let first: u32 = args.next().map_or(0, |a| a.parse().unwrap());
     let last: u32 = args.next().map_or(total - 1, |a| a.parse().unwrap());

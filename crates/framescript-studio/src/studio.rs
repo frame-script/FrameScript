@@ -160,7 +160,7 @@ fn studio(dir: PathBuf) -> impl IntoView {
         .focusable()
         .on_key_down(move |e| keys(e, project, frame, playing, timeline))
         .child(top_bar(name, project, exporter, settings))
-        .child(preview_area(worker, project, shown, error))
+        .child(preview_area(project, shown, error))
         .child(splitter(lanes, window_h))
         .child(transport(project, frame, playing, timeline))
         .child(
@@ -258,7 +258,6 @@ fn top_bar(
 }
 
 fn preview_area(
-    worker: Rc<PreviewWorker>,
     project: Signal<Option<Project>>,
     shown: Signal<Option<PreviewFrame>>,
     error: Signal<Option<String>>,
@@ -268,11 +267,7 @@ fn preview_area(
         .flex_1()
         .min_h(0.0)
         .relative()
-        .on_resized(move |w, h| {
-            size.set((w, h));
-            let scale = window_scale().as_f64();
-            worker.fit((w as f64 * scale) as u32, (h as f64 * scale) as u32);
-        })
+        .on_resized(move |w, h| size.set((w, h)))
         .child(
             gpu_canvas::<Preview>(move || shown.get())
                 .absolute()

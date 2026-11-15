@@ -1,5 +1,5 @@
 //! Writing a composition out: every frame once and in order whichever worker drew it, the sound
-//! with it, a part of it, and cancelling.
+//! with it, a part of it, at a scale, and cancelling.
 //!
 //! The project shows frame `f` as the gray `10 + 2f`, and plays `ramp.wav` (as in
 //! `tests/sound.rs`: sample `n` is `(n % 1000) * 16 / 32768` on the left and `(n / 1000) * 16 /
@@ -189,6 +189,42 @@ fn a_part_of_it_starts_where_it_says() {
         assert!(l.abs_diff(luma_of(f)) <= 1, "frame {f}: {l}");
     }
     assert!((duration(&out, "a") - 1.5).abs() < 0.03);
+}
+
+#[test]
+fn at_a_scale_the_frames_are_that_size() {
+    let Some(dir) = project("scale") else { return };
+    for (scale, size) in [(0.5, (32, 24)), (1.5, (96, 72))] {
+        let out = dir.join(format!("scale-{scale}.mp4"));
+        let mut settings = ExportSettings::new(out.clone(), Codec::H264);
+        settings.quality = 0;
+        settings.scale = scale;
+        settings.range = Some((0, 10));
+        settings.audio = None;
+        let p = export(&dir, settings);
+        assert_eq!(p.stage, Stage::Done, "{p:?}");
+        assert_eq!(p.size, size);
+        let probe = Command::new("ffprobe")
+            .args(["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height"])
+            .args(["-of", "csv=p=0"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), format!("{},{}", size.0, size.1));
+        // The same gray, at that size.
+        let frames = Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(&out)
+            .args(["-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        let (w, h) = (size.0 as usize, size.1 as usize);
+        for (f, frame) in frames.chunks_exact(w * h * 3 / 2).enumerate() {
+            let l = frame[h / 2 * w + w / 2];
+            assert!(l.abs_diff(luma_of(f as u32)) <= 1, "at {scale}, frame {f}: {l}");
+        }
+    }
 }
 
 #[test]
