@@ -594,7 +594,8 @@ impl Spaces {
         });
         let effects = self.worlds.values().flat_map(|w| &w.effects).flat_map(|e| match e {
             Effect::Shader { textures, .. } => textures.iter().flatten(),
-            Effect::Bloom(_) => [].iter().flatten(),
+            // Of the type said, which on macOS isn't found out from the other arm.
+            Effect::Bloom(_) => <&[Option<Source>]>::default().iter().flatten(),
         });
         things.chain(effects)
     }
